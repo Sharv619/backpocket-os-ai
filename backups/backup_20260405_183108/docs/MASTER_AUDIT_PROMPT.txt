@@ -1,0 +1,3093 @@
+
+### SYSTEM AUDIT REQUEST FOR BACKPOCKET TWIN (Brain 1 LAB)
+You are an expert system auditor for the BackPocket team. Cherry is your founder.
+
+BELOW IS THE ENTIRE SOURCE CODE FOR THE BACKPOCKET TWIN:
+
+
+--- START FILE: main.py ---
+from fastapi import FastAPI, BackgroundTasks, Request
+from dotenv import load_dotenv
+import os
+import asyncio
+import logging
+import random
+import string
+
+# Load environment variables FIRST
+from datetime import datetime
+load_dotenv()
+
+# Global state trackers
+LAST_PATROL_TIME = "Syncing..."
+SCHEDULE_JOBS_DONE = set() # To prevent double-running in the same hour
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+from services.google_sheets import test_sheets_connection, check_client_identity, log_activity
+from services.gmail import get_unread_emails, send_email
+from services.gemini import triage_email, draft_response, refine_draft, batch_triage_emails, pre_triage_rules
+from services.whapi import send_notification
+from services.self_check import run_self_check, send_morning_pulse
+import services.database as db
+from services.local_audit import run_self_audit
+
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+app = FastAPI(title="BackPocket Twin API")
+logger.info("🚀 BACKPOCKET TWIN VERSION 2.2 STARTED")
+
+# Serve static files for the dashboard
+if not os.path.exists('static'):
+    os.makedirs('static')
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/dashboard")
+async def get_dashboard():
+    return FileResponse("static/index.html")
+
+def generate_ref_id():
+    """Generate a chronological reference ID: YYYY-MM-XXXXX."""
+    from datetime import datetime
+    prefix = datetime.now().strftime("%Y-%m")
+    
+    conn = db.sqlite3.connect(db.DB_PATH)
+    cursor = conn.cursor()
+    # Find the highest number for this month
+    cursor.execute("SELECT ref_id FROM pending_approvals WHERE ref_id LIKE ? ORDER BY ref_id DESC LIMIT 1", (f"{prefix}-%",))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row:
+        last_id = row[0]
+        try:
+            last_num = int(last_id.split("-")[2]) # index 2 because 2026-03-00001
+            new_num = last_num + 1
+        except:
+            new_num = 1
+    else:
+        new_num = 1
+        
+    return f"{prefix}-{new_num:05d}"
+
+@app.get("/health")
+async def health_check():
+    pending_refs = db.get_all_pending_refs()
+    return {"status": "healthy", "version": "2.2", "pending": pending_refs}
+
+@app.post("/whapi-webhook")
+@app.post("/webhook/whatsapp")
+async def whatsapp_webhook(request: Request):
+    logger.info(f"👉 WEBHOOK ATTEMPT: {request.method} {request.url}")
+    loop = asyncio.get_running_loop()
+    try:
+        raw_body = await request.body()
+        logger.info(f"📦 RAW BYTES RECEIVED: {len(raw_body)} bytes")
+        if raw_body:
+            logger.info(f"📦 RAW BODY: {raw_body.decode('utf-8', errors='ignore')}")
+        data = await request.json()
+        logger.info(f"📦 JSON DATA: {data}")
+        
+        messages = data.get('messages', [])
+        for msg in messages:
+            # We used to skip from_me, but since the founder often replies from the same phone
+            # that is linked to Whapi, we need to process them.
+            text_body = msg.get('text', {}).get('body', '').strip()
+            if not text_body:
+                continue
+
+            sender_phone = msg.get('from', '').split('@')[0]
+            founder_phone = "".join(filter(str.isdigit, os.getenv("FOUNDER_PHONE", "")))
+
+            # Only process if from the founder (linked account or specific phone)
+            if not sender_phone or sender_phone != founder_phone:
+                logger.warning(f"Message from unknown phone: {sender_phone}")
+                continue
+
+            from services.whapi import send_whatsapp_message
+            import re
+            
+            # Flexible parsing: support both 4-digit and YYYY-MM-XXXXX formats
+            ID_PATTERN = r'(\d{4}-\d{2}-\d{5}|\d{4})'
+            
+            text_body_lower = text_body.lower()
+            
+            # --- EXTRACT IDs FROM QUOTED MESSAGE ---
+            quoted_text = msg.get('context', {}).get('quoted_content', {}).get('body', '')
+            quoted_ids = re.findall(ID_PATTERN, quoted_text) if quoted_text else []
+            
+            # 1. SPECIAL CASE: List Pending
+            if any(kw in text_body_lower for kw in ['pending', 'list', 'status', 'summary']):
+                # But don't trigger if it's a long message (likely an approve/revise with a long note)
+                if len(text_body_lower.split()) < 6:
+                    pending_refs = db.get_all_pending_refs()
+                if pending_refs:
+                    summary_lines = []
+                    for rid in pending_refs:
+                        p = db.get_pending_approval(rid)
+                        if p:
+                            if rid.startswith("FIND-"): continue
+                            summary_lines.append(f"*#{rid}* — {p.get('subject', 'No Subject')[:50]}")
+                    summary = "\n".join(summary_lines)
+                    await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"🔔 Pending emails:\n{summary}\n\nReply: *approve <ref>* or *revise <ref>: comment* or *supplier <ref>*")
+                else:
+                    await loop.run_in_executor(None, send_whatsapp_message, founder_phone, "No pending emails right now.")
+                return {"status": "success"}
+
+            # 1.1 SPECIAL CASE: Find/Search
+            if text_body_lower.startswith('find '):
+                query = text_body[5:].strip()
+                from services.gmail import search_emails, get_all_account_tokens
+                all_tokens = get_all_account_tokens()
+                
+                logger.info(f"🔍 SEARCHING: '{query}' across {len(all_tokens)} accounts...")
+                all_matches = []
+                for t in all_tokens:
+                    matches = await loop.run_in_executor(None, search_emails, query, t)
+                    all_matches.extend(matches)
+                
+                if not all_matches:
+                    await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"🔍 No emails found for '{query}'.")
+                else:
+                    summary_lines = []
+                    for i, m in enumerate(all_matches[:5]): # Top 5
+                        search_ref = f"FIND-{random.randint(1000,9999)}"
+                        db.save_pending_approval(search_ref, {
+                            "message_id": m['id'],
+                            "thread_id": "",
+                            "sender": m['sender'],
+                            "subject": m['subject'],
+                            "draft_body": m['token_file'],
+                            "delivered_to": m['token_file'],
+                            "tier": "SEARCH"
+                        })
+                        summary_lines.append(f"*{search_ref}* — {m['subject'][:40]}\n   _From: {m['sender'][:30]}_")
+                    
+                    summary = "\n\n".join(summary_lines)
+                    await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"🔍 Found {len(all_matches)} results for '{query}':\n\n{summary}\n\nReply *get <ID>* to rescue to Inbox.")
+                return {"status": "success"}
+
+            # 2. MULTI-COMMAND PARSING
+            keywords = ['approve', 'revise', 'add', 'supplier', 'spam', 'archive', 'delete', 'ignore', 'get']
+            found_commands = []
+            for kw in keywords:
+                for match in re.finditer(rf'\b{kw}\b', text_body_lower):
+                    found_commands.append({'cmd': kw, 'start': match.start()})
+            
+            # Sort by position
+            found_commands.sort(key=lambda x: x['start'])
+            
+            if not found_commands:
+                logger.warning(f"No valid keywords found in: {text_body}")
+                return {"status": "success"}
+            
+            # Process each command block
+            for i in range(len(found_commands)):
+                cmd_info = found_commands[i]
+                cmd = cmd_info['cmd']
+                start_pos = cmd_info['start']
+                end_pos = found_commands[i+1]['start'] if i+1 < len(found_commands) else len(text_body)
+                
+                block_text = text_body[start_pos:end_pos]
+                block_ids = re.findall(ID_PATTERN, block_text)
+                if not block_ids and quoted_ids:
+                    logger.info(f"Using quoted message IDs for cmd '{cmd}': {quoted_ids}")
+                    block_ids = quoted_ids
+                
+                if not block_ids:
+                    continue
+                    
+                for ref_id in block_ids:
+                    info = db.get_pending_approval(ref_id)
+                    if not info:
+                        continue
+                        
+                    email_addr = info['sender']
+                    msg_id = info['message_id']
+                    tier = info.get('tier', '1')
+
+                    if cmd == 'get' and tier == "SEARCH":
+                        from services.gmail import rescue_to_inbox
+                        token = info.get('draft_body', 'token.json') # We stored token in draft_body for search results
+                        res = await loop.run_in_executor(None, rescue_to_inbox, msg_id, token)
+                        if res:
+                            await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"⚓ RESCUED: Message back in Inbox ({token}).")
+                            db.delete_pending_approval(ref_id)
+                        else:
+                            await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"❌ Rescue failed for {ref_id}.")
+                        continue
+
+                    # (Normal commands like approve, revise, etc below...)
+                    
+                    # A) APPROVE
+                    if cmd == 'approve':
+                        from_alias = info.get('delivered_to')
+                        subject = info['subject']
+                        draft = info['draft_body']
+                        
+                        logger.info(f"👍 APPROVAL RECEIVED for Ref #{ref_id}")
+                        if from_alias:
+                            token_source = 'token.json'
+                            actual_alias = from_alias
+                            if '|' in from_alias:
+                                actual_alias, token_source = from_alias.split('|', 1)
+                                
+                            if token_source.startswith('token_imap_'):
+                                from services.imap import send_email_smtp
+                                result = await loop.run_in_executor(None, send_email_smtp, token_source, email_addr, f"Re: {subject}", draft)
+                            else:
+                                result = await loop.run_in_executor(None, send_email, email_addr, f"Re: {subject}", draft, actual_alias, token_source)
+                        else:
+                            result = await loop.run_in_executor(None, send_email, email_addr, f"Re: {subject}", draft)
+                            
+                        if result['status'] == 'success':
+                            from services.google_sheets import log_activity
+                            await loop.run_in_executor(None, log_activity, {"email_address": email_addr, "status": f"Approved & Sent (#{ref_id})"})
+                            db.delete_pending_approval(ref_id)
+                            await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"✅ *Ref #{ref_id}* sent to {email_addr}!")
+                        else:
+                            await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"❌ Failed to send Ref #{ref_id}: {result.get('message')}")
+
+                    # B) REVISE
+                    elif cmd == 'revise':
+                        # Extract comment: everything after the ID in this block, or just the whole block if context used
+                        comment = ""
+                        if ref_id in block_text:
+                            comment = block_text.split(ref_id, 1)[1].strip().lstrip(':').strip()
+                        else:
+                            # Context used, the whole block (minus keyword) is the comment
+                            comment = block_text.replace(cmd, '', 1).strip().lstrip(':').strip()
+
+                        if comment:
+                            logger.info(f"❌ REVISION REQUESTED for Ref #{ref_id}")
+                            email_object = {"id": msg_id, "threadId": info['thread_id'], "subject": info['subject'], "sender": email_addr}
+                            new_draft = await loop.run_in_executor(None, refine_draft, email_object, info['draft_body'], comment)
+                            info['draft_body'] = new_draft
+                            db.save_pending_approval(ref_id, info)
+                            await loop.run_in_executor(None, send_notification, email_object, info['tier'], new_draft, ref_id)
+                        else:
+                            await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"Got it. What should I change for Ref #{ref_id}? Reply: *revise {ref_id}: your instructions*")
+
+                    # C) SUPPLIER
+                    elif cmd == 'supplier':
+                        logger.info(f"🚚 SUPPLIER CATEGORIZATION for Ref #{ref_id}")
+                        from services.google_sheets import log_expense
+                        log_data = {"from_name": email_addr.split('@')[0], "email_address": email_addr, "subject": info['subject'], "body": info['draft_body'], "expense_data": {"vendor": email_addr.split('@')[0], "amount": "N/A", "due_date": "N/A"}}
+                        await loop.run_in_executor(None, log_expense, log_data)
+                        db.delete_pending_approval(ref_id)
+                        await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"🚚 *Ref #{ref_id}* moved to Supplier Expenses.")
+
+                    # D) SPAM / DELETE / IGNORE
+                    elif cmd in ['spam', 'delete', 'ignore']:
+                        logger.info(f"🗑️ DISCARDING Ref #{ref_id} (Cmd: {cmd})")
+                        db.delete_pending_approval(ref_id)
+                        db.mark_as_processed(msg_id) # Prevent re-triage
+                        await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"🗑️ *Ref #{ref_id}* marked as {cmd} and removed.")
+
+                    # E) ARCHIVE
+                    elif cmd == 'archive':
+                        logger.info(f"🗄️ ARCHIVING Ref #{ref_id}")
+                        db.delete_pending_approval(ref_id)
+                        await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"🗄️ *Ref #{ref_id}* archived and removed from list.")
+
+                    # F) GET (Rescue from Archive/Trash)
+                    elif cmd == 'get':
+                        logger.info(f"⚓ RESCUING Ref #{ref_id}")
+                        token_file = info.get('delivered_to', 'token.json')
+                        if '|' in token_file: token_file = token_file.split('|', 1)[1]
+                        
+                        from services.gmail import rescue_to_inbox
+                        result = await loop.run_in_executor(None, rescue_to_inbox, msg_id, token_file)
+                        if result:
+                            db.delete_pending_approval(ref_id)
+                            await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"⚓ *Ref #{ref_id}* restored to Inbox & marked Unread! (Acct: {token_file})")
+                        else:
+                            await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"❌ Failed to rescue Ref #{ref_id}.")
+
+                    # G) ADD (Manual Whitelist)
+                    elif cmd == 'add':
+                        logger.info(f"🆕 WHITELISTING Ref #{ref_id}")
+                        from services.google_sheets import add_new_client_to_master
+                        onboard_data = {
+                            "from_name": info.get('sender', '').split('@')[0], 
+                            "email_address": email_addr,
+                            "subject": info['subject'],
+                            "body": "Manual Whitelist Approval",
+                            "to_email": info.get('delivered_to', 'unknown')
+                        }
+                        await loop.run_in_executor(None, add_new_client_to_master, onboard_data)
+                        await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"✅ *Ref #{ref_id}* Whitelisted! {email_addr} added to BPS_Client_Master as Tier 1.")
+
+            return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return {"status": "error", "message": str(e)}
+
+async def inbox_polling_loop():
+    """Background loop to poll Gmail every 2 minutes."""
+    while True:
+        try:
+            await inbox_polling_loop_once()
+        except Exception as e:
+            logger.error(f"Error in background polling: {e}")
+            
+        await asyncio.sleep(60) # 60 seconds for high-speed response
+
+@app.on_event("startup")
+async def startup_event():
+    # Start the polling loop as a background task
+    asyncio.create_task(inbox_polling_loop())
+    # Start the daily scheduled jobs (8 AM Nudge, 4 PM Summary)
+    asyncio.create_task(background_scheduler())
+
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to BackPocket System.io MVP API"}
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
+
+@app.get("/test-sheets")
+async def check_sheets():
+    """Endpoint to check the Google Sheets integration status."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, test_sheets_connection)
+
+@app.get("/test-whatsapp")
+async def test_whatsapp():
+    """Directly test the WhatsApp notification to your phone."""
+    loop = asyncio.get_running_loop()
+    from services.whapi import send_whatsapp_message
+    founder_phone = os.getenv("FOUNDER_PHONE")
+    if not founder_phone:
+        return {"status": "error", "message": "FOUNER_PHONE not set"}
+    
+    # Sanitize phone number
+    clean_phone = "".join(filter(str.isdigit, founder_phone))
+    
+    logger.info(f"TESTING WHATSAPP: Sending to {clean_phone}")
+    text = "🧪 *BackPocket Connection Test*\n\nIf you are reading this, your WhatsApp connection is officially WORKING! 🎉"
+    result = await loop.run_in_executor(None, send_whatsapp_message, clean_phone, text)
+    return {
+        "status": "success", 
+        "whapi_response": result
+    }
+
+@app.get("/run-poll")
+async def run_poll():
+    """Manually trigger the inbox polling logic once."""
+    # We run it in a separate task so the API response returns immediately
+    asyncio.create_task(inbox_polling_loop_once())
+    return {"message": "Manual poll started."}
+
+@app.get("/api/status")
+async def get_system_status():
+    global LAST_PATROL_TIME
+    from services.google_sheets import test_sheets_connection
+    from services.gmail import test_gmail_connection
+    
+    loop = asyncio.get_running_loop()
+    # Sheets/Gmail checks can be slow, so we keep them fast or fetch from a cache later
+    return {
+        "status": "Healthy",
+        "last_patrol": LAST_PATROL_TIME,
+        "pending_count": len(db.get_all_pending_refs()),
+        "ollama": "Active" # We assume active if main.py is up and can connect locally
+    }
+
+@app.get("/morning-pulse")
+async def trigger_pulse():
+    """Manually trigger the morning pulse report."""
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, send_morning_pulse)
+    return {"message": "Morning pulse sent successfully!"}
+
+@app.get("/test-triage")
+async def test_triage(subject: str, snippet: str):
+    """Manually test the AI Triage on provided text."""
+    loop = asyncio.get_running_loop()
+    email_content = {"subject": subject, "snippet": snippet}
+    triage = await loop.run_in_executor(None, triage_email, email_content)
+    tier = triage.get('tier', 5)
+    draft = await loop.run_in_executor(None, draft_response, email_content, tier) if tier <= 3 else "No draft needed."
+    return {
+        "triage": triage,
+        "ai_draft": draft
+    }
+
+@app.get("/api/search")
+async def api_search(q: str):
+    """Search for emails across all accounts via web dashboard."""
+    from services.gmail import search_emails, get_all_account_tokens
+    loop = asyncio.get_running_loop()
+    tokens = await loop.run_in_executor(None, get_all_account_tokens)
+    
+    all_results = []
+    for t in tokens:
+        results = await loop.run_in_executor(None, search_emails, q, t)
+        all_results.extend(results)
+    
+    return {"results": all_results}
+
+
+@app.get("/api/audit")
+async def api_audit():
+    """Trigger a self-diagnosis via local Ollama."""
+    loop = asyncio.get_running_loop()
+    report = await loop.run_in_executor(None, run_self_audit)
+    return {"status": "success", "report": report}
+
+@app.post("/api/rescue")
+async def api_rescue(msg_id: str, token: str = "token.json"):
+    """Restore an email to inbox via web dashboard."""
+    from services.gmail import rescue_to_inbox
+    loop = asyncio.get_running_loop()
+    success = await loop.run_in_executor(None, rescue_to_inbox, msg_id, token)
+    return {"status": "success" if success else "error"}
+
+@app.get("/api/pending")
+async def api_pending():
+    """Get all pending approvals for the dashboard."""
+    pending_refs = db.get_all_pending_refs()
+    results = []
+    for rid in pending_refs:
+        if rid.startswith("FIND-"): continue
+        p = db.get_pending_approval(rid)
+        if p:
+            p['ref_id'] = rid
+            results.append(p)
+    return {"pending": results}
+
+async def inbox_polling_loop_once():
+    """Patrols ALL connected business accounts and performs Zen Cleanup/Admin logic."""
+    loop = asyncio.get_running_loop()
+    try:
+        logger.info("🛡️ GLOBAL POLL: Starting Patrol...")
+        
+        from services.google_sheets import process_lead_conversions, add_new_lead, log_expense, log_portal_update, get_todays_portal_updates
+        from services.gmail import get_all_account_tokens, get_unread_emails, get_historical_context, archive_message, trash_message
+        from services.imap import get_all_imap_configs, get_unread_emails_imap, archive_message_imap, trash_message_imap
+        
+        # 🟢 CRM Duty: Sync Lead Conversions
+        await loop.run_in_executor(None, process_lead_conversions)
+        
+        # 🧠 Self-Awareness: Check for nudges (Urgent emails pending > 4h)
+        await loop.run_in_executor(None, run_self_check)
+        
+        all_gmail_tokens = get_all_account_tokens()
+        all_imap_tokens = get_all_imap_configs()
+        
+        all_accounts = [{"file": t, "type": "gmail"} for t in all_gmail_tokens] + \
+                       [{"file": t, "type": "imap"} for t in all_imap_tokens]
+        
+        # 🕵️ ACCOUNT PATROL (Concurrent 4x Speed)
+        async def fetch_acc(acc):
+            t_file, a_type = acc["file"], acc["type"]
+            logger.info(f"🕵️ PATROLLING Account: {t_file} ({a_type})")
+            if a_type == "gmail": return await loop.run_in_executor(None, get_unread_emails, t_file), t_file, a_type
+            return await loop.run_in_executor(None, get_unread_emails_imap, t_file), t_file, a_type
+
+        account_results = await asyncio.gather(*(fetch_acc(a) for a in all_accounts))
+        
+        all_emails_to_triage = []
+        for unread_emails, t_file, a_type in account_results:
+            for email in unread_emails:
+                msg_id = email.get('id')
+                if not msg_id or db.is_processed(msg_id): continue
+                
+                email['token_file'], email['acc_type'] = t_file, a_type
+                
+                pre_triage = pre_triage_rules(email)
+                if pre_triage:
+                    logger.info(f"🛡️ PRE-FILTER: {email.get('subject')[:30]}... (Tier {pre_triage['tier']})")
+                    await process_triaged_email(email, pre_triage, loop)
+                    db.mark_as_processed(msg_id)
+                else:
+                    all_emails_to_triage.append(email)
+                
+        # --- BATCH TRIAGE REMAINING (HUGE COST SAVINGS) ---
+        if all_emails_to_triage:
+            logger.info(f"🧠 BATCH TRIAGE: Processing {len(all_emails_to_triage)} emails...")
+            
+            # Using while loop to avoid potential slicing issues in some static analysis
+            idx = 0
+            while idx < len(all_emails_to_triage):
+                batch = all_emails_to_triage[idx : idx + 5]
+                # Results is now a dict {message_id: triage_data}
+                results = await loop.run_in_executor(None, batch_triage_emails, batch)
+                
+                for email in batch:
+                    msg_id = email.get('id')
+                    triage = results.get(msg_id)
+                    
+                    if triage:
+                        await process_triaged_email(email, triage, loop)
+                        db.mark_as_processed(msg_id)
+                    else:
+                        logger.warning(f"⚠️ Missing triage result for {msg_id} in batch.")
+                        # This should rarely happen now because batch_triage_emails has fallback
+                
+                idx += 5
+        
+        global LAST_PATROL_TIME
+        LAST_PATROL_TIME = datetime.now().strftime("%I:%M %p")
+        logger.info(f"🛡️ PATROL COMPLETE at {LAST_PATROL_TIME}")
+    except Exception as e:
+        logger.error(f"Error in global poll: {e}")
+
+async def background_scheduler():
+    """Background task to run daily nudges and summaries."""
+    global SCHEDULE_JOBS_DONE
+    from services.whapi import send_pending_items_summary, send_morning_nudge, send_spam_bulk_ask
+    while True:
+        try:
+            now = datetime.now()
+            hour, today = now.hour, now.strftime("%Y-%m-%d")
+            if hour == 8 and f"nudge_{today}" not in SCHEDULE_JOBS_DONE:
+                await send_morning_nudge(); SCHEDULE_JOBS_DONE.add(f"nudge_{today}")
+            if hour == 16 and f"summary_{today}" not in SCHEDULE_JOBS_DONE:
+                await send_pending_items_summary(); await send_spam_bulk_ask(); SCHEDULE_JOBS_DONE.add(f"summary_{today}")
+            if hour == 0: SCHEDULE_JOBS_DONE.clear()
+        except Exception as e: logger.error(f"Scheduler Error: {e}")
+        await asyncio.sleep(300)
+
+async def process_triaged_email(email, triage, loop):
+    """Handles the logic after an email has been triaged, following Cherry's Handwritten Map."""
+    from services.google_sheets import add_new_lead, log_expense, log_activity, check_client_identity
+    from services.gmail import get_historical_context, rescue_to_inbox, archive_message, trash_message
+    from services.imap import archive_message_imap, trash_message_imap
+    from services.whapi import send_notification, send_whatsapp_message
+    from services.gemini import draft_response
+
+    clean_email = email.get('clean_email', '')
+    token_file = email.get('token_file')
+    acc_type = email.get('acc_type')
+    msg_id = email.get('id')
+    tier = triage.get('tier', 5)
+    
+    from_name = email.get('sender', 'Unknown')
+    snippet = email.get('snippet', '')
+    is_gmail = (acc_type == "gmail")
+    # 🌟 0. SPECIAL ONBOARDING FLOW
+    if triage.get('is_onboarding_triggered'):
+        from services.google_sheets import add_new_client_to_master
+        from services.gemini import get_gemini_client
+        logger.info(f"🆕 RUNNING AUTO-ONBOARDING for {msg_id}")
+        prompt = f"Extract Name and Email from this form:\n\n{email['snippet']}\n\nReturn ONLY JSON with 'name' and 'email' keys."
+        ai = get_gemini_client()
+        res = ai.models.generate_content(model='gemini-2.0-flash', contents=prompt, config={'response_mime_type': 'application/json'})
+        import json
+        client_details = json.loads(res.text.strip())
+        onboard_data = {
+            "from_name": client_details.get('name', 'Unknown Name'),
+            "email_address": client_details.get('email', 'unknown@link.com'),
+            "subject": email['subject'], "body": email['snippet'], "to_email": email['delivered_to'], "actionable_items": "Client successfully auto-onboarded."
+        }
+        await loop.run_in_executor(None, add_new_client_to_master, onboard_data)
+        from services.whapi import send_whatsapp_message
+        await loop.run_in_executor(None, send_whatsapp_message, os.getenv("FOUNDER_PHONE"), f"✨ *NEW CLIENT ONBOARDED!* \n\nName: {onboard_data['from_name']}\nEmail: {onboard_data['email_address']}")
+        return # Complete.
+
+    # 🛡️ 1. CLIENT IDENTITY CHECK
+    client = await loop.run_in_executor(None, check_client_identity, clean_email)
+    if client: from_name = f"{client.get('first_name','')} {client.get('last_name','')}".strip() or from_name
+    
+    # 📊 2. LOG DATA
+    log_data = {
+        "from_name": from_name, "email_address": clean_email, "to_email": email.get('delivered_to'), "subject": email['subject'],
+        "body": snippet, "actionable_items": triage.get('actionable_items'), "status": "Pending" if tier <=3 else "Processed",
+        "tier": f"Tier {tier}", "tier_verbose": f"Tier {tier}"
+    }
+    await loop.run_in    # --- TIER 1 / 2 (CHERRY'S REFINED RULES) ---
+    if tier == 1 or tier == 2:
+        # Doc Signed Check
+        is_doc_signed, is_call = triage.get('is_doc_signed'), triage.get('is_call_centre')
+        if is_doc_signed:
+            logger.info("✍️ DOC SIGNED: Logging to Portal_Updates but STAYING in Inbox.")
+            await loop.run_in_executor(None, log_activity, {
+                "from_name": from_name, "email_address": clean_email, "subject": email['subject'],
+                "body": snippet, "tier": str(tier), "status": "Logged (Needs Filing)"
+            }, "Portal_Updates")
+        if is_call:
+            await loop.run_in_executor(None, send_whatsapp_message, os.getenv("FOUNDER_PHONE"), f"📞 *Call Centre Message* from Business 1300:\n\n{snippet[:200]}...")
+
+        # 🛡️ STAY IN INBOX per Cherry's Map
+        logger.info(f"🛡️ TIER {tier} SHIELD: {clean_email} stays in Inbox.")
+        hist_context = await loop.run_in_executor(None, get_historical_context, clean_email)
+        db.save_pending_approval(ref_id, {
+            "message_id": msg_id, "thread_id": email.get('threadId', ''), "sender": clean_email,
+            "subject": email['subject'], "draft_body": await loop.run_in_executor(None, draft_response, email, tier, hist_context, client),
+            "delivered_to": f"{email.get('delivered_to', 'unknown')}|{token_file}", "tier": str(tier)
+        })
+        action_hint = "Draft initialized. (Stay in Inbox)" if client else f"Draft initialized. Reply 'approve {ref_id}' or '*add {ref_id}*'."
+        await loop.run_in_executor(None, send_notification, email, tier, action_hint, ref_id)
+
+    # --- TIER 3 / 4 (ARCHIVE & LOG) ---
+    elif tier == 3 or tier == 4:
+        has_activity, is_portal = triage.get('has_activity'), triage.get('is_portal_update')
+        if is_portal and "digest" in email['subject'].lower():
+            if has_activity:
+                logger.info("🏢 PORTAL ACTIVITY: Notifying Cherry.")
+                await loop.run_in_executor(None, send_whatsapp_message, os.getenv("FOUNDER_PHONE"), f"🏢 *Suitedash Portal Activity*: {email['subject']}\nCheck: {snippet[:150]}...")
+                await loop.run_in_executor(None, log_activity, log_data, "Portal_Updates")
+            else: logger.info("🏢 PORTAL DIGEST: No activity. Archiving silently.")
+        
+        # Archive or Move to Special Label (e.g. Quickbooks)
+        logger.info(f"🗃️ TIER {tier} ARCHIVE.")
+        is_qb = "quickbooks" in clean_email or ("intuit.com" in clean_email and "invoice" in email['subject'].lower())
+        
+        if is_qb and "your webaccountant" in email['subject'].lower():
+            from services.gmail import move_to_label
+            logger.info("🧾 QUICKBOOKS RULE: Moving to 'Quickbooks Recurring Invoice' label.")
+            if is_gmail: await loop.run_in_executor(None, move_to_label, msg_id, "Quickbooks Recurring Invoice", token_file)
+            else: await loop.run_in_executor(None, archive_message_imap, msg_id, token_file)
+        else:
+            if is_gmail: await loop.run_in_executor(None, archive_message, msg_id, token_file)
+            else: await loop.run_in_executor(None, archive_message_imap, msg_id, token_file)
+
+        # Specialized Logging
+        if is_portal: await loop.run_in_executor(None, log_activity, log_data, "Portal_Updates")
+        else: await loop.run_in_executor(None, log_activity, log_data, "Govt_Assoc_Log" if tier == 3 else "Action_Log")
+
+    elif tier == 5:
+        # 🗑️ SPAM: Move to Trash
+        logger.info(f"🗑️ TIER 5 SPAM: Sending {clean_email} to Trash.")
+        if is_gmail: await loop.run_in_executor(None, trash_message, msg_id, token_file)
+        else: await loop.run_in_executor(None, trash_message_imap, msg_id, token_file)
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+
+--- END FILE: main.py ---
+
+
+--- START FILE: services\database.py ---
+import sqlite3
+import os
+import logging
+import json
+
+# Log settings
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+DB_PATH = "backpocket.db"
+
+def init_db():
+    """Build the memory if it doesn't exist."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # 1. Table for Email Deduplication (The "Seen" List)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS processed_messages (
+            message_id TEXT PRIMARY KEY,
+            processed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # 2. Table for Pending Approvals (The "Waitlist")
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS pending_approvals (
+            ref_id TEXT PRIMARY KEY,
+            message_id TEXT,
+            thread_id TEXT,
+            sender TEXT,
+            subject TEXT,
+            draft_body TEXT,
+            delivered_to TEXT,
+            tier TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_nudge_at DATETIME
+        )
+    ''')
+    
+    conn.commit()
+
+    # Migration: Add last_nudge_at to existing databases
+    try:
+        cursor.execute("ALTER TABLE pending_approvals ADD COLUMN last_nudge_at DATETIME")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass # already exists
+        
+    conn.close()
+    logger.info("🛡️ SQLITE MEMORY INITIALIZED")
+
+def is_processed(message_id):
+    """Check if we have already talked to this email."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT 1 FROM processed_messages WHERE message_id = ?", (message_id,))
+    result = cursor.fetchone()
+    conn.close()
+    return result is not None
+
+def mark_as_processed(message_id):
+    """Remember that we have seen this email."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("INSERT OR IGNORE INTO processed_messages (message_id) VALUES (?)", (message_id,))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"❌ Error marking message as processed: {e}")
+    finally:
+        conn.close()
+
+def save_pending_approval(ref_id, data):
+    """Write a pending draft to the waitlist."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            INSERT OR REPLACE INTO pending_approvals 
+            (ref_id, message_id, thread_id, sender, subject, draft_body, delivered_to, tier)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            ref_id, 
+            data['message_id'], 
+            data['thread_id'], 
+            data['sender'], 
+            data['subject'], 
+            data['draft_body'], 
+            data['delivered_to'], 
+            data['tier']
+        ))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"❌ Error saving pending approval: {e}")
+    finally:
+        conn.close()
+
+def get_pending_approval(ref_id):
+    """Retrieve a draft from the digital brain."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM pending_approvals WHERE ref_id = ?", (ref_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return dict(row)
+    return None
+
+def delete_pending_approval(ref_id):
+    """Remove from waitlist after it is sent."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM pending_approvals WHERE ref_id = ?", (ref_id,))
+    conn.commit()
+    conn.close()
+
+def get_all_pending_refs():
+    """Get a list of everything the Twin is waiting for."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT ref_id FROM pending_approvals")
+    rows = cursor.fetchall()
+    conn.close()
+    return [r[0] for r in rows]
+
+def get_stale_approvals(hours=4):
+    """Retrieve items that have been pending for longer than X hours and haven't been nudged recently."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    # We nudge if it's > 4 hours old AND (never nudged OR last nudge was > 4 hours ago)
+    cursor.execute(f"""
+        SELECT * FROM pending_approvals 
+        WHERE status = 'pending' 
+        AND created_at <= datetime('now', '-{hours} hours')
+        AND (last_nudge_at IS NULL OR last_nudge_at <= datetime('now', '-{hours} hours'))
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def mark_nudged(ref_id):
+    """Updates the timestamp of the last nudge to prevent spam."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE pending_approvals SET last_nudge_at = CURRENT_TIMESTAMP WHERE ref_id = ?", (ref_id,))
+    conn.commit()
+    conn.close()
+
+# Auto-init when imported
+init_db()
+
+--- END FILE: services\database.py ---
+
+
+--- START FILE: services\gemini.py ---
+import os
+import logging
+import json
+import requests
+from google import genai
+from dotenv import load_dotenv
+from datetime import datetime
+
+load_dotenv()
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# ---- In-memory whitelist cache (refreshed every 5 minutes) ----
+_client_whitelist_cache = set()
+_domain_whitelist_cache = set()
+_cache_last_loaded = None
+_CACHE_TTL_SECONDS = 300
+
+def _get_client_whitelist() -> tuple:
+    """Returns a tuple of (set(emails), set(domains)) from Clients_Master sheet.
+    Results are cached for 5 minutes."""
+    global _client_whitelist_cache, _domain_whitelist_cache, _cache_last_loaded
+    now = datetime.now()
+    if _cache_last_loaded and (now - _cache_last_loaded).total_seconds() < _CACHE_TTL_SECONDS:
+        return _client_whitelist_cache, _domain_whitelist_cache
+    
+    try:
+        from services.google_sheets import get_client_emails
+        emails = get_client_emails()
+        _client_whitelist_cache = {e.lower().strip() for e in emails if e}
+        
+        # Extract domains for the 'Company Shield'
+        domains = set()
+        for e in _client_whitelist_cache:
+            if '@' in e:
+                domains.add(e.split('@')[1])
+        _domain_whitelist_cache = domains
+        
+        _cache_last_loaded = now
+        logger.info(f"✅ WHITELIST: Loaded {len(_client_whitelist_cache)} emails & {len(_domain_whitelist_cache)} domains.")
+    except Exception as e:
+        logger.error(f"❌ WHITELIST LOAD FAIL: {e}. Using stale cache.")
+    
+    return _client_whitelist_cache, _domain_whitelist_cache
+
+
+def get_gemini_client():
+    """Initializes and returns the Gemini AI client."""
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key or api_key == "your_gemini_api_key_here":
+        return None
+    
+    client = genai.Client(api_key=api_key)
+    return client
+
+def test_gemini_connection():
+    """Tests the connection to Gemini API with a simple prompt."""
+    try:
+        client = get_gemini_client()
+        if not client:
+            return {"status": "error", "message": "Gemini API key missing or invalid"}
+        
+        response = client.models.generate_content(
+            model='gemini-1.5-flash',
+            contents="Say 'Gemini connected successfully'"
+        )
+        return {"status": "success", "message": response.text.strip()}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+def get_ollama_response(prompt, json_mode=False):
+    """Fallback local LLM call via Ollama (Zero Cost, No Limits)."""
+    ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/api/generate")
+    model = os.getenv("OLLAMA_MODEL", "deepseek-r1:1.5b")
+    
+    try:
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "stream": False
+        }
+        if json_mode:
+            payload["format"] = "json"
+            
+        logger.info(f"💾 LOCAL FALLBACK (Ollama): Calling {model}...")
+        response = requests.post(ollama_url, json=payload, timeout=30)
+        response.raise_for_status()
+        
+        data = response.json()
+        raw_text = data.get("response", "")
+        
+        # Strip DeepSeek's <think> tags if present
+        import re
+        clean_text = re.sub(r'<think>.*?</think>', '', raw_text, flags=re.DOTALL).strip()
+        return clean_text
+    except Exception as e:
+        logger.error(f"❌ OLLAMA FAIL: {e}")
+        return None
+
+def pre_triage_rules(email_content):
+    """
+    LAYER 0: Zero-Cost Rule-Based (pre_triage_rules).
+
+    WHITELIST OVERRIDE runs FIRST: If the sender is a known client, we
+    immediately return Tier 1 and skip all other rules. This prevents any
+    existing client from ever being mis-classified as spam or archived.
+
+    Standard checks run only for unknown senders.
+    """
+    sender_email = email_content.get('clean_email', email_content.get('sender', '')).lower().strip()
+    subject = email_content.get('subject', '').lower()
+    snippet = email_content.get('snippet', '').lower()
+    has_attachments = email_content.get('has_attachments', False)
+    sender_domain = sender_email.split('@')[1] if '@' in sender_email else ""
+
+    # =====================================================================
+    # WHITELIST & ONBOARDING (Layer 0 – Priority 0)
+    # =====================================================================
+    from services.google_sheets import get_priority_list
+    priority_list = get_priority_list()
+    
+    # Check if sender email or domain is in the dynamic priority list
+    if sender_email in priority_list:
+        logger.info(f"🌟 DYNAMIC PRIORITY HIT (Email): {sender_email} — forcing Tier {priority_list[sender_email]}.")
+        return {"tier": priority_list[sender_email], "reason": "Dynamic priority sender (Sheet)"}
+    
+    if sender_domain in priority_list:
+        logger.info(f"🌟 DYNAMIC PRIORITY HIT (Domain): {sender_domain} — forcing Tier {priority_list[sender_domain]}.")
+        return {"tier": priority_list[sender_domain], "reason": "Dynamic priority domain (Sheet)"}
+
+    # 🆕 SPECIAL CASE: "New User Registered" Auto-Flow
+    if "new user registered" in subject or "new client registered" in subject:
+        logger.info(f"🆕 ONBOARDING TRIGGER: {subject}")
+        return {
+            "tier": 1, "reason": "New User Registered alert detected.",
+            "is_onboarding_triggered": True, "actionable_items": "Review new portal registration.",
+            "needs_hitl_check": False
+        }
+
+    # 💎 Cherry's "Golden Senders" (Tier 1 - STAY IN INBOX)
+    tier_1_overrides = [
+        "jco064690@gmail.com", "trustdeed.com.au", "gjcctax.au", "cqstax.com", 
+        "almemmolos@gmail.com", "johnwatts.com.au", "david@vdmandthorn.com"
+    ]
+    whitelist_emails, whitelist_domains = _get_client_whitelist()
+    
+    tier_override = None
+    if any(x in sender_email for x in tier_1_overrides) or any(x in sender_domain for x in tier_1_overrides):
+        logger.info(f"🌟 TIER 1 OVERRIDE: {sender_email} — forcing Tier 1 (No Archive).")
+        tier_override = 1
+    elif sender_email in whitelist_emails:
+        logger.info(f"🛡️ WHITELIST HIT (Email): {sender_email} — forcing Tier 1.")
+        tier_override = 1
+    elif sender_domain in whitelist_domains and sender_domain not in ['gmail.com', 'outlook.com', 'hotmail.com', 'yahoo.com', 'icloud.com']:
+        logger.info(f"🛡️ WHITELIST HIT (Domain): {sender_domain} — forcing Tier 1.")
+        tier_override = 1
+
+    # 🏛️ Tier 2: Govt / Assoc / Specific Shields (STAY IN INBOX)
+    tier_2_overrides = [
+        "ato.gov.au", "asic.gov.au", "auditorsinstitute.com", "auditorsintitute.com",
+        "publicaccountants.org.au", "ifpa.com.au", "ndiscommission.gov.au", "stripe.com", "cloudoffis"
+    ]
+    if any(x in sender_email for x in tier_2_overrides) or any(x in sender_domain for x in tier_2_overrides):
+        logger.info(f"🏛️ TIER 2 OVERRIDE: {sender_email} — forcing Tier 2 (No Archive).")
+        tier_override = 2
+
+    # ▫️ Tier 3: Routine Suppliers (Log to Govt_Assoc_Log & ARCHIVE)
+    tier_3_overrides = [
+        "superloop.com", "bigbosscleaning.com.au", "whapi.cloud", "telstra.com", "nab.com.au",
+        "anz.com", "appsumo.com", "pinch.com.au", "suitedash.com", "linkedin.com", "simplefund360"
+    ]
+    if any(x in sender_email for x in tier_3_overrides) or any(x in sender_domain for x in tier_3_overrides):
+        logger.info(f"📁 TIER 3 OVERRIDE: {sender_email} — forcing Tier 3 (Archive).")
+        tier_override = 3
+
+    # 📱 Business 1300 / Suitedash Digests handled below...
+
+    # 📱 Business 1300 Call Centre Messages
+    if "messages@business1300.com.au" in sender_email and "call centre message" in subject:
+        logger.info("☎️ CALL CENTRE MESSAGE: Forcing Tier 2 (Action Queue).")
+        return {
+            "tier": 2,
+            "reason": "Business 1300 Call Centre Message.",
+            "is_call_centre": True,
+            "actionable_items": "Review call message and reply/call back.",
+            "needs_hitl_check": False
+        }
+
+    # 🏢 Suitedash Portal Digests (mybigbossapp.com.au)
+    if ("mybigbossapp.com.au" in snippet or "mybigbossapp.com.au" in subject) and "planning daily digest" in subject:
+        has_activity = "no activity" not in snippet.lower()
+        logger.info(f"🏢 PORTAL DIGEST: Activity={has_activity}")
+        return {
+            "tier": 4,
+            "reason": f"Suitedash Daily Digest ({'Active' if has_activity else 'No Activity'}).",
+            "is_portal_update": True,
+            "has_activity": has_activity,
+            "actionable_items": "Reminder: Check Suitedash activity." if has_activity else "None",
+            "needs_hitl_check": has_activity
+        }
+    
+    if "document has been signed" in subject:
+        logger.info("✍️ DOC SIGNED: Forcing Tier 2 (Log to Portal_Updates, Keep in Inbox).")
+        return {
+            "tier": 2,
+            "reason": "Document has been signed - Needs filing.",
+            "is_portal_update": True,
+            "is_doc_signed": True,
+            "actionable_items": "File attachment to Client Folder (Phase 2).",
+            "needs_hitl_check": True
+        }
+
+    if tier_override:
+        return {
+            "tier": tier_override,
+            "reason": f"Whitelist Override: Known {'Email' if sender_email in whitelist_emails else 'Company Domain'} — Action Queue Guaranteed.",
+            "actionable_items": "Review and respond to this client email.",
+            "is_expense": False,
+            "is_portal_update": False,
+            "needs_hitl_check": False,
+            "whitelist_override": True
+        }
+    # =====================================================================
+
+
+    # --- STANDARD PRE-FILTER (unknown senders only) ---
+    # Bypass remaining Layer 0 rules if the email looks like a genuine inquiry
+    if has_attachments:
+        return None
+    if len(snippet.split()) > 15:
+        return None
+    if "?" in snippet or "?" in subject:
+        return None
+
+    # 1. Obvious Spam (Tier 5)
+    spam_keywords = ["unsubscribe", "no-reply", "promotion", "marketing", "offering 50%", "lottery"]
+    if any(k in snippet for k in spam_keywords) or any(k in subject for k in spam_keywords):
+        return {"tier": 5, "reason": "Automated rule: Spam/Marketing keywords detected.", "actionable_items": "None", "is_expense": False}
+
+    # 2. Automated Portal/System Updates (Tier 4)
+    portal_keywords = ["notification", "digest", "daily update", "system alert", "password reset", "verification code"]
+    if any(k in subject for k in portal_keywords):
+        return {"tier": 4, "reason": "Automated rule: System notification detected.", "is_portal_update": True, "actionable_items": "None"}
+
+    # 3. Simple Politeness (Tier 4)
+    if len(snippet.split()) < 5 and any(k in snippet for k in ["thanks", "thank you", "ok", "got it"]):
+        return {"tier": 4, "reason": "Automated rule: Short polite reply.", "actionable_items": "None"}
+
+    return None
+
+def triage_email(email_content, client_context=None):
+    """Categorizes the email into one of 5 Tiers using Gemini with client context."""
+    try:
+        # --- LAYER 0: PRE-FILTER (ZERO COST) ---
+        pre_triage = pre_triage_rules(email_content)
+        if pre_triage:
+            return pre_triage
+
+        # --- LAYER 1: GEMINI (PAID/LIMITED) ---
+        client = get_gemini_client()
+        if not client:
+            return {"tier": 5, "reason": "Gemini client not initialized"}
+
+        context_str = f"EXISTING CLIENT INFO: {client_context}" if client_context else "NEW CONTACT (Not in Master List)."
+
+        prompt = f"""
+        Analyze the following email and categorize it into exactly ONE of the following Tiers.
+        
+        {context_str}
+
+        TIERS (CHERRY'S REFINED MAP):
+        Tier 1: Active Clients / Whitelist. (Coiera, Angelo, David, John Watts). Action: STAY IN INBOX.
+        Tier 2: Govt / Assoc / Special Shields (ATO, ASIC, IPA, IFPA, NDIS, Stripe, Cloudoffis). Action: STAY IN INBOX.
+        Tier 3: Suppliers / Subscriptions (Superloop, NAB, ANZ, Telstra, AppSumo, Whapi, Linkedin, SimpleFund). Action: Log to Govt_Assoc_Log & Archive.
+        Tier 4: Portal Digests / Routine Updates. Action: Log to Portal_Updates & Archive.
+        Tier 5: Spam. Action: Trash.
+
+        ACTIONABLE ITEMS:
+        Specifically extract what needs to be done (e.g., "Reply about SMSF doc", "Check invoice total").
+        For Tier 1 or 2, provide a high-quality draft.
+        
+        INCLUSIVE DESIGN & CULTURE:
+        Your analysis must be empathetic and culturally aware. When identifying actionable items, 
+        consider the human context and use accessible language.
+
+        EMAIL CONTENT:
+        Subject: {email_content.get('subject')}
+        Snippet: {email_content.get('snippet')}
+        
+        RESPONSE FORMAT (Strict JSON):
+        {{
+          "tier": 1, 
+          "reason": "String reason", 
+          "actionable_items": "Detailed action",
+          "is_expense": false,
+          "is_portal_update": false,
+          "needs_hitl_check": false,
+          "expense_data": {{
+            "vendor": "Name",
+            "amount": "$",
+            "due_date": "YYYY-MM-DD"
+          }}
+        }}
+        """
+        
+        response = client.models.generate_content(
+            model='gemini-1.5-flash',
+            contents=prompt,
+            config={
+                'response_mime_type': 'application/json'
+            }
+        )
+        
+        import json
+        triage_data = json.loads(response.text.strip())
+        return triage_data
+    except Exception as e:
+        logger.error(f"⚠️ GEMINI TRIAGE FAIL: {e}. Falling back to Ollama...")
+        
+        # --- LAYER 2: OLLAMA FALLBACK (ZERO COST) ---
+        ollama_res = get_ollama_response(prompt, json_mode=True)
+        if ollama_res:
+            try:
+                return json.loads(ollama_res)
+            except:
+                pass
+        
+        return {"tier": 5, "reason": f"AI Error: {str(e)}"}
+
+def draft_response(email_content, tier, historical_context="", client_info=None):
+    """Generates a professional draft response using Tier logic and client background."""
+    try:
+        client = get_gemini_client()
+        if not client:
+            return "Gemini not initialized"
+
+        client_note = f"CLIENT BACKGROUND: {client_info.get('background_info')}" if client_info else "NEW CONTACT."
+        client_name = client_info.get('first_name', 'there') if client_info else 'there'
+
+        # Load Cherry's Style Guide from file
+        style_guide = ""
+        style_path = os.path.join("docs", "CHERRY_STYLE.txt")
+        if os.path.exists(style_path):
+            with open(style_path, "r", encoding="utf-8") as f:
+                style_guide = f.read()
+
+        prompt = f"""
+        You are 'BackPocket Twin', the AI Chief of Staff for Cherry (Founder of YourWebAccountant).
+        Your goal is to draft a professional, warm, and helpful reply to this email.
+        
+        {style_guide}
+        
+        {client_note}
+        Name of sender: {client_name}
+        Prior History: {historical_context}
+        Tier: {tier}
+
+        TONE & INSTRUCTIONS:
+        1. Always sound like you are part of Cherry's inner circle.
+        2. Use the "Cherry Style Guide" provided above for vocabulary and signature.
+        3. If Tier is 1, address them by first name and prioritize their request.
+        
+        EMAIL TO REPLY TO:
+        Subject: {email_content.get('subject')}
+        Body: {email_content.get('snippet')}
+        
+        Draft a concise response:
+        """
+        
+        response = client.models.generate_content(
+            model='gemini-1.5-flash',
+            contents=prompt
+        )
+        return response.text.strip()
+    except Exception as e:
+        logger.error(f"⚠️ GEMINI DRAFT FAIL: {e}. Falling back to Ollama...")
+        ollama_res = get_ollama_response(prompt)
+        if ollama_res:
+            return ollama_res
+        return "Error generating draft."
+
+def refine_draft(email_content, original_draft, feedback):
+    """Refines an existing draft based on founder's feedback."""
+    try:
+        client = get_gemini_client()
+        if not client:
+            return "Gemini client not initialized."
+
+        prompt = f"""
+        Refine the following email draft based on the founder's feedback.
+        STYLE: Concise, Friendly, Approachable.
+        FOUNDER NAME: Cherry
+        
+        ORIGINAL EMAIL:
+        Subject: {email_content.get('subject')}
+        Snippet: {email_content.get('snippet')}
+
+        ORIGINAL DRAFT:
+        {original_draft}
+
+        FOUNDER'S FEEDBACK:
+        "{feedback}"
+
+        Rewrite the draft incorporating the feedback while maintaining a warm, approachable tone.
+        Return ONLY the new draft text.
+        """
+        
+        response = client.models.generate_content(
+            model='gemini-1.5-flash',
+            contents=prompt
+        )
+        
+        return response.text.strip()
+    except Exception as e:
+        print(f"Error in refine_draft: {e}")
+        return original_draft # Fallback to original
+
+def batch_triage_emails(emails_list: list):
+    """
+    LAYER 1: Batch Triage via Gemini (batch_triage_emails).
+    Triages multiple emails in a SINGLE LLM CALL.
+    Strictly maps results by message_id.
+    """
+    if not emails_list:
+        logger.info("Batch triage called with empty list.")
+        return {}
+
+    try:
+        client = get_gemini_client()
+        if not client:
+            return {e.get('id'): {"tier": 5, "reason": "Gemini not initialized"} for e in emails_list}
+
+        # Stringify the batch for the prompt
+        emails_str = ""
+        for email in emails_list:
+            emails_str += f"--- MESSAGE_ID: {email.get('id')} ---\nSubject: {email.get('subject')}\nSnippet: {email.get('snippet')}\n\n"
+
+        prompt = f"""
+        You are the Chief Architect AI for BackPocketSystem.io. 
+        Analyze the following batch of {len(emails_list)} emails and triage them.
+        
+        INCLUSIVE DESIGN & CULTURE:
+        Your analysis must be empathetic and culturally aware. When identifying actionable items, 
+        consider the human context and use accessible language.
+
+        TIERS (CHERRY'S REFINED MAP):
+    - TIER 1 (PRIORITY): Clients (Gino Coiera, Angelo Memmolo, David). Stay in Inbox.
+    - TIER 2 (GOVT / ASSOC / SHIELDS): ATO, ASIC, IPA, IFPA, NDIS, Stripe, Cloudoffis. Stay in Inbox.
+    - TIER 3 (SUPPLY / SUBS): Superloop, NAB, ANZ, Telstra, AppSumo, Whapi, Linkedin, SimpleFund. Log to Govt_Assoc_Log & Archive.
+    - TIER 4 (PORTAL / UPDATES): Suitedash Digests. Log to Portal_Updates & Archive.
+    - TIER 5 (SPAM): Anything else.
+
+        EMAILS TO ANALYZE:
+        {emails_str}
+
+        RESPONSE FORMAT (Strict JSON Map):
+        You MUST return a JSON object where each key is the MESSAGE_ID provided above.
+        The value for each key must be the triage data object.
+        
+        Example:
+        {{
+          "msg_id_abc": {{
+            "tier": 1, 
+            "reason": "...", 
+            "actionable_items": "...",
+            "is_expense": false,
+            "is_portal_update": false
+          }}
+        }}
+        """
+        
+        response = client.models.generate_content(
+            model='gemini-2.0-flash', # Upgraded to 2.0-flash for better JSON
+            contents=prompt,
+            config={'response_mime_type': 'application/json'}
+        )
+        
+        import json
+        batch_results = json.loads(response.text.strip())
+        return batch_results
+    except Exception as e:
+        logger.error(f"⚠️ GEMINI BATCH FAIL: {e}. Falling back to individual Ollama triage...")
+        
+        fallback_results = {}
+        for email in emails_list:
+            msg_id = email.get('id')
+            logger.info(f"💾 LAYER 2 FALLBACK: Triaging {msg_id} individually via Ollama...")
+            
+            # Reuse the triage prompt logic for individual emails
+            prompt = f"""
+            Analyze the following email and categorize it into exactly ONE Tier.
+            
+            TIERS (CHERRY'S HANDWRITTEN MAP):
+            Tier 1: Active Clients.
+            Tier 2: Govt / Assoc (ATO, ASIC, IPA, IPFA, Auditors Institute).
+            Tier 3: Suppliers / General (Stripe, Hubspot, Google, Intuit, Xero).
+            Tier 4: Portals / Updates (Daily Digest, Business 1300).
+            Tier 5: Spam.
+
+            RESPONSE FORMAT (Strict JSON):
+            {{
+              "tier": 1, 
+              "reason": "String reason", 
+              "actionable_items": "...",
+              "is_expense": false,
+              "is_portal_update": false
+            }}
+
+            EMAIL CONTENT:
+            Subject: {email.get('subject')}
+            Snippet: {email.get('snippet')}
+            """
+            
+            ollama_res = get_ollama_response(prompt, json_mode=True)
+            if ollama_res:
+                try:
+                    fallback_results[msg_id] = json.loads(ollama_res)
+                except Exception as parse_err:
+                    logger.error(f"❌ OLLAMA PARSE FAIL for {msg_id}: {parse_err}")
+                    fallback_results[msg_id] = {"tier": 5, "reason": "Ollama parse error"}
+            else:
+                fallback_results[msg_id] = {"tier": 5, "reason": "Ollama connection/timeout error"}
+        
+        return fallback_results
+
+--- END FILE: services\gemini.py ---
+
+
+--- START FILE: services\gmail.py ---
+import os
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
+
+# If modifying these scopes, delete the file token.json.
+SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
+
+def get_gmail_service(token_file='token.json'):
+    """Builds and returns the Gmail API service object for a specific token."""
+    creds = None
+    if os.path.exists(token_file):
+        creds = Credentials.from_authorized_user_file(token_file, SCOPES)
+    
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            if not os.path.exists('gmail_credentials.json'):
+                print("Error: gmail_credentials.json not found.")
+                return None
+            
+            flow = InstalledAppFlow.from_client_secrets_file(
+                'gmail_credentials.json', SCOPES)
+            creds = flow.run_local_server(port=0)
+            
+        with open(token_file, 'w') as token:
+            token.write(creds.to_json())
+
+    return build('gmail', 'v1', credentials=creds)
+
+def get_all_account_tokens():
+    """Finds all token_*.json files in the root directory, excluding IMAP tokens."""
+    tokens = ['token.json'] # Always include the primary hub
+    if not os.path.exists('.'): return tokens
+    for f in os.listdir('.'):
+        # Exclude 'token_imap_' to avoid collision with IMAP module
+        if f.startswith('token_') and f.endswith('.json') and not f.startswith('token_imap_'):
+            tokens.append(f)
+    return list(set(tokens))
+
+def test_gmail_connection():
+    """Tests the connection to the Gmail API."""
+    try:
+        service = get_gmail_service()
+        if not service:
+            return {"status": "error", "message": "Gmail credentials not found or flow failed"}
+        
+        # Call the Gmail API to list basic profile info
+        results = service.users().getProfile(userId='me').execute()
+        return {"status": "success", "email_address": results.get('emailAddress')}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+def get_unread_emails(token_file='token.json'):
+    """Fetches unread emails from the inbox of a specific account."""
+    try:
+        service = get_gmail_service(token_file)
+        if not service:
+            return []
+        
+        # Broadened query to catch client messages categorized as 'Updates' by Gmail
+        query = 'is:unread -category:promotions -category:social'
+        results = service.users().messages().list(userId='me', q=query, maxResults=15).execute()
+        messages = results.get('messages', [])
+        
+        email_data = []
+        for msg in messages:
+            msg_details = service.users().messages().get(userId='me', id=msg['id'], format='full').execute()
+            headers = msg_details.get('payload', {}).get('headers', [])
+            
+            subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
+            sender = next((h['value'] for h in headers if h['name'] == 'From'), 'Unknown Sender')
+            
+            # The 'To' header usually preserves the original brand address in forwarding setups.
+            # 'Delivered-To' is our backup or the Hub address itself.
+            to_header = next((h['value'] for h in headers if h['name'].lower() == 'to'), None)
+            delivered_to = next((h['value'] for h in headers if h['name'].lower() == 'delivered-to'), None)
+            
+            brand_identity = to_header if to_header else delivered_to or 'Unknown'
+            
+            snippet = msg_details.get('snippet', '')
+            
+            # Detect attachments
+            has_attachments = False
+            parts = msg_details.get('payload', {}).get('parts', [])
+            if not parts and 'body' not in msg_details.get('payload', {}):
+                 # Sometimes Gmail returns attachments in a different structure
+                 pass
+            
+            def check_for_attachments(parts_list):
+                for p in parts_list:
+                    if p.get('filename') and p.get('body', {}).get('attachmentId'):
+                        return True
+                    if 'parts' in p:
+                        if check_for_attachments(p['parts']):
+                            return True
+                return False
+            
+            has_attachments = check_for_attachments(parts)
+
+            # Extract clean email addresses
+            import re
+            email_match_sender = re.search(r'[\w\.-]+@[\w\.-]+', sender)
+            clean_sender = email_match_sender.group(0) if email_match_sender else sender
+            
+            email_match_to = re.search(r'[\w\.-]+@[\w\.-]+', brand_identity)
+            clean_to = email_match_to.group(0) if email_match_to else brand_identity
+            
+            email_data.append({
+                "id": msg['id'],
+                "threadId": msg['threadId'],
+                "subject": subject,
+                "sender": sender,
+                "clean_email": clean_sender.lower(),
+                "delivered_to": clean_to.lower() if clean_to else "unknown", # Accurate Brand Identity
+                "snippet": snippet,
+                "has_attachments": has_attachments
+            })
+            
+        return email_data
+    except Exception as e:
+        print(f"Error fetching unread emails: {e}")
+        return []
+
+def send_email(to, subject, body_text, from_alias=None, token_file='token.json'):
+    """Sends an email using the Gmail API from a specific account token."""
+    try:
+        service = get_gmail_service(token_file)
+        if not service:
+            return {"status": "error", "message": f"Gmail service for {token_file} not available"}
+
+        from email.mime.text import MIMEText
+        import base64
+
+        message = MIMEText(body_text)
+        message['to'] = to
+        message['subject'] = subject
+        
+        if from_alias:
+            message['from'] = from_alias
+            print(f"DEBUG: Sending as alias -> {from_alias}")
+        else:
+            print(f"DEBUG: Sending from account: {token_file}")
+        
+        raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
+        create_message = {'raw': raw}
+        
+        send_result = service.users().messages().send(userId='me', body=create_message).execute()
+        return {"status": "success", "message_id": send_result.get('id')}
+    except Exception as e:
+        print(f"Error sending email: {e}")
+        return {"status": "error", "message": str(e)}
+
+def get_historical_context(email_address, max_results=3):
+    """
+    Searches for past emails from this sender across ALL connected accounts.
+    This helps the Twin understand your tone and relationship with the client.
+    """
+    tokens = get_all_account_tokens()
+    all_context = []
+    
+    for t in tokens:
+        try:
+            service = get_gmail_service(t)
+            if not service: continue
+            
+            # Search for BOTH sent and received to get the full back-and-forth
+            query = f'"{email_address}"'
+            results = service.users().messages().list(userId='me', q=query, maxResults=max_results).execute()
+            messages = results.get('messages', [])
+            
+            for msg in messages:
+                msg_data = service.users().messages().get(userId='me', id=msg['id'], format='minimal').execute()
+                snippet = msg_data.get('snippet', '')
+                # Is it from Cherry or the Client?
+                label_ids = msg_data.get('labelIds', [])
+                role = "Cherry" if 'SENT' in label_ids else "Client"
+                all_context.append(f"- [{role}]: {snippet}")
+                
+        except Exception as e:
+            print(f"Error fetching historical context from {t}: {e}")
+            
+    if not all_context:
+        return "No past email history found for this contact across all accounts."
+        
+    return "\n".join(all_context[-5:]) # Return latest 5 context points
+
+def is_replied_to(thread_id, token_file='token.json'):
+    """Checks if a thread has any sent messages (replies)."""
+    try:
+        service = get_gmail_service(token_file)
+        if not service:
+            return False
+            
+        thread = service.users().threads().get(userId='me', id=thread_id).execute()
+        messages = thread.get('messages', [])
+        
+        for msg in messages:
+            # Check if any message in the thread has the 'SENT' label
+            if 'SENT' in msg.get('labelIds', []):
+                return True
+        return False
+    except Exception as e:
+        print(f"Error checking reply status: {e}")
+        return False
+
+def archive_message(msg_id, token_file='token.json'):
+    """Removes the INBOX label from a message (Archives it)."""
+    try:
+        service = get_gmail_service(token_file)
+        if not service:
+            return False
+        service.users().messages().modify(
+            userId='me', id=msg_id, 
+            body={'removeLabelIds': ['INBOX']}
+        ).execute()
+        return True
+    except Exception as e:
+        print(f"Error archiving: {e}")
+        return False
+
+def trash_message(msg_id, token_file='token.json'):
+    """Moves a message to the Trash."""
+    try:
+        service = get_gmail_service(token_file)
+        if not service:
+            return False
+        service.users().messages().trash(userId='me', id=msg_id).execute()
+        return True
+    except Exception as e:
+        print(f"Error trashing: {e}")
+        return False
+
+def search_emails(query, token_file='token.json', max_results=5):
+    """Searches for emails matching a query across Inbox, Archive, and Trash.
+    Uses 'fuzzy' logic by searching the term in multiple common fields.
+    """
+    try:
+        service = get_gmail_service(token_file)
+        if not service:
+            return []
+        
+        # We try a few search angles to be robust:
+        # 1. Exact term anywhere 
+        # 2. Part of the from name
+        # 3. Part of the subject
+        gmail_query = f'"{query}" OR from:{query} OR subject:{query}'
+        
+        # Include Trash and Spam if specifically searching for missing emails
+        results = service.users().messages().list(userId='me', q=gmail_query, maxResults=max_results, includeSpamTrash=True).execute()
+        messages = results.get('messages', [])
+        
+        found_data = []
+        for msg in messages:
+            try:
+                msg_details = service.users().messages().get(userId='me', id=msg['id'], format='full').execute()
+                headers = msg_details.get('payload', {}).get('headers', [])
+                
+                subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
+                sender = next((h['value'] for h in headers if h['name'] == 'From'), 'Unknown Sender')
+                snippet = msg_details.get('snippet', '')
+                
+                found_data.append({
+                    "id": msg['id'],
+                    "subject": subject,
+                    "sender": sender,
+                    "snippet": snippet,
+                    "token_file": token_file
+                })
+            except: continue # Skip if individual message read fails
+            
+        return found_data
+    except Exception as e:
+        print(f"Error searching emails: {e}")
+        return []
+
+def rescue_to_inbox(msg_id, token_file='token.json'):
+    """Brings a message back to the Inbox and marks it as Unread."""
+    try:
+        service = get_gmail_service(token_file)
+        if not service:
+            return False
+        
+        service.users().messages().modify(
+            userId='me', id=msg_id, 
+            body={
+                'addLabelIds': ['UNREAD', 'INBOX'],
+                'removeLabelIds': ['TRASH'] # Remove from trash if it was there
+            }
+        ).execute()
+        return True
+    except Exception as e:
+        print(f"Error restoring message: {e}")
+        return False
+
+def move_to_label(msg_id, label_name, token_file='token.json'):
+    """Moves a message to a specific label (creates it if missing)."""
+    try:
+        service = get_gmail_service(token_file)
+        if not service: return False
+        
+        # 1. Find or Create Label ID
+        results = service.users().labels().list(userId='me').execute()
+        labels = results.get('labels', [])
+        label_id = next((l['id'] for l in labels if l['name'].lower() == label_name.lower()), None)
+        
+        if not label_id:
+            # Create it
+            logger.info(f"🏷️ Creating new label: {label_name}")
+            label_body = {'name': label_name, 'labelListVisibility': 'labelShow', 'messageListVisibility': 'show'}
+            created = service.users().labels().create(userId='me', body=label_body).execute()
+            label_id = created['id']
+            
+        # 2. Modify Message
+        service.users().messages().modify(
+            userId='me', id=msg_id, 
+            body={'addLabelIds': [label_id], 'removeLabelIds': ['INBOX']}
+        ).execute()
+        return True
+    except Exception as e:
+        print(f"Error moving to label {label_name}: {e}")
+        return False
+
+--- END FILE: services\gmail.py ---
+
+
+--- START FILE: services\google_sheets.py ---
+import os
+from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+import logging
+
+logger = logging.getLogger(__name__)
+
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+
+def get_sheets_service():
+    """Builds and returns the Google Sheets API service object."""
+    # This path is usually set in GOOGLE_APPLICATION_CREDENTIALS
+    creds_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS', 'credentials.json')
+    
+    if os.path.exists(creds_path):
+        creds = Credentials.from_service_account_file(
+            creds_path, scopes=SCOPES)
+        service = build('sheets', 'v4', credentials=creds)
+        return service
+    return None
+
+def test_sheets_connection():
+    """Tests the connection to the Google Sheet."""
+    try:
+        service = get_sheets_service()
+        if not service:
+            return {"status": "error", "message": "Credentials file not found"}
+            
+        spreadsheet_id = os.getenv('SPREADSHEET_ID')
+        if not spreadsheet_id or spreadsheet_id == 'your_google_sheet_id_here':
+            return {"status": "error", "message": "Invalid SPREADSHEET_ID"}
+            
+        sheet = service.spreadsheets()
+        result = sheet.get(spreadsheetId=spreadsheet_id).execute()
+        return {"status": "success", "sheet_title": result.get('properties', {}).get('title')}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+def ensure_sheets_exist():
+    """Checks for required sheets and creates them with headers if missing."""
+    try:
+        service = get_sheets_service()
+        if not service:
+            return
+            
+        spreadsheet_id = os.getenv('SPREADSHEET_ID')
+        spreadsheet = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+        existing_sheets = [s.get('properties', {}).get('title') for s in spreadsheet.get('sheets', [])]
+        
+        # Standard Schemas (Aligned with Cherry's Diagram)
+        # ---- Cherry's System Map (v2.2) ----
+        REQUIRED_SHEETS = {
+            "Clients_Master": ["First Name", "Last Name", "Primary Email", "Client Status", "Accountant/Auditor", "Mobile", "Birthdate", "Background Info", "Date Registered"],
+            "Leads_Capture": ["First Name", "Last Name", "Primary Email", "Status", "Subject", "Snippet", "Actionable Items", "Date", "Decision"],
+            "Action_Log": ["Name", "From Email", "To Email", "Subject", "Body Snippet", "Actionable Items", "Date Lodged", "Status"],
+            "Portal_Updates": ["Name", "Email", "Subject", "Activity Summary", "Tier", "Status", "Date"],
+            "Govt_Assoc_Log": ["Date Logged", "Sender", "Subject", "Body Snippet"],
+            "Supplier_Expenses": ["Vendor", "Amount", "Due Date", "Subject", "Date Logged", "Status", "Email Body"],
+            "Spam_Archive": ["Name", "Email", "To (Brand)", "Subject", "Body Snippet", "Date Logged"],
+            "Existing_Emails": ["Date Logged", "Sender", "Subject", "Body Snippet"],
+            "Priority_List": ["Email/Domain", "Tier (1 or 2)", "Notes"]
+        }
+        
+        for sheet_name, headers in REQUIRED_SHEETS.items():
+            if sheet_name not in existing_sheets:
+                logger.info(f"Creating sheet: {sheet_name}")
+                body = {'requests': [{'addSheet': {'properties': {'title': sheet_name}}}]}
+                service.spreadsheets().batchUpdate(spreadsheetId=spreadsheet_id, body=body).execute()
+                
+            # Always ensure headers are correct (even if sheet existed)
+            header_body = {'values': [headers]}
+            service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id, range=f"{sheet_name}!A1",
+                valueInputOption="USER_ENTERED", body=header_body
+            ).execute()
+                
+    except Exception as e:
+        logger.error(f"Error in ensure_sheets_exist: {e}")
+
+def log_activity(data, sheet_name="Action_Log"):
+    """Logs a system action with standardized columns."""
+    try:
+        service = get_sheets_service()
+        if not service: return
+        
+        from datetime import datetime
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # 1. LOG TO SPECIFIC TIER SHEET (If applicable)
+        tier_sheet_map = {
+            "Tier 1": "Existing_Emails",
+            "Tier 2": "Govt_Assoc_Log",
+            "Tier 3": "Govt_Assoc_Log", # As requested, Tier 3 consolidated here
+            "Tier 4": "Portal_Updates" 
+        }
+        
+        target_tier = data.get('tier_verbose', data.get('tier', 'Unknown'))
+        if str(target_tier).replace('Tier ', '') in ['1', '2', '3', '4']:
+            key = f"Tier {str(target_tier).replace('Tier ', '')}"
+            if key in tier_sheet_map:
+                tier_sheet = tier_sheet_map[key]
+                tier_values = [[now, data.get('email_address', ''), data.get('subject', ''), data.get('body', '')[:1000]]]
+                service.spreadsheets().values().append(
+                    spreadsheetId=os.getenv("SPREADSHEET_ID"),
+                    range=f"{tier_sheet}!A:D",
+                    valueInputOption="USER_ENTERED", body={'values': tier_values}
+                ).execute()
+        
+        # 2. CHERRY'S SPECIFIC SCHEMAS (A to I mappings)
+        if sheet_name == "Action_Log":
+            # [Name, From Email, To Address, Subject, Body Snippet, Actionable Items, Date Logged, Status, Tier]
+            values = [[
+                data.get('from_name', ''),
+                data.get('email_address', ''),
+                data.get('to_email', ''),
+                data.get('subject', ''),
+                data.get('body', '')[:500],
+                data.get('actionable_items', ''),
+                now,
+                data.get('status', 'Processed'),
+                target_tier
+            ]]
+            range_name = "A:I"
+        elif sheet_name == "Leads_Capture":
+            # [First Name, Last Name, Primary Email, Client Status, Subject, Body Snippet, Actionable Items, Date Lodged, Decision]
+            name_parts = data.get('from_name', '').split(' ')
+            values = [[
+                name_parts[0] if name_parts else '',
+                " ".join(name_parts[1:]) if len(name_parts) > 1 else '',
+                data.get('email_address', ''),
+                'New Lead/Prospect',
+                data.get('subject', ''),
+                data.get('body', '')[:500],
+                data.get('actionable_items', ''),
+                now,
+                'Pending Review'
+            ]]
+            range_name = "A:I"
+        else: # Portal_Updates, Spam_Archive, etc.
+             values = [[
+                data.get('from_name', ''),
+                data.get('to_email', data.get('email_address', '')),
+                data.get('subject', ''),
+                data.get('body', ''),
+                now,
+                ''
+            ]]
+             range_name = "A:F"
+        
+        service.spreadsheets().values().append(
+            spreadsheetId=os.getenv("SPREADSHEET_ID"),
+            range=f"{sheet_name}!{range_name}",
+            valueInputOption="USER_ENTERED",
+            body={'values': values}
+        ).execute()
+    except Exception as e:
+        logger.error(f"Error logging to {sheet_name}: {e}")
+
+def check_client_identity(email):
+    """Checks if the given email exists in the Clients_Master sheet and returns full context."""
+    try:
+        service = get_sheets_service()
+        if not service: return None
+        spreadsheet_id = os.getenv('SPREADSHEET_ID')
+        
+        result = service.spreadsheets().values().get(
+            spreadsheetId=spreadsheet_id, range='Clients_Master!C2:C').execute()
+        
+        values = result.get('values', [])
+        if not values: return None
+            
+        for i, row in enumerate(values):
+            if row and row[0].lower() == email.lower():
+                # New Mapping: A: First, B: Last, C: Email, D: Status, E: Acct/Aud, F: Mobile, G: Bday, H: BG Info, I: Date
+                full_row_range = f'Clients_Master!A{i+2}:I{i+2}'
+                full_row_result = service.spreadsheets().values().get(
+                    spreadsheetId=spreadsheet_id, range=full_row_range).execute()
+                full_row = full_row_result.get('values', [])[0]
+                
+                return {
+                    "first_name": full_row[0] if len(full_row) > 0 else '',
+                    "last_name": full_row[1] if len(full_row) > 1 else '',
+                    "email": full_row[2] if len(full_row) > 2 else '',
+                    "status": full_row[3] if len(full_row) > 3 else '',
+                    "accountant_auditor": full_row[4] if len(full_row) > 4 else '',
+                    "mobile": full_row[5] if len(full_row) > 5 else '',
+                    "birthdate": full_row[6] if len(full_row) > 6 else '',
+                    "background_info": full_row[7] if len(full_row) > 7 else 'No background info.',
+                    "date_added": full_row[8] if len(full_row) > 8 else ''
+                }
+        return None
+    except Exception as e:
+        logger.error(f"Error checking client identity: {e}")
+        return None
+
+def get_client_emails() -> list:
+    """Returns a flat list of all email addresses in the Clients_Master sheet (column C).
+    Used by the whitelist cache in Layer 0 pre-triage to guarantee no client is ever spam."""
+    try:
+        service = get_sheets_service()
+        if not service:
+            return []
+        spreadsheet_id = os.getenv('SPREADSHEET_ID')
+        result = service.spreadsheets().values().get(
+            spreadsheetId=spreadsheet_id, range='Clients_Master!C2:C').execute()
+        values = result.get('values', [])
+        return [row[0].strip() for row in values if row and row[0].strip()]
+    except Exception as e:
+        logger.error(f"Error fetching client emails for whitelist: {e}")
+        return []
+
+def add_new_client_to_master(data):
+    """Auto-Onboarding Action: Adds to BPS_Client_Master + Leads_Capture + Action_Log."""
+    try:
+        service = get_sheets_service()
+        if not service: return
+        
+        spreadsheet_id = os.getenv('SPREADSHEET_ID')
+        from datetime import datetime
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        name_parts = data.get('from_name', 'New Client').split(' ')
+        first = name_parts[0]
+        last = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
+        
+        # 1. 📂 CLIENTS MASTER (The House)
+        # [First, Last, Email, Status, Auditor, Mobile, Bday, BG, Date]
+        values_master = [[first, last, data.get('email_address'), 'Active', '', '', '', 'Portal Registration - Auto Onboard', now]]
+        service.spreadsheets().values().append(
+            spreadsheetId=spreadsheet_id, range="Clients_Master!A:I",
+            valueInputOption="USER_ENTERED", body={'values': values_master}
+        ).execute()
+
+        # 2. 📋 ACTION LOG (The History)
+        log_activity(data, sheet_name="Action_Log")
+
+        # 3. 🎯 LEADS CAPTURE (The Source)
+        log_activity(data, sheet_name="Leads_Capture")
+        
+        logger.info(f"✨ AUTO-ONBOARDED: {first} {last} added and logged.")
+    except Exception as e:
+        logger.error(f"Error triple-plotting client onboarding: {e}")
+
+def add_new_lead(data):
+    return log_activity(data, sheet_name="Leads_Capture")
+
+def log_expense(data):
+    return log_activity(data, sheet_name="Supplier_Expenses")
+
+def log_portal_update(data):
+    return log_activity(data, sheet_name="Portal_Updates")
+
+def process_lead_conversions():
+    """Scans Leads_Capture for rows marked 'Onboarded' and moves them to Clients_Master."""
+    try:
+        service = get_sheets_service()
+        if not service: return
+        spreadsheet_id = os.getenv('SPREADSHEET_ID')
+        range_name = 'Leads_Capture!A2:I'
+        result = service.spreadsheets().values().get(spreadsheetId=spreadsheet_id, range=range_name).execute()
+        rows = result.get('values', [])
+        if not rows: return
+
+        for i, row in enumerate(rows):
+            if len(row) >= 9 and row[8].strip().lower() == 'onboarded':
+                new_client_data = {'from_name': f"{row[0]} {row[1]}", 'email_address': row[2]}
+                add_new_client_to_master(new_client_data)
+                
+                # Mark as converted
+                service.spreadsheets().values().update(
+                    spreadsheetId=spreadsheet_id, range=f'Leads_Capture!I{i+2}',
+                    valueInputOption="USER_ENTERED", body={'values': [['Converted']]}
+                ).execute()
+    except Exception as e:
+        logger.error(f"Error converting leads: {e}")
+
+def get_todays_portal_updates():
+    try:
+        service = get_sheets_service()
+        if not service: return 0
+        spreadsheet_id = os.getenv('SPREADSHEET_ID')
+        from datetime import datetime
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        result = service.spreadsheets().values().get(spreadsheetId=spreadsheet_id, range="Portal_Updates!E2:E").execute()
+        dates = result.get('values', [])
+        return sum(1 for d in dates if d and d[0].startswith(today_str))
+    except Exception as e:
+        logger.error(f"Error getting portal updates: {e}")
+        return 0
+def get_priority_list():
+    """Fetches the dynamic Tier 1/2 list from the Priority_List tab."""
+    service = get_sheets_service()
+    sid = os.getenv('SPREADSHEET_ID')
+    if not service: return {}
+    
+    try:
+        res = service.spreadsheets().values().get(spreadsheetId=sid, range='Priority_List!A2:B').execute()
+        rows = res.get('values', [])
+        priority_map = {}
+        for row in rows:
+            if len(row) >= 2:
+                priority_map[row[0].lower().strip()] = int(row[1])
+        return priority_map
+    except Exception as e:
+        if "Unable to parse range" in str(e):
+            logger.warning("Priority_List tab not found. Using empty priority map.")
+        else:
+            logger.error(f"Error fetching priority list: {e}")
+        return {}
+
+--- END FILE: services\google_sheets.py ---
+
+
+--- START FILE: services\imap.py ---
+import imaplib
+import smtplib
+import email
+from email.header import decode_header
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import json
+import os
+import logging
+from bs4 import BeautifulSoup
+import re
+
+logger = logging.getLogger(__name__)
+
+def clean_html(raw_html):
+    """Strip HTML tags from email body to get plain text."""
+    if not raw_html:
+        return ""
+    soup = BeautifulSoup(raw_html, "html.parser")
+    text = soup.get_text(separator="\n")
+    # Clean up excessive newlines
+    text = re.sub(r'\n\s*\n', '\n\n', text)
+    return text.strip()
+
+def decode_mime_words(s):
+    """Decode email subject encoded strings."""
+    if not s:
+        return ""
+    return ''.join(
+        word.decode(encoding or 'utf8') if isinstance(word, bytes) else word
+        for word, encoding in decode_header(s)
+    )
+
+def extract_email_address(full_address):
+    """Extract just the email part from 'Name <email@domain.com>'"""
+    if not full_address:
+        return ""
+    match = re.search(r'<([^>]+)>', full_address)
+    return match.group(1).lower() if match else full_address.strip().lower()
+
+def connect_imap(config):
+    """Establish IMAP connection using config dict."""
+    try:
+        mail = imaplib.IMAP4_SSL(config['imap_host'], int(config['imap_port']))
+        mail.login(config['username'], config['password'])
+        return mail
+    except Exception as e:
+        logger.error(f"IMAP Connection failed for {config['username']}: {e}")
+        return None
+
+def get_unread_emails_imap(config_file):
+    """Fetch unread emails via IMAP. Emulates the output of get_unread_emails for Gmail."""
+    try:
+        with open(config_file, 'r') as f:
+            config = json.load(f)
+            
+        mail = connect_imap(config)
+        if not mail:
+            return []
+            
+        mail.select("inbox")
+        status, response = mail.search(None, "UNSEEN")
+        unread_emails = []
+        
+        if status == "OK":
+            mail_ids = response[0].split()
+            for i in mail_ids:
+                # Fetch RFC822 format (the whole email)
+                status, msg_data = mail.fetch(i, "(RFC822)")
+                for response_part in msg_data:
+                    if isinstance(response_part, tuple):
+                        msg = email.message_from_bytes(response_part[1])
+                        
+                        subject = decode_mime_words(msg["Subject"])
+                        sender = decode_mime_words(msg.get("From", ""))
+                        clean_sender = extract_email_address(sender)
+                        
+                        body = ""
+                        if msg.is_multipart():
+                            for part in msg.walk():
+                                content_type = part.get_content_type()
+                                content_disposition = str(part.get("Content-Disposition"))
+                                
+                                if content_type == "text/plain" and "attachment" not in content_disposition:
+                                    body = part.get_payload(decode=True).decode(errors='ignore')
+                                    break
+                                elif content_type == "text/html" and "attachment" not in content_disposition:
+                                    html_body = part.get_payload(decode=True).decode(errors='ignore')
+                                    body = clean_html(html_body)
+                                    # Don't break here, prefer plain text if we find it later? 
+                                    # Actually, multipart/alternative usually puts preferred format last.
+                        else:
+                            content_type = msg.get_content_type()
+                            payload = msg.get_payload(decode=True).decode(errors='ignore')
+                            if content_type == "text/html":
+                                body = clean_html(payload)
+                            else:
+                                body = payload
+                                
+                        # Use the IMAP UID or sequence ID as the message ID. We'll use sequence ID here to uniquely identify for actions.
+                        msg_id = i.decode('utf-8')
+                        
+                        # Generate thread id mock (we don't have true thread ids in standard IMAP like Gmail does)
+                        thread_id = msg.get("Message-ID", f"mock_thread_{msg_id}").strip("<>")
+                        
+                        # Detect attachments
+                        has_attachments = False
+                        for part in msg.walk():
+                            if part.get_content_disposition() == 'attachment':
+                                has_attachments = True
+                                break
+
+                        email_obj = {
+                            "id": f"imap_{config['username']}_{msg_id}",
+                            "threadId": thread_id,
+                            "subject": subject,
+                            "snippet": body[:500] if body else "",
+                            "sender": sender,
+                            "clean_email": clean_sender,
+                            "delivered_to": config['username'],
+                            "raw_imap_id": msg_id,
+                            "source_type": "imap",
+                            "config_file": config_file,
+                            "has_attachments": has_attachments
+                        }
+                        unread_emails.append(email_obj)
+                        
+        mail.close()
+        mail.logout()
+        return unread_emails
+    except Exception as e:
+        logger.error(f"Error fetching IMAP unread for {config_file}: {e}")
+        return []
+
+def send_email_smtp(config_file, to_email, subject, body_text):
+    """Sends an email using standard SMTP."""
+    try:
+        with open(config_file, 'r') as f:
+            config = json.load(f)
+            
+        msg = MIMEMultipart()
+        msg['From'] = config['username']
+        msg['To'] = to_email
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body_text, 'plain', 'utf-8'))
+        
+        server = smtplib.SMTP_SSL(config['smtp_host'], int(config['smtp_port']))
+        server.login(config['username'], config['password'])
+        server.send_message(msg)
+        server.quit()
+        return {"status": "success", "message": "Email sent via SMTP"}
+        
+    except Exception as e:
+        logger.error(f"Failed to send email via SMTP for {config_file}: {e}")
+        return {"status": "error", "message": str(e)}
+
+def archive_message_imap(msg_id_string, config_file):
+    """Moves a message to the Archive folder."""
+    try:
+        with open(config_file, 'r') as f:
+            config = json.load(f)
+            
+        # Parse our custom ID: imap_user@domain.com_34
+        if not msg_id_string.startswith("imap_"):
+            return # Safety check
+            
+        parts = msg_id_string.split('_')
+        raw_imap_id = parts[-1]
+        
+        mail = connect_imap(config)
+        if not mail: return
+        
+        mail.select("inbox")
+        
+        # Check if archive folder exists, copy, then delete original
+        archive_folders = ["Archive", "Archiv", "Deleted Messages"] 
+        # For simplicity, if we don't know the archive folder, we just mark it seen.
+        # But let's try to copy to "Archive"
+        status, folders = mail.list()
+        archive_name = "Archive" # Default
+        if status == "OK":
+            for f in folders:
+                if b'Archive' in f:
+                    # extract name
+                    parts = f.decode().split(' "/" ')
+                    if len(parts) == 2:
+                        archive_name = parts[1].strip('"')
+                        break
+        
+        # Copy to archive
+        result = mail.copy(raw_imap_id, archive_name)
+        if result[0] == 'OK':
+            # Mark original as deleted
+            mail.store(raw_imap_id, '+FLAGS', '\\Deleted')
+            mail.expunge()
+            logger.info(f"Archived IMAP message {raw_imap_id}")
+        else:
+            # Fallback: Just mark as read
+            mail.store(raw_imap_id, '+FLAGS', '\\Seen')
+            
+        mail.close()
+        mail.logout()
+    except Exception as e:
+        logger.error(f"IMAP Archive failed: {e}")
+
+def trash_message_imap(msg_id_string, config_file):
+    """Moves a message to Trash or deletes it."""
+    try:
+        with open(config_file, 'r') as f:
+            config = json.load(f)
+            
+        if not msg_id_string.startswith("imap_"):
+            return
+            
+        parts = msg_id_string.split('_')
+        raw_imap_id = parts[-1]
+        
+        mail = connect_imap(config)
+        if not mail: return
+        
+        mail.select("inbox")
+        mail.store(raw_imap_id, '+FLAGS', '\\Deleted')
+        mail.expunge()
+        logger.info(f"Trashed IMAP message {raw_imap_id}")
+            
+        mail.close()
+        mail.logout()
+    except Exception as e:
+        logger.error(f"IMAP Trash failed: {e}")
+
+def get_all_imap_configs():
+    """Finds all token_imap_*.json files."""
+    tokens = []
+    try:
+        for filename in os.listdir('.'):
+            if filename.startswith('token_imap_') and filename.endswith('.json'):
+                tokens.append(filename)
+    except Exception as e:
+        logger.error(f"Error finding IMAP tokens: {e}")
+    return tokens
+
+--- END FILE: services\imap.py ---
+
+
+--- START FILE: services\local_audit.py ---
+import os
+import requests
+import logging
+import json
+
+logger = logging.getLogger(__name__)
+
+def run_self_audit():
+    """Reads all project files and feeds them to Ollama for a 'Twin Audit'."""
+    ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/api/generate")
+    model = os.getenv("OLLAMA_MODEL", "deepseek-r1:1.5b")
+    
+    # 1. READ CORE SYSTEM FILES
+    files_to_audit = [
+        "main.py",
+        "services/gemini.py",
+        "services/google_sheets.py",
+        "services/gmail.py",
+        "services/whapi.py"
+    ]
+    
+    codebase_summary = ""
+    for f in files_to_audit:
+        if os.path.exists(f):
+            with open(f, "r", encoding="utf-8") as file:
+                codebase_summary += f"\n\n--- FILE: {f} ---\n{file.read()[:2000]}..." # Limit for Ollama context
+
+    prompt = f"""
+    You are the 'BackPocket Digital Twin Auditor'.
+    
+    SYSTEM DIRECTORY AUDIT:
+    {codebase_summary}
+    
+    CHALLENGE: 
+    Cherry wants her Twin to be smarter, faster, and zero-cost.
+    Based on the code above:
+    1. Identify any potential bugs or 'stuck' points.
+    2. Suggest one improvement to the dashboard to make it more mobile-friendly.
+    3. How can we make the triage logic 'Cherry-Identity' compliant?
+    
+    Think like a world-class CTO for a small business.
+    Return your report in a warm, helpful tone.
+    """
+    
+    try:
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "stream": False
+        }
+        
+        logger.info(f"💾 LOCAL AUDIT: Generating self-report via Ollama ({model})...")
+        response = requests.post(ollama_url, json=payload, timeout=60)
+        response.raise_for_status()
+        
+        data = response.json()
+        raw_text = data.get("response", "")
+        
+        # Clean <think> tags if DeepSeek
+        import re
+        clean_text = re.sub(r'<think>.*?</think>', '', raw_text, flags=re.DOTALL).strip()
+        
+        # Save results to docs for permanent reference
+        with open("docs/LATEST_LOCAL_AUDIT.md", "w", encoding="utf-8") as f:
+            f.write(f"# 🕵️ LOCAL OLLAMA AUDIT REPORT\nDate: {json.dumps(str(os.times()))}\n\n{clean_text}")
+            
+        return clean_text
+    except Exception as e:
+        logger.error(f"❌ LOCAL AUDIT FAILED: {e}")
+        return f"Self-audit failed: {str(e)}"
+
+--- END FILE: services\local_audit.py ---
+
+
+--- START FILE: services\self_check.py ---
+import os
+import sqlite3
+import logging
+from datetime import datetime
+from services.database import get_stale_approvals, mark_nudged
+from services.whapi import send_whatsapp_message, test_whapi_connection
+from services.gmail import test_gmail_connection
+from services.google_sheets import test_sheets_connection, get_todays_portal_updates
+from services.gemini import test_gemini_connection
+
+logger = logging.getLogger(__name__)
+
+def run_self_check():
+    """
+    Scans for stale Tier 1 approvals and performs health checks.
+    This is the Twin's 'Conscience'.
+    """
+    try:
+        # 1. Check for stale approvals (Nudges for Urgent Emails)
+        stale_items = get_stale_approvals(hours=4)
+        if stale_items:
+            founder_phone = os.getenv("FOUNDER_PHONE")
+            if founder_phone:
+                clean_phone = "".join(filter(str.isdigit, founder_phone))
+                for item in stale_items:
+                    # We only nudge if it's Tier 1 (Urgent)
+                    if item.get('tier') == '1':
+                        thread_id = item.get('thread_id')
+                        delivered_to = item.get('delivered_to', 'token.json')
+                        token_file = delivered_to.split('|')[-1] if '|' in delivered_to else 'token.json'
+                        
+                        # --- SILENT CHECK: Did founder already reply in Gmail? ---
+                        from services.gmail import is_replied_to
+                        if thread_id and not token_file.startswith('token_imap_'): # Only check Gmail threads for now
+                            if is_replied_to(thread_id, token_file):
+                                logger.info(f"🧘 Found manual reply for Ref #{item['ref_id']}. Removing from waitlist.")
+                                from services.database import delete_pending_approval
+                                delete_pending_approval(item['ref_id'])
+                                continue
+
+                        msg = f"🔔 *Urgent Nudge* — Ref *#{item['ref_id']}*\n"
+                        msg += f"Client *{item['sender']}* is waiting for a reply to: _{item['subject']}_\n\n"
+                        msg += f"It has been pending for over 4 hours. Tap to approve or ask for a rewrite! 🚀"
+                        send_whatsapp_message(clean_phone, msg)
+                        mark_nudged(item['ref_id'])
+                        logger.info(f"Nudged founder for Ref #{item['ref_id']}")
+
+    except Exception as e:
+        logger.error(f"Error in self-check: {e}")
+
+def send_morning_pulse():
+    """Sends a summary of systems health and pending tasks to the founder."""
+    try:
+        founder_phone = os.getenv("FOUNDER_PHONE")
+        if not founder_phone:
+            logger.warning("Morning Pulse skipped: FOUNDER_PHONE not set.")
+            return
+
+        # Connectivity Checks
+        gmail_status = test_gmail_connection()
+        sheets_status = test_sheets_connection()
+        gemini_status = test_gemini_connection()
+        whapi_status = test_whapi_connection()
+        
+        from services.database import get_all_pending_refs
+        pending_count = len(get_all_pending_refs())
+        portal_count = get_todays_portal_updates()
+        
+        pulse_msg = f"☀️ *BackPocket Twin: Morning Pulse*\n\n"
+        
+        all_green = (gmail_status['status'] == 'success' and 
+                     sheets_status['status'] == 'success' and 
+                     gemini_status['status'] == 'success')
+        
+        pulse_msg += f"{'🟢' if all_green else '⚠️'} *Systems*: {'All system go!' if all_green else 'Some issues detected.'}\n"
+        pulse_msg += f"- Gmail: {'✅' if gmail_status['status'] == 'success' else '❌'}\n"
+        pulse_msg += f"- Sheets: {'✅' if sheets_status['status'] == 'success' else '❌'}\n"
+        pulse_msg += f"- AI Brain: {'✅' if gemini_status['status'] == 'success' else '❌'}\n"
+        pulse_msg += f"- WhatsApp Link: {'✅' if whapi_status['status'] == 'success' else '❌'}\n\n"
+        
+        pulse_msg += f"📋 *Waitlist*: There are *{pending_count}* tasks awaiting your approval.\n"
+        
+        if portal_count > 0:
+            pulse_msg += f"🤫 *Notifications*: *{portal_count}* platform updates were logged silently to your sheet today.\n\n"
+        else:
+            pulse_msg += "\n"
+            
+        pulse_msg += f"Zero-cost & Scalable. Have a productive day, Cherry! 🚀"
+        
+        clean_phone = "".join(filter(str.isdigit, founder_phone))
+        send_whatsapp_message(clean_phone, pulse_msg)
+        logger.info("Morning pulse sent to founder.")
+        
+    except Exception as e:
+        logger.error(f"Error sending morning pulse: {e}")
+
+--- END FILE: services\self_check.py ---
+
+
+--- START FILE: services\whapi.py ---
+import os
+import requests
+from dotenv import load_dotenv
+
+load_dotenv()
+
+WHAPI_API_URL = "https://gate.whapi.cloud"
+
+def get_whapi_headers():
+    token = os.getenv("WHAPI_TOKEN")
+    return {
+        "accept": "application/json",
+        "authorization": f"Bearer {token}"
+    }
+
+def test_whapi_connection():
+    """Tests the connection to Whapi.Cloud API by fetching channel info."""
+    try:
+        token = os.getenv("WHAPI_TOKEN")
+        if not token or token == "your_whapi_token_here":
+            return {"status": "error", "message": "Whapi token missing or invalid"}
+        
+        url = f"{WHAPI_API_URL}/health"
+        response = requests.get(url, headers=get_whapi_headers())
+        
+        if response.status_code == 200:
+            return {"status": "success", "message": "Whapi connection healthy"}
+        else:
+            return {"status": "error", "message": f"Whapi returned status {response.status_code}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+import logging
+import os
+from datetime import datetime
+
+logger = logging.getLogger(__name__)
+
+FAILED_QUEUE_PATH = os.path.join(os.path.dirname(__file__), "..", "failed_whatsapp_queue.txt")
+
+def _write_to_local_queue(to_number: str, text: str, reason: str = "Unknown"):
+    """Fallback: appends a failed notification to a local text file on the Mini-PC."""
+    try:
+        abs_path = os.path.abspath(FAILED_QUEUE_PATH)
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        separator = "=" * 60
+        entry = (
+            f"\n{separator}\n"
+            f"TIMESTAMP : {timestamp}\n"
+            f"RECIPIENT : {to_number}\n"
+            f"FAIL REASON: {reason}\n"
+            f"MESSAGE:\n{text}\n"
+            f"{separator}\n"
+        )
+        with open(abs_path, "a", encoding="utf-8") as f:
+            f.write(entry)
+        logger.warning(f"💾 LOCAL QUEUE: Notification saved to {abs_path} (Reason: {reason})")
+    except Exception as write_err:
+        logger.critical(f"☠️ CRITICAL: Could not write to local queue either! {write_err}")
+
+def send_whatsapp_message(to_number, text):
+    """Sends a text message via Whapi.Cloud with robust error handling.
+    
+    On any failure (timeout, bad payload, disconnected session), the error is
+    logged AND the full message is appended to failed_whatsapp_queue.txt
+    so no notification is ever silently lost.
+    """
+    url = f"{WHAPI_API_URL}/messages/text"
+    payload = {
+        "typing_time": 0,
+        "to": to_number,
+        "body": text
+    }
+    try:
+        logger.info(f"Attempting to send WhatsApp message to {to_number}...")
+        response = requests.post(url, json=payload, headers=get_whapi_headers(), timeout=15)
+        response.raise_for_status()  # Raise on 4xx/5xx HTTP errors
+        data = response.json()
+        if data.get("error") or data.get("code"):
+            raise ValueError(f"Whapi API returned an error in the body: {data}")
+        logger.info(f"WHAPI RESPONSE: {data}")
+        return data
+    except requests.exceptions.Timeout as e:
+        reason = f"Connection timed out after 15s"
+        logger.error(f"WHAPI ERROR: {reason}")
+        _write_to_local_queue(to_number, text, reason)
+        return {"status": "error", "error": reason}
+    except requests.exceptions.ConnectionError as e:
+        reason = f"Connection error (Whapi unreachable?): {e}"
+        logger.error(f"WHAPI ERROR: {reason}")
+        _write_to_local_queue(to_number, text, reason)
+        return {"status": "error", "error": reason}
+    except requests.exceptions.HTTPError as e:
+        reason = f"HTTP error {e.response.status_code}: {e.response.text[:200]}"
+        logger.error(f"WHAPI ERROR: {reason}")
+        _write_to_local_queue(to_number, text, reason)
+        return {"status": "error", "error": reason}
+    except Exception as e:
+        reason = f"Unexpected error: {e}"
+        logger.error(f"WHAPI ERROR: {reason}")
+        _write_to_local_queue(to_number, text, reason)
+        return {"status": "error", "error": reason}
+
+def send_whatsapp_buttons(to_number, body_text, buttons):
+    """Sends an interactive button message via Whapi.Cloud."""
+    url = f"{WHAPI_API_URL}/messages/interactive"
+    
+    # Correct structure for interactive buttons: body must be an object
+    payload = {
+        "to": to_number,
+        "type": "button",
+        "body": {
+            "text": body_text
+        },
+        "action": {
+            "buttons": [
+                {"id": btn["id"], "title": btn["title"]} for btn in buttons
+            ]
+        }
+    }
+    
+    try:
+        logger.info(f"Sending interactive buttons to {to_number}...")
+        response = requests.post(url, json=payload, headers=get_whapi_headers(), timeout=10)
+        data = response.json()
+        
+        # If button message fails, fallback to simple text
+        if response.status_code != 200 or "error" in data:
+            logger.warning(f"WHAPI BUTTONS FAILED: {data}. Falling back to plain text.")
+            fallback_text = f"{body_text}\n\nReply 'approve' or 'revise' to act."
+            return send_whatsapp_message(to_number, fallback_text)
+            
+        logger.info(f"WHAPI BUTTONS SUCCESS: {data}")
+        return data
+    except Exception as e:
+        logger.error(f"WHAPI BUTTONS ERROR: {e}")
+        return {"status": "error", "error": str(e)}
+
+def send_notification(email_summary, tier, ai_draft, ref_id="????"):
+    """Sends a formatted notification to the founder. Uses plain text for reliability.
+    If the WhatsApp send fails, the full notification is saved to failed_whatsapp_queue.txt."""
+    try:
+        founder_phone = os.getenv("FOUNDER_PHONE")
+        if not founder_phone or founder_phone == "your_whatsapp_number_here":
+            logger.error("Error: FOUNDER_PHONE not set in .env")
+            return None
+
+        clean_phone = "".join(filter(str.isdigit, founder_phone))
+        delivered_to = email_summary.get('delivered_to', 'Unknown Brand')
+
+        body = f"""\U0001f916 *BackPocket Twin* \u2014 Ref *#{ref_id}*
+\U0001f3f7\ufe0f Tier {tier} | {email_summary.get('subject', '(no subject)')}
+
+\U0001f3e2 *To*: {delivered_to}
+\U0001f464 *From*: {email_summary.get('sender', 'Unknown')}
+
+*AI Draft*:
+{ai_draft}
+
+---
+*Reply with:*
+\u2705 `approve {ref_id}` \u2014 Send this reply
+\U0001f501 `revise {ref_id}: <your notes>` \u2014 Rewrite with your input
+\U0001f4cb `pending` \u2014 List all pending refs"""
+
+        return send_whatsapp_message(clean_phone, body)
+    except Exception as e:
+        logger.error(f"SEND_NOTIFICATION OUTER ERROR: {e}")
+        # Last resort: write to local queue directly
+        _write_to_local_queue(
+            os.getenv("FOUNDER_PHONE", "UNKNOWN"),
+            f"Ref #{ref_id} | Tier {tier} | {email_summary.get('subject', '(no subject)')}\n\n{ai_draft}",
+            reason=f"send_notification outer exception: {e}"
+        )
+        return None
+
+def send_pending_items_summary():
+    """4 PM: Sends a consolidated summary of all items waiting for approval."""
+    from services.database import get_all_pending_refs, get_pending_approval
+    refs = get_all_pending_refs()
+    if not refs: return
+    
+    body = "📊 *4 PM SYSTEM SUMMARY* \n\nYou have *{}* items waiting for your approval. \n\n".format(len(refs))
+    for r in refs[:10]:
+        info = get_pending_approval(r)
+        body += f"🔹 *#{r}* - {info['sender']} ({info['tier']})\n   _{info['subject']}_\n"
+    
+    if len(refs) > 10:
+        body += f"\n...and {len(refs)-10} more on the Dashboard."
+    
+    body += "\n\nReply `approve <ref>` or visit the Control Center: http://localhost:8000/dashboard"
+    send_whatsapp_message(os.getenv("FOUNDER_PHONE"), body)
+
+def send_morning_nudge():
+    """8 AM: Checks for stagnant items and sends a light nudge."""
+    from services.database import get_all_pending_refs
+    refs = get_all_pending_refs()
+    if not refs: return
+
+    body = "☀️ *GOOD MORNING CHERRY!* \n\nYour Twin is online 🛡️. You still have *{}* items from yesterday waiting in the queue. \n\nReply `pending` to see the list or `approve all` to clear them.".format(len(refs))
+    send_whatsapp_message(os.getenv("FOUNDER_PHONE"), body)
+
+def send_spam_bulk_ask():
+    """4 PM: Aggregates anything the Twin was 'Unsure' about for a bulk check."""
+    from services.database import get_all_pending_refs, get_pending_approval
+    refs = get_all_pending_refs()
+    unsure = [r for r in refs if get_pending_approval(r).get('tier') == '5'] # We use Tier 5 as 'Unsure'
+    
+    if not unsure: return
+    
+    body = "🗑️ *4 PM BULK REVIEW (SPAM/UNSURE)* \n\nThe following items were flagged as Spam, but I want to be 100% sure: \n\n"
+    for r in unsure[:15]:
+        info = get_pending_approval(r)
+        body += f"▫️ *#{r}*: {info['sender']} - {info['subject']}\n"
+    
+    body += "\nReply `get <ref>` to rescue any of these, or ignore to clear them."
+    send_whatsapp_message(os.getenv("FOUNDER_PHONE"), body)
+
+--- END FILE: services\whapi.py ---
+
+
+--- START FILE: static/app.js ---
+/* 
+BACKPOCKET CONTROL CENTER LOGIC v3.0
+Interactive Box & Task-Specific Logic
+*/
+
+document.addEventListener('DOMContentLoaded', () => {
+    updateDateTime();
+    setInterval(updateDateTime, 30000);
+    pollSystemStatus();
+    setInterval(pollSystemStatus, 15000);
+
+    // Header interaction
+    const statusDot = document.querySelector('.status-dot');
+    const statusText = document.querySelector('.status-text');
+
+    async function pollSystemStatus() {
+        try {
+            const resp = await fetch('/api/status');
+            const data = await resp.json();
+            
+            if (data.status === 'Healthy') {
+                statusDot.classList.remove('offline');
+                statusDot.classList.add('online');
+                statusText.innerText = 'ONLINE';
+            } else {
+                statusDot.classList.remove('online');
+                statusDot.classList.add('offline');
+                statusText.innerText = 'OFFLINE';
+            }
+
+            // Update pending count
+            const pendingCountEl = document.getElementById('pendingCount');
+            if (pendingCountEl) {
+                pendingCountEl.innerText = data.pending_count || 0;
+            }
+
+        } catch (e) {
+            statusDot.classList.remove('online');
+            statusDot.classList.add('offline');
+            statusText.innerText = 'OFFLINE';
+        }
+    }
+
+    function updateDateTime() {
+        const now = new Date();
+        const options = { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' };
+        document.getElementById('currentDate').innerText = now.toLocaleDateString('en-US', options);
+    }
+
+    // Modal Handling
+    const modal = document.getElementById('moduleModal');
+    const modalBody = document.getElementById('modalBody');
+    const closeModal = document.querySelector('.close-modal');
+
+    document.querySelectorAll('.card').forEach(card => {
+        card.addEventListener('click', () => {
+            const module = card.dataset.module;
+            showModuleDetails(module);
+        });
+    });
+
+    closeModal.onclick = () => {
+        modal.style.display = 'none';
+    }
+
+    window.onclick = (event) => {
+        if (event.target == modal) {
+            modal.style.display = 'none';
+        }
+    }
+
+    function showModuleDetails(module) {
+        modalBody.innerHTML = '';
+        modal.style.display = 'block';
+
+        const configs = {
+            triage: {
+                title: "EMAIL TRIAGE",
+                icon: "fa-inbox",
+                desc: "Real-time patrol of 4 interconnected business accounts.",
+                tasks: ["View Action Log", "Review Pending Approvals", "Update Whitelist", "Simulate Triage Test"]
+            },
+            filing: {
+                title: "AUTOMATED FILING",
+                icon: "fa-folder-open",
+                desc: "Moving Tier 3 suppliers to dedicated folders (ATO, ASIC, QuickBooks).",
+                tasks: ["Configure Folders", "Check Filing Logs", "Archive Rules"]
+            },
+            research: {
+                title: "CLIENT RESEARCH",
+                icon: "fa-search-dollar",
+                desc: "Knowledge discovery engine for client history and financial status.",
+                tasks: ["Search Client DB", "Audit History", "Extract Tax Context"]
+            },
+            creator: {
+                title: "CONTENT CREATOR",
+                icon: "fa-pen-nib",
+                desc: "Drafting responses using your unique 'Omni-Tone' history.",
+                tasks: ["Review Drafts", "Tune Tone Profile", "AI Email Templates"]
+            },
+            social: {
+                title: "SOCIAL MEDIA",
+                icon: "fa-share-nodes",
+                desc: "Monitoring LinkedIn and Brand engagement.",
+                tasks: ["Check Mentions", "Auto-Draft Responses", "Content Queue"]
+            },
+            communication: {
+                title: "COMMUNICATION",
+                icon: "fa-comments",
+                desc: "WhatsApp Nudges, Call Centre messages, and SMS alerts.",
+                tasks: ["View WhatsApp Log", "Contact Audit", "Nudge Settings"]
+            },
+            websites: {
+                title: "WEBSITE PORTALS",
+                icon: "fa-globe",
+                desc: "Suitedash and BigBoss portal integration status.",
+                tasks: ["Check Portal Health", "Update Links", "Portal User Audit"]
+            },
+            forms: {
+                title: "REGISTRATION FLOW",
+                icon: "fa-file-invoice",
+                desc: "Handling 'New User Registered' emails to auto-onboard clients.",
+                tasks: ["Onboarding Log", "Map Form Fields", "Test Onboard Flow"]
+            }
+        };
+
+        const config = configs[module] || { title: "Module", icon: "fa-gear", desc: "Coming soon..." };
+        
+        modalBody.innerHTML = `
+            <div class="modal-header-large">
+                <i class="fas ${config.icon} big-icon"></i>
+                <div class="header-text">
+                    <h2>${config.title}</h2>
+                    <p>${config.desc}</p>
+                </div>
+            </div>
+            <div class="modal-sub-grid">
+                ${config.tasks.map(t => `
+                    <div class="sub-task">
+                        <i class="fas fa-chevron-right"></i>
+                        <span>${t}</span>
+                    </div>
+                `).join('')}
+            </div>
+            <div class="modal-footer">
+                <button class="primary-btn" onclick="executeModuleTask('${module}')">Run Intelligence Model</button>
+            </div>
+        `;
+    }
+
+    // Command handling
+    const cmdInput = document.getElementById('commandInput');
+    const sendBtn = document.getElementById('sendCommand');
+
+    sendBtn.addEventListener('click', handleCommand);
+    cmdInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') handleCommand();
+    });
+
+    async function handleCommand() {
+        const cmd = cmdInput.value.trim();
+        if (!cmd) return;
+
+        // Visual feedback for command sending
+        cmdInput.value = "Executing command...";
+        cmdInput.disabled = true;
+
+        try {
+            // Check if it's a 'find' command
+            if (cmd.toLowerCase().startsWith('find ')) {
+                const query = cmd.substring(5).trim();
+                const resp = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+                const data = await resp.json();
+                
+                showModuleDetails('triage');
+                modalBody.innerHTML += `
+                    <div class="search-results">
+                        <h3>Search Results for "${query}"</h3>
+                        ${data.results.map(r => `
+                            <div class="search-item">
+                                <p><strong>Subject:</strong> ${r.subject}</p>
+                                <p><strong>From:</strong> ${r.sender}</p>
+                                <button onclick="rescueEmail('${r.id}', '${r.token_file}')" class="rescue-btn">⚓ Rescue to Inbox</button>
+                            </div>
+                        `).join('') || "<p>No emails found.</p>"}
+                    </div>
+                `;
+            } else {
+                 alert("Command received: " + cmd + ". Implementing full chat brain in next phase.");
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
+            cmdInput.value = "";
+            cmdInput.disabled = false;
+        }
+    }
+});
+
+function executeModuleTask(module) {
+    alert(`⚡ Starting Intelligence Model for ${module}. Model: Gemini-2.0-Flash (Zero Cost Check)`);
+}
+
+async function triggerSystemAudit() {
+    modalBody.innerHTML = `
+        <div class="modal-header-large">
+            <i class="fas fa-microchip big-icon stability-audit"></i>
+            <div class="header-text">
+                <h2>TWIN SYSTEM AUDIT</h2>
+                <p>Ollama is analyzing the BackPocket codebase for vulnerabilities and improvements...</p>
+            </div>
+        </div>
+        <div class="audit-status">
+            <span class="loading-pulse">🛡️ ENGINE ANALYSIS IN PROGRESS...</span>
+        </div>
+    `;
+    modal.style.display = 'block';
+
+    try {
+        const resp = await fetch('/api/audit');
+        const data = await resp.json();
+        
+        modalBody.innerHTML = `
+            <div class="modal-header-large">
+                <i class="fas fa-microchip big-icon"></i>
+                <div class="header-text">
+                    <h2>STABILITY REPORT</h2>
+                    <p>Report generated by Local Ollama (DeepSeek-R1)</p>
+                </div>
+            </div>
+            <div class="audit-report-content">
+                <pre>${data.report}</pre>
+            </div>
+            <div class="modal-footer">
+                <button class="primary-btn" onclick="modal.style.display='none'">Acknowledged</button>
+            </div>
+        `;
+    } catch (e) {
+        modalBody.innerHTML = `<p>Audit failed: ${e.message}</p>`;
+    }
+}
+async function rescueEmail(id, token) {
+    const resp = await fetch(`/api/rescue?msg_id=${id}&token=${token}`, { method: 'POST' });
+    const data = await resp.json();
+    alert(data.status === 'success' ? "⚓ Message successfully rescued to INBOX!" : "❌ Error rescuing message.");
+}
+
+--- END FILE: static/app.js ---
+
+
+--- START FILE: static/index.html ---
+<!-- 
+BACKPOCKET CONTROL CENTER v3.0
+Based on Cherry's Handwritten Sketch
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BackPocket Twin | Console</title>
+    <!-- Use absolute static paths -->
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+</head>
+<body class="dark-mode">
+    <div class="glass-container">
+        <!-- HEADER: DATE & STATUS -->
+        <header>
+            <div class="logo-group">
+                <h1>BACKPOCKET</h1>
+                <p id="currentDate">Friday, March 20</p>
+            </div>
+            <div class="status-badge" id="systemStatus">
+                <div class="status-dot offline"></div>
+                <span class="status-text">OFFLINE</span>
+                <button id="btnAudit" class="audit-btn" onclick="triggerSystemAudit()" title="Self-Audit Twin"><i class="fas fa-microchip"></i></button>
+            </div>
+        </header>
+
+        <!-- CHAT COMMAND BAR (Cherry's Map) -->
+        <section class="command-center">
+            <div class="chat-input-container">
+                <i class="fas fa-terminal cmd-icon"></i>
+                <input type="text" id="commandInput" placeholder="Command your Twin... (e.g. 'find tax docs' or 'summarize today')">
+                <button id="sendCommand"><i class="fas fa-paper-plane"></i></button>
+            </div>
+        </section>
+
+        <!-- MID ROW: SYSTEM MAP, URGENT, WHATSAPP -->
+        <section class="quick-access">
+            <div class="qa-box" id="btnSystemMap">
+                <i class="fas fa-map-marked-alt"></i>
+                <span>SYSTEM MAP</span>
+            </div>
+            <div class="qa-box urgent" id="btnUrgent">
+                <div class="urgent-header">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <span>PENDING</span>
+                </div>
+                <div class="urgent-count" id="pendingCount">0</div>
+            </div>
+            <div class="qa-box" id="btnWhatsApp">
+                <i class="fab fa-whatsapp"></i>
+                <span>WHATSAPP</span>
+            </div>
+        </section>
+
+        <!-- THE MAIN GRID (Cherry's Map) -->
+        <main class="system-grid">
+            <div class="card" data-module="triage">
+                <i class="fas fa-inbox"></i>
+                <h3>EMAIL TRIAGE</h3>
+                <p>Patrol & Categorize</p>
+            </div>
+            <div class="card" data-module="filing">
+                <i class="fas fa-folder-open"></i>
+                <h3>FILING</h3>
+                <p>Auto-Labels & Folders</p>
+            </div>
+            <div class="card" data-module="research">
+                <i class="fas fa-search-dollar"></i>
+                <h3>RESEARCH</h3>
+                <p>Client Intelligence</p>
+            </div>
+            <div class="card" data-module="creator">
+                <i class="fas fa-pen-nib"></i>
+                <h3>CONTENT CREATOR</h3>
+                <p>Tone & Drafts</p>
+            </div>
+            <div class="card" data-module="social">
+                <i class="fas fa-share-nodes"></i>
+                <h3>SOCIAL MEDIA</h3>
+                <p>Engagement</p>
+            </div>
+            <div class="card" data-module="communication">
+                <i class="fas fa-comments"></i>
+                <h3>COMMUNICATION</h3>
+                <p>Client SMS & Calls</p>
+            </div>
+            <div class="card" data-module="websites">
+                <i class="fas fa-globe"></i>
+                <h3>WEBSITES</h3>
+                <p>Portal & Portal Links</p>
+            </div>
+            <div class="card" data-module="forms">
+                <i class="fas fa-file-invoice"></i>
+                <h3>FORMS</h3>
+                <p>Registration Flow</p>
+            </div>
+        </main>
+    </div>
+
+    <!-- MODAL FOR DETAILED VIEW (Interactive Box) -->
+    <div id="moduleModal" class="modal">
+        <div class="modal-content glass-morphism">
+            <span class="close-modal">&times;</span>
+            <div id="modalBody">
+                <!-- Content injected via JS -->
+                 <h2>Module Title</h2>
+                 <p>Sub-boxes and task-specific models will appear here.</p>
+                 <div class="sub-grid" id="modalSubGrid"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MOBILE BOTTOM NAV -->
+    <nav class="bottom-nav">
+        <a href="#" class="nav-item active"><i class="fas fa-home"></i><span>Home</span></a>
+        <a href="#" class="nav-item" onclick="showModuleDetails('triage')"><i class="fas fa-bell"></i><span>Alerts</span></a>
+        <a href="#" class="nav-item" id="navWhatsApp"><i class="fab fa-whatsapp"></i><span>Chat</span></a>
+        <a href="#" class="nav-item" onclick="triggerSystemAudit()"><i class="fas fa-microchip"></i><span>Audit</span></a>
+    </nav>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
+
+--- END FILE: static/index.html ---
+
+
+--- START FILE: docs/ERROR_LOG.md ---
+# 🩺 BackPocket Twin: Error Log & Doctor’s Notes 🩹
+
+This log tracks every time the Twin "sneezed" or "tripped," and how we fixed it. This is how we ensure the same mistake never happens twice.
+
+---
+
+## 🗓️ March 11, 2026: The "OAuth Ghost" 👻
+- **The Problem**: The system kept asking to "Log in" to Google even though we already did.
+- **The Cause**: We were using a "Service Account" for Sheets but an "OAuth App" for Gmail. They weren't talking to each other properly.
+- **The Cure**: We linked them both using the `credentials.json` hub. Now they are best friends.
+
+## 🗓️ March 12, 2026: The "Port 8000 War" ⚔️
+- **The Problem**: The Twin refused to start, saying "Port 8000 is already taken!"
+- **The Cause**: An "old version" of the Twin was still running in the background. We had a "Ghost Engine"!
+- **The Cure**: We wrote a script to find and "Kill" the ghost process. Now the engine starts fresh every time.
+
+## 🗓️ March 13, 2026: The "Big Boss" Leak 🎭
+- **The Problem**: Emails from `yourwebaccountant.com` were replying with `bigbossgroup.com.au`.
+- **The Cause**: The system was looking at the wrong part of the email header ("Delivered-To" instead of "To"). It got confused about which hat to wear.
+- **The Cure**: We taught the Twin to look at the **Original To** address. Now it wears the correct brand hat 100% of the time.
+
+## 🗓️ March 15, 2026: The "Silent Burial" (Rowan Rule) 🧘
+- **The Problem**: A client email (Rowan) was archived in `Updates_Archive` without any notification.
+- **The Cause**: The AI correctly triaged it as "Tier 4 (Update)" based on the snippet, but because it didn't recognize him as a client at that step, it filed it silently.
+- **The Cure**: I moved the "Check Master List" step to the very top. Now, if the Twin sees a client, it NEVER files it silently, even if it's just a "Thank you" note.
+
+## 🗓️ March 15, 2026: The "Indentation Trap" 🪤
+- **The Problem**: The "Approve" command was being ignored.
+- **The Cause**: A developer mistake (misalignment) caused the webhook logic to skip the command processing block entirely.
+- **The Cure**: Re-aligned the code blocks. I also added a "Command Audit" to the logs so we can see exactly what the Twin "hears" from WhatsApp.
+
+---
+
+## 🛠️ How to use this log:
+1.  **Check here first** if something feels "broken."
+2.  If you find a new bug, tell Antigravity: *"Log this error in the doctor's notes."*
+
+--- END FILE: docs/ERROR_LOG.md ---
+
+
+--- START FILE: LAUNCH_BACKPOCKET_TWIN.bat ---
+@echo off
+title BackPocket Twin ENGINE 🍒
+echo 🚀 STARTING BACKPOCKET TWIN VERSION 2.2...
+echo 🛡️  Checking for ghost processes...
+taskkill /IM python.exe /F >nul 2>&1
+taskkill /IM uvicorn.exe /F >nul 2>&1
+
+cd /d "%~dp0"
+echo 📦 Loading environment...
+call venv\Scripts\activate >nul 2>&1 || echo ⚠️ No venv found, using system python.
+
+echo ⚡ IGRE... (FastAPI Dashboard starting on http://localhost:8000/dashboard)
+python -m uvicorn main:app --host 127.0.0.1 --port 8000
+pause
+
+--- END FILE: LAUNCH_BACKPOCKET_TWIN.bat ---
+
+
+--- AUDIT OBJECTIVES ---
+1.  **Code Health**: Identify any potential logic loops or crashing points in 'main.py' or the services.
+2.  **Cost Efficiency**: Review 'gemini.py' and suggest where we can use local Ollama models instead of high-cost Gemini Flash calls to save money.
+3.  **Identity Compliance**: Ensure the 'Cherry Style' (warm, helpful, concise) is defined well in the prompt logic.
+4.  **UI/UX**: Review 'app.js' and 'index.html' to ensure the dashboard feels premium and 'Glassmorphic'.
+
+Provide a concise, numbered list of improvements.

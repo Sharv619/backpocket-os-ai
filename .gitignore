@@ -1,0 +1,32 @@
+# Environment Variables
+.env
+.opencode.json
+
+# Database
+*.db
+
+# Google Cloud Credentials
+credentials.json
+*.json
+!walkthrough.md
+!setup_guide.md
+!SOP.md
+!JOURNEY.md
+!MAC_TRANSITION_GUIDE.md
+!AI_MODEL_CONFIG.md
+
+# Python caches
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+
+# Logs and Binaries
+*.log
+archives/
+video_output/
+*.mp4
+*.exe
+*.zip
+nul

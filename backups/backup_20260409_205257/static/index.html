@@ -1,0 +1,3743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BackPocket OS — My Twin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    :root {
+      --cream: #FAF7F2;
+      --terracotta: #C87941;
+      --sage: #8FAE8B;
+      --brown: #1A1613;
+      --shadow-soft: 0 4px 20px -2px rgba(26, 22, 19, 0.05);
+      --shadow-soft-lg: 0 10px 30px -5px rgba(26, 22, 19, 0.08);
+      --font-base: 1rem;
+      --font-sm: 0.875rem;
+      --font-xs: 0.75rem;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      font-family: 'Outfit', -apple-system, sans-serif;
+      background-color: var(--cream);
+      color: var(--brown);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ===== LAYOUT ===== */
+    .app-container {
+      display: flex;
+      width: 100%;
+      height: 100vh;
+      position: relative;
+      overflow: hidden;
+    }
+
+    main.main-content {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+
+    /* ===== BACKGROUND ===== */
+    .bg-image {
+      position: fixed;
+      inset: 0;
+      z-index: -2;
+      background-image: url('https://cdn.magicpatterns.com/uploads/76Y3pPQrQBD9mh2J2KL6YC/background_dashboard.png');
+      background-size: cover;
+      background-position: center;
+      opacity: 0.5;
+    }
+
+    .bg-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      background: rgba(250, 247, 242, 0.3);
+      backdrop-filter: blur(2px);
+    }
+
+    .frosted-glass {
+      background: rgba(255, 255, 255, 0.45) !important;
+      backdrop-filter: blur(12px) !important;
+      -webkit-backdrop-filter: blur(12px) !important;
+      border: 1px solid rgba(255, 255, 255, 0.3) !important;
+    }
+
+    /* ===== MAGNIFIER ===== */
+    .magnifier-on .app-container {
+      zoom: 1.15;
+      width: 87%; /* Compensate for zoom width shift */
+    }
+    
+    @media (max-width: 768px) {
+      .magnifier-on .app-container {
+        zoom: 1.05;
+        width: 95%;
+      }
+    }
+
+    /* ===== SIDEBAR ===== */
+    .sidebar {
+      width: 72px;
+      height: 100%;
+      background: var(--brown);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 20;
+      transition: width 0.3s ease;
+      overflow: hidden;
+    }
+
+    .sidebar:hover, .sidebar.expanded {
+      width: 260px;
+    }
+
+    .sidebar-header {
+      height: 64px;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      flex-shrink: 0;
+    }
+
+    .sidebar-toggle {
+      background: none;
+      border: none;
+      color: rgba(250, 247, 242, 0.7);
+      cursor: pointer;
+      padding: 8px;
+      border-radius: 8px;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+
+    .sidebar-toggle:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--cream);
+    }
+
+    .sidebar-logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: 8px;
+      white-space: nowrap;
+      overflow: hidden;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .sidebar:hover .sidebar-logo,
+    .sidebar.expanded .sidebar-logo {
+      opacity: 1;
+    }
+
+    .sidebar-logo-icon {
+      color: var(--terracotta);
+      font-size: 22px;
+      flex-shrink: 0;
+    }
+
+    .sidebar-logo-text {
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--cream);
+      letter-spacing: 0.5px;
+    }
+
+    .sidebar-nav {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 16px 8px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      padding: 10px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      color: rgba(250, 247, 242, 0.7);
+      margin-bottom: 2px;
+      white-space: nowrap;
+    }
+
+    .nav-item:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--cream);
+    }
+
+    .nav-item.active {
+      background: rgba(200, 121, 65, 0.2);
+      color: var(--terracotta);
+    }
+
+    .nav-item-icon {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      transition: all 0.2s;
+    }
+
+    .nav-item:hover .nav-item-icon,
+    .nav-item.active .nav-item-icon {
+      background: rgba(200, 121, 65, 0.2);
+    }
+
+    .nav-item-icon svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .nav-item-label {
+      flex: 1;
+      font-size: var(--font-sm);
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+      overflow: hidden;
+      margin-left: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .sidebar:hover .nav-item-label,
+    .sidebar.expanded .nav-item-label {
+      opacity: 1;
+    }
+
+    .nav-badge {
+      background: var(--terracotta);
+      color: white;
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 10px;
+      margin-left: 8px;
+    }
+
+    .nav-new-badge {
+      background: var(--terracotta);
+      color: white;
+      font-size: 9px;
+      padding: 2px 5px;
+      border-radius: 4px;
+      font-weight: 700;
+      margin-left: 8px;
+    }
+
+    .nav-chevron {
+      font-size: 12px;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .sidebar:hover .nav-chevron,
+    .sidebar.expanded .nav-chevron {
+      opacity: 0.7;
+    }
+
+    /* Sub-items */
+    .nav-subitems {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease;
+      margin-left: 12px;
+      border-left: 1px solid rgba(255, 255, 255, 0.1);
+      padding-left: 0;
+    }
+
+    .nav-subitems.open {
+      max-height: 300px;
+      padding-left: 8px;
+    }
+
+    .nav-subitem {
+      padding: 10px 12px 10px 16px;
+      font-size: var(--font-sm);
+      color: rgba(250, 247, 242, 0.7);
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+      border-radius: 6px;
+      margin: 2px 0;
+    }
+
+    .nav-subitem:hover {
+      color: var(--cream);
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    /* Chat History Section */
+    .chat-history-section {
+      padding: 8px 12px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      margin-top: 8px;
+    }
+
+    .chat-history-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .chat-history-title {
+      font-size: var(--font-xs);
+      font-weight: 700;
+      color: rgba(250, 247, 242, 0.4);
+      letter-spacing: 0.5px;
+    }
+
+    .chat-history-refresh {
+      background: none;
+      border: none;
+      color: rgba(250, 247, 242, 0.4);
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      transition: all 0.2s;
+    }
+
+    .chat-history-refresh:hover {
+      color: var(--cream);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .chat-history-refresh svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .chat-history-list {
+      max-height: 180px;
+      overflow-y: auto;
+    }
+
+    .chat-history-empty {
+      font-size: var(--font-xs);
+      color: rgba(250, 247, 242, 0.3);
+      padding: 8px 0;
+      text-align: center;
+    }
+
+    .chat-history-item {
+      padding: 8px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-bottom: 4px;
+      transition: all 0.2s;
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .chat-history-item:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .chat-history-item-title {
+      font-size: var(--font-xs);
+      color: rgba(250, 247, 242, 0.7);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .chat-history-item-time {
+      font-size: 10px;
+      color: rgba(250, 247, 242, 0.3);
+      margin-top: 2px;
+    }
+
+    /* Magnifier Section */
+    .magnifier-section {
+      padding: 8px 0;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      margin-top: 8px;
+    }
+
+    .magnifier-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      color: rgba(250, 247, 242, 0.7);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .magnifier-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--cream);
+    }
+
+    .magnifier-btn.active {
+      background: var(--terracotta);
+      border-color: var(--terracotta);
+      color: white;
+    }
+
+    .magnifier-btn svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .magnifier-btn span {
+      display: none;
+    }
+
+    .sidebar.expanded .magnifier-btn span {
+      display: inline;
+      margin-left: 8px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .sidebar.expanded .magnifier-btn {
+      justify-content: flex-start;
+      padding: 10px 12px;
+    }
+
+    /* Magnifier in main content */
+    .main-magnifier {
+      position: fixed;
+      top: 24px;
+      right: 24px;
+      z-index: 100;
+    }
+
+    .main-magnifier-btn {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: var(--cream);
+      border: 2px solid var(--brown);
+      color: var(--brown);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 16px rgba(26, 22, 19, 0.2);
+      transition: all 0.2s;
+    }
+
+    .main-magnifier-btn:hover {
+      transform: scale(1.05);
+      box-shadow: 0 6px 20px rgba(26, 22, 19, 0.3);
+    }
+
+    .main-magnifier-btn.active {
+      background: var(--terracotta);
+      border-color: var(--terracotta);
+      color: white;
+    }
+
+    .main-magnifier-btn svg {
+      width: 22px;
+      height: 22px;
+    }
+
+    /* Magnifier tooltip */
+    .main-magnifier-btn::after {
+      content: 'Toggle Magnifier';
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      margin-top: 8px;
+      padding: 6px 10px;
+      background: var(--brown);
+      color: var(--cream);
+      font-size: 11px;
+      border-radius: 6px;
+      white-space: nowrap;
+      opacity: 0;
+      transition: opacity 0.2s;
+      pointer-events: none;
+    }
+
+    .main-magnifier-btn:hover::after {
+      opacity: 1;
+    }
+
+    .welcome-section {
+      position: relative;
+      z-index: 5;
+      margin: 32px 0 16px 0;
+      padding-top: 48px;
+    }
+
+    .welcome-title {
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--brown);
+      margin-bottom: 4px;
+      letter-spacing: -0.5px;
+    }
+
+    .welcome-subtitle {
+      font-size: 14px;
+      color: rgba(26, 22, 19, 0.5);
+      font-weight: 500;
+    }
+
+    .stats-row {
+      position: relative;
+      z-index: 5;
+      display: flex;
+      gap: 24px;
+      align-items: center;
+      margin: 24px 0 32px 0;
+    }
+
+    .content-wrapper {
+      padding: 0 48px 48px 48px;
+      max-width: 1080px; /* Widened to allow side-by-side panels */
+      width: 100%;
+    }
+
+    .stat-pill {
+      background: none;
+      border: none;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      color: rgba(26, 22, 19, 0.5);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .stat-pill:hover, .stat-pill.active {
+      color: var(--brown);
+    }
+
+    .stat-pill::after {
+      content: '';
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: var(--terracotta);
+      margin-left: 4px;
+      opacity: 0.6;
+    }
+
+    .stat-pill.active::after {
+      opacity: 1;
+    }
+
+    .stat-icon {
+      width: 14px;
+      height: 14px;
+    }
+
+    .panels-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 24px;
+      align-items: flex-start;
+      position: relative;
+      z-index: 20;
+    }
+
+    .chat-section {
+      position: relative;
+      flex: 1;
+      min-width: 320px;
+      max-width: 440px;
+      margin-top: 24px;
+      resize: horizontal;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .instructions-section {
+      position: relative;
+      z-index: 50;
+      background: rgba(255, 255, 255, 0.3) !important;
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow: none;
+      border-radius: 16px;
+      margin-top: 24px;
+      flex: 1;
+      min-width: 320px;
+      max-width: 440px;
+      resize: both; /* Allow resizing */
+      overflow: auto; /* Required for resize to work */
+      display: flex;
+      flex-direction: column;
+    }
+
+    .instructions-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    .instructions-header h2 {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--brown);
+      margin: 0;
+    }
+
+    .instructions-close {
+      background: none;
+      border: none;
+      color: rgba(26, 22, 19, 0.5);
+      font-size: 20px;
+      cursor: pointer;
+      border-radius: 6px;
+      line-height: 1;
+      padding: 2px 6px;
+      transition: all 0.2s;
+    }
+
+    .instructions-close:hover {
+      background: rgba(255, 255, 255, 0.5);
+      color: var(--brown);
+    }
+
+    .sops-filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 12px 20px;
+      background: rgba(255, 255, 255, 0.1);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+    }
+
+    .sop-filter {
+      background: rgba(255, 255, 255, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(26, 22, 19, 0.7);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .sop-filter:hover {
+      background: rgba(255, 255, 255, 0.7);
+      color: var(--brown);
+    }
+
+    .sop-filter.active {
+      background: var(--brown);
+      border-color: var(--brown);
+      color: var(--cream);
+    }
+
+    .sops-list, .instructions-list, .email-rules-content, .client-master-content {
+      padding: 16px 20px;
+      max-height: 400px;
+      overflow-y: auto;
+      flex: 1;
+      min-height: 200px;
+    }
+
+    .sops-loading {
+      padding: 20px;
+      text-align: center;
+      font-size: 13px;
+      color: rgba(26, 22, 19, 0.5);
+      font-weight: 500;
+    }
+
+    .rule-change-form {
+      padding: 20px;
+    }
+
+    .rule-change-form h3 {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--brown);
+      margin-bottom: 8px;
+    }
+
+    .rule-change-hint {
+      font-size: 13px;
+      color: rgba(26, 22, 19, 0.6);
+      margin-bottom: 16px;
+    }
+
+    .rule-change-field {
+      margin-bottom: 20px;
+    }
+
+    .rule-change-field label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--brown);
+      margin-bottom: 8px;
+    }
+
+    .rule-change-field textarea {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid rgba(26, 22, 19, 0.15);
+      border-radius: 10px;
+      font-family: inherit;
+      font-size: 14px;
+      resize: vertical;
+      background: rgba(255, 255, 255, 0.6);
+    }
+
+    .rule-change-buttons {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .rule-change-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: none;
+      box-shadow: none;
+    }
+
+    .rule-change-btn:hover {
+      background: rgba(255, 255, 255, 0.4);
+      transform: translateY(-1px);
+    }
+
+    .rule-change-btn.discuss {
+      color: var(--sage);
+    }
+
+    .rule-change-btn.save {
+      color: rgba(26, 22, 19, 0.5);
+    }
+
+    .rule-change-btn.edit {
+      color: var(--terracotta);
+    }
+
+    .rule-change-btn.submit {
+      color: var(--brown);
+      font-weight: 700;
+      background: rgba(255, 255, 255, 0.5);
+    }
+
+    #total-count {
+      color: var(--terracotta);
+      font-weight: 700;
+    }
+
+    /* Professional Icon Colors */
+    #stat-emails .stat-icon { color: var(--sage); }
+    #stat-docs .stat-icon { color: rgba(26, 22, 19, 0.4); }
+    #stat-marketing .stat-icon { color: var(--terracotta); }
+    #stat-tasks .stat-icon { color: var(--sage); }
+
+    .avatar-container {
+      position: fixed;
+      right: 3%;
+      bottom: 0;
+      width: 22%;
+      max-width: 320px;
+      min-width: 180px;
+      z-index: 2;
+      pointer-events: none;
+      display: flex;
+      justify-content: center;
+      align-items: flex-end;
+      transition: opacity 0.4s ease, transform 0.4s ease;
+    }
+
+    .avatar-container.expanded {
+      opacity: 0.3;
+      transform: translateX(40px);
+    }
+
+    .avatar-img {
+      width: 100%;
+      height: auto;
+      max-height: 80vh;
+      object-fit: contain;
+      object-position: center bottom;
+      mix-blend-mode: multiply;
+      filter: saturate(1.1) contrast(1.05);
+      animation: avatarBreathe 6s ease-in-out infinite;
+    }
+
+    @keyframes avatarBreathe {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-6px); }
+    }
+
+    /* ===== CHAT SECTION ===== */
+    .chat-section {
+      position: relative;
+      z-index: 10;
+      max-width: 440px;
+      margin-top: 24px;
+    }
+
+    .chat-collapsed {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 18px;
+      background: rgba(255, 255, 255, 0.35);
+      backdrop-filter: blur(10px);
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      cursor: pointer;
+      transition: all 0.25s ease;
+      box-shadow: none;
+    }
+
+    .chat-collapsed:hover {
+      background: white;
+      box-shadow: var(--shadow-soft-lg);
+      transform: translateY(-2px);
+    }
+
+    .chat-icon-wrapper {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--terracotta);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+    }
+
+    .chat-icon-wrapper svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    .chat-text {
+      flex: 1;
+    }
+
+    .chat-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--brown);
+    }
+
+    .chat-subtitle {
+      font-size: 12px;
+      color: rgba(26, 22, 19, 0.5);
+    }
+
+    .chat-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--sage);
+      font-weight: 500;
+    }
+
+    .chat-status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--sage);
+    }
+
+    .chat-expanded {
+      background: rgba(255, 255, 255, 0.45);
+      backdrop-filter: blur(20px);
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      overflow: hidden;
+      box-shadow: none;
+      display: none;
+      flex-direction: column;
+      flex: 1;
+    }
+
+    .chat-expanded.show {
+      display: flex;
+      animation: slideUp 0.3s ease;
+    }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .chat-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      background: var(--brown);
+      border-bottom: none;
+    }
+
+    .chat-header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .chat-header-icon {
+      color: var(--cream);
+    }
+
+    .chat-header-icon svg {
+      width: 22px;
+      height: 22px;
+    }
+
+    .chat-header-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--cream);
+    }
+
+    .chat-header-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--sage);
+      font-weight: 500;
+      margin-left: 8px;
+    }
+
+    .chat-close {
+      background: none;
+      border: none;
+      color: rgba(250, 247, 242, 0.6);
+      cursor: pointer;
+      padding: 8px;
+      border-radius: 8px;
+      font-size: 18px;
+      transition: all 0.2s;
+    }
+
+    .chat-close:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--cream);
+    }
+
+    .chat-messages {
+      flex: 1;
+      min-height: 200px;
+      overflow-y: auto;
+      padding: 16px;
+      background: var(--cream);
+    }
+
+    .chat-msg {
+      max-width: 85%;
+      padding: 12px 16px;
+      border-radius: 16px;
+      font-size: 14px;
+      line-height: 1.5;
+      margin-bottom: 12px;
+    }
+
+    .chat-msg.ai {
+      background: white;
+      color: var(--brown);
+      border-bottom-left-radius: 4px;
+      box-shadow: 0 2px 8px rgba(26, 22, 19, 0.06);
+    }
+
+    .chat-msg.user {
+      background: var(--brown);
+      color: var(--cream);
+      border-bottom-right-radius: 4px;
+      margin-left: auto;
+    }
+
+    .chat-input-area {
+      padding: 14px;
+      background: white;
+      border-top: 1px solid rgba(26, 22, 19, 0.08);
+    }
+
+    .chat-input-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--cream);
+      border-radius: 24px;
+      padding: 6px 8px 6px 16px;
+      border: 1px solid rgba(26, 22, 19, 0.08);
+    }
+
+    .chat-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      padding: 10px 12px;
+      font-size: 14px;
+      color: var(--brown);
+      outline: none;
+    }
+
+    .chat-input::placeholder {
+      color: rgba(26, 22, 19, 0.4);
+    }
+
+    .command-dropdown {
+      position: absolute;
+      bottom: 100%;
+      left: 0;
+      right: 0;
+      background: white;
+      border: 1px solid rgba(26, 22, 19, 0.15);
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(26, 22, 19, 0.12);
+      margin-bottom: 8px;
+      overflow: hidden;
+      z-index: 100;
+      display: none;
+    }
+
+    .command-dropdown.show {
+      display: block;
+    }
+
+    .command-item {
+      padding: 12px 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      transition: background 0.15s;
+      border-bottom: 1px solid rgba(26, 22, 19, 0.05);
+    }
+
+    .command-item:last-child {
+      border-bottom: none;
+    }
+
+    .command-item:hover, .command-item.selected {
+      background: rgba(200, 121, 65, 0.08);
+    }
+
+    .command-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: var(--terracotta);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    .command-text {
+      flex: 1;
+    }
+
+    .command-name {
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--brown);
+    }
+
+    .command-desc {
+      font-size: 12px;
+      color: rgba(26, 22, 19, 0.5);
+      margin-top: 2px;
+    }
+
+    .chat-tool {
+      background: none;
+      border: none;
+      color: rgba(26, 22, 19, 0.4);
+      cursor: pointer;
+      padding: 8px;
+      border-radius: 50%;
+      font-size: 14px;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .chat-tool:hover {
+      background: rgba(26, 22, 19, 0.06);
+      color: var(--brown);
+    }
+
+    .chat-tool svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .chat-send-btn {
+      background: var(--brown);
+      border: none;
+      color: var(--cream);
+      cursor: pointer;
+      padding: 10px;
+      border-radius: 50%;
+      font-size: 12px;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 38px;
+      height: 38px;
+    }
+
+    .chat-send-btn:hover {
+      background: var(--terracotta);
+    }
+
+    .chat-send-btn svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .chat-new-chat {
+      padding: 10px 14px;
+      background: var(--cream);
+      border-top: 1px solid rgba(26, 22, 19, 0.06);
+    }
+
+    .chat-new-chat-btn {
+      background: none;
+      border: none;
+      color: rgba(26, 22, 19, 0.5);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+
+    .chat-new-chat-btn:hover {
+      background: rgba(26, 22, 19, 0.05);
+      color: var(--brown);
+    }
+
+    .chat-new-chat-btn svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .chat-send-btn:hover {
+      background: #b86d38;
+    }
+
+    .chat-send-btn svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    /* ===== MODAL ===== */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(26, 22, 19, 0.2);
+      backdrop-filter: blur(4px);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.show {
+      display: flex;
+      animation: fadeIn 0.2s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .modal {
+      background: white;
+      border-radius: 16px;
+      box-shadow: var(--shadow-soft-lg);
+      max-width: 512px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid rgba(26, 22, 19, 0.1);
+    }
+
+    .modal-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--brown);
+      text-transform: capitalize;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: rgba(26, 22, 19, 0.4);
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 6px;
+      font-size: 20px;
+      transition: all 0.2s;
+    }
+
+    .modal-close:hover {
+      background: rgba(26, 22, 19, 0.05);
+      color: var(--brown);
+    }
+
+    .modal-body {
+      padding: 24px;
+    }
+
+    .modal-item-title {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--brown);
+      margin-bottom: 16px;
+    }
+
+    .modal-field {
+      display: grid;
+      grid-template-columns: 80px 1fr;
+      gap: 8px;
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+
+    .modal-field-label {
+      color: rgba(26, 22, 19, 0.6);
+      font-weight: 500;
+    }
+
+    .modal-field-value {
+      color: var(--brown);
+    }
+
+    .modal-content-box {
+      background: var(--cream);
+      padding: 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--brown);
+      border: 1px solid rgba(26, 22, 19, 0.05);
+      white-space: pre-wrap;
+      margin-bottom: 16px;
+    }
+
+    .modal-recommendation {
+      background: rgba(143, 174, 139, 0.1);
+      color: var(--sage);
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .modal-footer {
+      padding: 16px 20px;
+      background: rgba(250, 247, 242, 0.5);
+      border-top: 1px solid rgba(26, 22, 19, 0.1);
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .modal-btn {
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .modal-btn svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .modal-btn.archive {
+      background: none;
+      color: rgba(26, 22, 19, 0.6);
+    }
+
+    .modal-btn.archive:hover {
+      color: var(--brown);
+    }
+
+    .modal-btn.edit {
+      background: none;
+      border: 1px solid rgba(26, 22, 19, 0.2);
+      color: var(--brown);
+    }
+
+    .modal-btn.edit:hover {
+      background: rgba(26, 22, 19, 0.05);
+    }
+
+    .modal-btn.primary {
+      background: var(--terracotta);
+      color: white;
+    }
+
+    .modal-btn.primary:hover {
+      background: #b86d38;
+    }
+
+    /* ===== EXPANDED LISTS ===== */
+    .expanded-list {
+      display: none;
+      width: 100%;
+      flex: 1;
+      min-width: 320px;
+      max-width: 440px;
+      margin-top: 24px;
+      padding: 8px;
+      border-radius: 16px;
+      z-index: 10;
+      background: rgba(255, 255, 255, 0.2);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      resize: both;
+      overflow: auto;
+    }
+
+    .expanded-list.show {
+      display: block;
+      animation: slideDown 0.3s ease;
+    }
+
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .expanded-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-bottom: 4px;
+    }
+
+    .expanded-item:hover {
+      background: rgba(255, 255, 255, 0.5);
+    }
+
+    .expanded-item-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .expanded-checkbox {
+      width: 16px;
+      height: 16px;
+      border: 1.5px solid rgba(26, 22, 19, 0.2);
+      border-radius: 4px;
+      transition: all 0.2s;
+    }
+
+    .expanded-item:hover .expanded-checkbox {
+      border-color: var(--terracotta);
+    }
+
+    .expanded-title {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--brown);
+      transition: color 0.2s;
+    }
+
+    .expanded-item:hover .expanded-title {
+      color: var(--terracotta);
+    }
+
+    .expanded-time {
+      font-size: 12px;
+      color: rgba(26, 22, 19, 0.4);
+      font-weight: 500;
+    }
+
+    /* ===== SOP & INSTRUCTION CARDS ===== */
+    .sop-card {
+      background: rgba(255, 255, 255, 0.6);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.5);
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .sop-card:hover {
+      background: white;
+      box-shadow: var(--shadow-soft);
+      transform: translateY(-2px);
+    }
+
+    .sop-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .sop-title {
+      font-weight: 700;
+      color: var(--brown);
+      font-size: 15px;
+    }
+
+    .sop-category {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--terracotta);
+      font-weight: 800;
+      background: rgba(200, 121, 65, 0.1);
+      padding: 3px 8px;
+      border-radius: 6px;
+    }
+
+    .sop-critical {
+      font-size: 10px;
+      text-transform: uppercase;
+      color: #ef4444;
+      font-weight: 800;
+      background: rgba(239, 68, 68, 0.1);
+      padding: 3px 8px;
+      border-radius: 6px;
+    }
+
+    .sop-description {
+      font-size: 13px;
+      color: rgba(26, 22, 19, 0.7);
+      line-height: 1.6;
+    }
+
+    .sop-steps {
+      margin-top: 12px;
+      display: none;
+      border-top: 1px solid rgba(26, 22, 19, 0.1);
+      padding-top: 12px;
+    }
+
+    .sop-card.expanded .sop-steps {
+      display: block;
+    }
+
+    .sop-step {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+      font-size: 13px;
+      color: var(--brown);
+    }
+
+    .sop-step-num {
+      width: 20px;
+      height: 20px;
+      background: var(--brown);
+      color: white;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    /* ===== TIER CARDS ===== */
+    .tier-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .tier-card {
+      padding: 16px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.5);
+      transition: all 0.2s;
+    }
+
+    .tier-card:hover {
+      background: white;
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .tier-num {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+
+    .tier-1 .tier-num { background: #fee2e2; color: #ef4444; }
+    .tier-2 .tier-num { background: #fef3c7; color: #d97706; }
+    .tier-3 .tier-num { background: #dcfce7; color: #16a34a; }
+    .tier-4 .tier-num { background: #f3f4f6; color: #4b5563; }
+    .tier-5 .tier-num { background: #f1f5f9; color: #64748b; }
+
+    .tier-title {
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    .tier-desc {
+      font-size: 11px;
+      color: rgba(26, 22, 19, 0.6);
+      line-height: 1.5;
+    }
+
+    /* ===== RESPONSIVE ===== */
+    @media (max-width: 768px) {
+      .sidebar {
+        position: fixed;
+        left: -280px;
+        top: 0;
+        bottom: 0;
+        z-index: 100;
+        width: 260px !important;
+      }
+
+      .sidebar.mobile-open {
+        left: 0;
+      }
+
+      .sidebar:hover {
+        width: 260px !important;
+      }
+
+      .content-wrapper {
+        padding: 24px;
+      }
+
+      .avatar-container {
+        display: none;
+      }
+    }
+
+    /* ===== BACKPOCKET PREMIUM SUBMENU FIXES ===== */
+    /* Instruction Modal Glassmorphism */
+    #instruction-modal .modal-content-box {
+      background: rgba(255, 255, 255, 0.4);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      border-radius: 12px;
+      padding: 24px;
+    }
+    
+    #instruction-modal .modal-header {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    
+    /* ALL Premium Buttons — borderless glassmorphic */
+    .email-rules-btn, .rule-change-btn, .instruction-modal-btn, .sop-add-btn, .sop-action-btn, .sender-rule-btn {
+      background: rgba(255, 255, 255, 0.3);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      color: var(--brown);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: none;
+      font-family: inherit;
+    }
+
+    .email-rules-btn:hover, .rule-change-btn:hover, .instruction-modal-btn:hover, .sop-add-btn:hover, .sop-action-btn:hover, .sender-rule-btn:hover {
+      background: rgba(255, 255, 255, 0.7);
+      transform: translateY(-1px);
+    }
+
+    .sop-action-btn.delete, .sender-rule-btn.delete {
+      color: #ef4444;
+    }
+    .sop-action-btn.delete:hover, .sender-rule-btn.delete:hover {
+      background: rgba(239, 68, 68, 0.1);
+    }
+
+    /* Primary CTA buttons */
+    .rule-change-btn.submit, .instruction-modal-btn.save {
+      background: var(--terracotta);
+      color: white;
+      border: none;
+    }
+    .rule-change-btn.submit:hover, .instruction-modal-btn.save:hover {
+      background: #b86d38;
+    }
+    
+    .email-rules-actions, .rule-change-buttons {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+
+    /* SOP card actions row */
+    .sop-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    
+    /* Golden Senders Wrap Fix */
+    .golden-senders {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 24px;
+      padding: 12px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 12px;
+    }
+    
+    .golden-badge {
+      background: rgba(217, 119, 6, 0.15);
+      color: #d97706;
+      padding: 4px 10px;
+      border-radius: 16px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    
+    /* Inputs in modals matching premium look */
+    #edit-instruction-text, #rule-change-text, .sender-edit-textarea {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.5);
+      border-radius: 8px;
+      padding: 12px;
+      font-family: inherit;
+      font-size: 13px;
+      color: var(--brown);
+      resize: vertical;
+      min-height: 80px;
+    }
+    
+    #edit-instruction-text:focus, #rule-change-text:focus, .sender-edit-textarea:focus {
+      outline: none;
+      background: rgba(255, 255, 255, 0.8);
+      border-color: var(--terracotta);
+    }
+
+    /* Instruction Modal Fixes */
+    .instruction-modal-body {
+      padding: 24px;
+    }
+    .instruction-modal-footer {
+      padding: 16px 24px;
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      background: rgba(255,255,255,0.1);
+      border-top: 1px solid rgba(255,255,255,0.2);
+    }
+    .instruction-edit-text label, .instruction-edit-preview label, .instruction-edit-category label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      color: var(--brown);
+    }
+    .instruction-edit-text, .instruction-edit-preview, .instruction-edit-category, .instruction-edit-critical {
+      margin-bottom: 16px;
+    }
+
+    /* Content scaling — word wrap inside all panels */
+    .sop-description, .sop-title, .expanded-title, .email-rules-note, .tier-desc, .layer-item {
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+
+    .email-rules-overview h3 {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--brown);
+      margin: 24px 0 12px 0;
+    }
+
+    .email-rules-overview h3:first-child {
+      margin-top: 0;
+    }
+
+    .email-rules-note {
+      margin-top: 20px;
+      padding: 14px;
+      background: rgba(143, 174, 139, 0.1);
+      border-radius: 10px;
+      font-size: 13px;
+      line-height: 1.6;
+      color: rgba(26, 22, 19, 0.7);
+    }
+
+    .layers-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .layer-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: rgba(255, 255, 255, 0.4);
+      border-radius: 8px;
+      font-size: 13px;
+      color: var(--brown);
+    }
+
+    .layer-num {
+      width: 24px;
+      height: 24px;
+      background: var(--brown);
+      color: white;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    /* Client Master Table */
+    .client-master-stats {
+      padding: 12px 0;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--terracotta);
+    }
+
+    .client-master-table {
+      overflow-x: auto;
+    }
+
+    .client-master-table table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .client-master-table th {
+      background: rgba(26, 22, 19, 0.05);
+      padding: 10px 12px;
+      text-align: left;
+      font-weight: 600;
+      font-size: 12px;
+      color: rgba(26, 22, 19, 0.6);
+      letter-spacing: 0.3px;
+      border-bottom: 1px solid rgba(26, 22, 19, 0.1);
+    }
+
+    .client-master-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(26, 22, 19, 0.06);
+      color: var(--brown);
+      word-wrap: break-word;
+      max-width: 160px;
+    }
+
+    .client-master-table tr:hover td {
+      background: rgba(255, 255, 255, 0.5);
+    }
+
+    /* Sender rule card — editable */
+    .sender-rule-card {
+      background: rgba(255, 255, 255, 0.5);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      transition: all 0.2s;
+    }
+
+    .sender-rule-card:hover {
+      background: rgba(255, 255, 255, 0.7);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .sender-rule-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .sender-rule-email {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--brown);
+    }
+
+    .sender-rule-category {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(200, 121, 65, 0.15);
+      color: var(--terracotta);
+    }
+
+    .sender-rule-body {
+      font-size: 13px;
+      color: rgba(26, 22, 19, 0.7);
+      line-height: 1.6;
+      margin-bottom: 10px;
+      word-wrap: break-word;
+    }
+
+    .sender-rule-actions {
+      display: flex;
+      gap: 8px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.3);
+    }
+    
+  </style>
+</head>
+<body>
+
+<div class="bg-image"></div>
+<div class="bg-overlay"></div>
+
+<div class="app-container">
+  <!-- SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <button class="sidebar-toggle" onclick="toggleSidebar()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+        </svg>
+      </button>
+      <div class="sidebar-logo">
+        <span class="sidebar-logo-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="7" r="4" fill="currentColor" opacity="0.9"/>
+            <path d="M4 21C4 16.5817 7.58172 13 12 13C16.4183 13 20 16.5817 20 21" fill="currentColor" opacity="0.5"/>
+            <path d="M19 2L19.75 4.25L22 5L19.75 5.75L19 8L18.25 5.75L16 5L18.25 4.25L19 2Z" fill="currentColor" opacity="0.8"/>
+          </svg>
+        </span>
+        <span class="sidebar-logo-text">BackPocket OS</span>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-item active" onclick="setActivePage('home', this)">
+        <span class="nav-item-icon">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <rect x="3" y="3" width="8" height="10" rx="2" opacity="0.9"/>
+            <rect x="13" y="3" width="8" height="6" rx="2" opacity="0.5"/>
+            <rect x="13" y="11" width="8" height="10" rx="2" opacity="0.9"/>
+            <rect x="3" y="15" width="8" height="6" rx="2" opacity="0.5"/>
+          </svg>
+        </span>
+        <span class="nav-item-label">HOME</span>
+      </div>
+
+      <div class="nav-item" onclick="toggleNav(this, 'email-sub')">
+        <span class="nav-item-icon">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M4 8C4 6.89543 4.89543 6 6 6H18C19.1046 6 20 6.89543 20 8V14H16L14.5 16.5H9.5L8 14H4V8Z" fill="currentColor" opacity="0.5" />
+            <path d="M4 14V18C4 19.1046 4.89543 20 6 20H18C19.1046 20 20 19.1046 20 18V14H16L14.5 16.5H9.5L8 14H4Z" fill="currentColor" opacity="0.9" />
+          </svg>
+        </span>
+        <span class="nav-item-label">
+          EMAIL
+          <span class="nav-badge" id="email-count">0</span>
+        </span>
+        <span class="nav-chevron">▸</span>
+      </div>
+      <div class="nav-subitems" id="email-sub">
+        <div class="nav-subitem">Approvals</div>
+        <div class="nav-subitem">Drafts</div>
+        <div class="nav-subitem">History</div>
+      </div>
+
+      <div class="nav-item" onclick="toggleNav(this, 'docs-sub')">
+        <span class="nav-item-icon">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M3 7C3 5.89543 3.89543 5 5 5H9.58579C9.851 5 10.1054 5.10536 10.2929 5.29289L11.7071 6.70711C11.8946 6.89464 12.149 7 12.4142 7H19C20.1046 7 21 7.89543 21 9V11H3V7Z" fill="currentColor" opacity="0.5" />
+            <path d="M3 11H21V18C21 19.1046 20.1046 20 19 20H5C3.89543 20 3 19.1046 3 18V11Z" fill="currentColor" opacity="0.9" />
+          </svg>
+        </span>
+        <span class="nav-item-label">DOCUMENTS</span>
+        <span class="nav-chevron">▸</span>
+      </div>
+      <div class="nav-subitems" id="docs-sub">
+        <div class="nav-subitem">Upload</div>
+        <div class="nav-subitem">Invoices</div>
+        <div class="nav-subitem">Client Forms</div>
+      </div>
+
+      <div class="nav-item" onclick="toggleNav(this, 'agents-sub')">
+        <span class="nav-item-icon">
+          <svg viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="7" r="4" fill="currentColor" opacity="0.9" />
+            <path d="M4 21C4 16.5817 7.58172 13 12 13C16.4183 13 20 16.5817 20 21" fill="currentColor" opacity="0.5" />
+            <path d="M19 2L19.75 4.25L22 5L19.75 5.75L19 8L18.25 5.75L16 5L18.25 4.25L19 2Z" fill="currentColor" opacity="0.8" />
+            <path d="M21 9L21.4 10.1L22.5 10.5L21.4 10.9L21 12L20.6 10.9L19.5 10.5L20.6 10.1L21 9Z" fill="currentColor" opacity="0.5" />
+          </svg>
+        </span>
+        <span class="nav-item-label">MY TWINS</span>
+        <span class="nav-chevron">▸</span>
+      </div>
+      <div class="nav-subitems" id="agents-sub">
+        <div class="nav-subitem">Accountant</div>
+        <div class="nav-subitem">Auditor</div>
+        <div class="nav-subitem">Admin</div>
+      </div>
+
+      <div class="nav-item" onclick="toggleNav(this, 'coach-sub')">
+        <span class="nav-item-icon">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M12 4L2 9L12 14L22 9L12 4Z" fill="currentColor" opacity="0.9" />
+            <path d="M6 11.5V16.5C6 16.5 8 19 12 19C16 19 18 16.5 18 16.5V11.5L12 14.5L6 11.5Z" fill="currentColor" opacity="0.5" />
+            <rect x="20" y="9" width="2" height="8" rx="1" fill="currentColor" opacity="0.7" />
+          </svg>
+        </span>
+        <span class="nav-item-label">COACH</span>
+        <span class="nav-chevron">▸</span>
+      </div>
+      <div class="nav-subitems" id="coach-sub">
+        <div class="nav-subitem">Yoodli AI</div>
+        <div class="nav-subitem">Voice Practice</div>
+      </div>
+
+      <div class="nav-item" onclick="toggleNav(this, 'instructions-sub')">
+        <span class="nav-item-icon">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M4 4C4 2.89543 4.89543 2 6 2H12V11L9 9L6 11V2H6C4.89543 2 4 2.89543 4 4V20C4 21.1046 4.89543 22 6 22H18C19.1046 22 20 21.1046 20 20V4C20 2.89543 19.1046 2 18 2H12V11L9 9L6 11V2" fill="currentColor" opacity="0.5" />
+            <path d="M4 20C4 21.1046 4.89543 22 6 22H18C19.1046 22 20 21.1046 20 20V18H4V20Z" fill="currentColor" opacity="0.9" />
+          </svg>
+        </span>
+        <span class="nav-item-label">INSTRUCTIONS</span>
+        <span class="nav-chevron">▸</span>
+      </div>
+      <div class="nav-subitems" id="instructions-sub">
+        <div class="nav-subitem" onclick="toggleSection('email-rules')">Email Rules</div>
+        <div class="nav-subitem" onclick="toggleSection('sops')">SOPs</div>
+        <div class="nav-subitem" onclick="toggleSection('twin-instructions')">Twin Instructions</div>
+        <div class="nav-subitem" onclick="toggleSection('sender-rules')">Sender Rules</div>
+        <div class="nav-subitem" onclick="toggleSection('document-rules')">Document Rules</div>
+        <div class="nav-subitem" onclick="toggleSection('marketing-rules')">Marketing Rules</div>
+        <div class="nav-subitem" onclick="toggleSection('client-rules')">Client Rules</div>
+      </div>
+
+      <div class="nav-item" onclick="toggleNav(this, 'marketing-sub')">
+        <span class="nav-item-icon">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M12 2C12 2 7 7 7 14L10 17H14L17 14C17 7 12 2 12 2Z" fill="currentColor" opacity="0.9" />
+            <circle cx="12" cy="11" r="2" fill="white" opacity="0.8" />
+            <path d="M7 14L4 15L6 18L7 17V14Z" fill="currentColor" opacity="0.5" />
+            <path d="M17 14L20 15L18 18L17 17V14Z" fill="currentColor" opacity="0.5" />
+            <path d="M10 17L9 22H11L12 19L13 22H15L14 17H10Z" fill="currentColor" opacity="0.6" />
+          </svg>
+        </span>
+        <span class="nav-item-label">MARKETING</span>
+        <span class="nav-chevron">▸</span>
+      </div>
+      <div class="nav-subitems" id="marketing-sub">
+        <div class="nav-subitem">Social Media</div>
+        <div class="nav-subitem">Content Calendar</div>
+        <div class="nav-subitem">Analytics</div>
+        <div class="nav-subitem">Newsletter</div>
+      </div>
+
+      <div class="nav-item" onclick="toggleNav(this, 'sheets-sub')">
+        <span class="nav-item-icon">
+          <svg viewBox="0 0 24 24" fill="none">
+            <rect x="3" y="3" width="18" height="18" rx="3" fill="currentColor" opacity="0.15" />
+            <rect x="3" y="3" width="18" height="6" rx="3" fill="currentColor" opacity="0.5" />
+            <line x1="9" y1="9" x2="9" y2="21" stroke="currentColor" strokeWidth="1.5" opacity="0.3" />
+            <line x1="15" y1="9" x2="15" y2="21" stroke="currentColor" strokeWidth="1.5" opacity="0.3" />
+            <line x1="3" y1="14" x2="21" y2="14" stroke="currentColor" strokeWidth="1.5" opacity="0.3" />
+          </svg>
+        </span>
+        <span class="nav-item-label">GOOGLE SHEETS</span>
+        <span class="nav-chevron">▸</span>
+      </div>
+      <div class="nav-subitems" id="sheets-sub">
+        <div class="nav-subitem" onclick="toggleSection('client-master')">BPS_Client_Master</div>
+      </div>
+
+      <div class="chat-history-section">
+        <div class="nav-item" onclick="toggleNav(this, 'twin-chat-sub')" style="padding: 8px 12px;">
+          <span class="nav-item-icon" style="width: 24px; height: 24px;">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="12" cy="7" r="4" opacity="0.9"/>
+              <path d="M4 21C4 16.5817 7.58172 13 12 13C16.4183 13 20 16.5817 20 21" opacity="0.5"/>
+            </svg>
+          </span>
+          <span class="nav-item-label" style="opacity: 1; font-size: 12px;">Twin Chat</span>
+          <span class="nav-chevron">▸</span>
+        </div>
+        <div class="nav-subitems" id="twin-chat-sub">
+          <div class="chat-history-list" id="twin-chat-list">
+            <div class="chat-history-empty">No twin chats</div>
+          </div>
+        </div>
+
+        <div class="nav-item" onclick="toggleNav(this, 'open-chat-sub')" style="padding: 8px 12px;">
+          <span class="nav-item-icon" style="width: 24px; height: 24px;">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2L2 7L12 12L22 7L12 2Z" opacity="0.9"/>
+              <path d="M2 17L12 22L22 17" opacity="0.5"/>
+              <path d="M2 12L12 17L22 12" opacity="0.7"/>
+            </svg>
+          </span>
+          <span class="nav-item-label" style="opacity: 1; font-size: 12px;">Open Chat</span>
+          <span class="nav-chevron">▸</span>
+        </div>
+        <div class="nav-subitems" id="open-chat-sub">
+          <div class="chat-history-list" id="open-chat-list">
+            <div class="chat-history-empty">No open chats</div>
+          </div>
+        </div>
+
+        <div class="magnifier-section">
+          <button class="magnifier-btn" onclick="toggleMagnifier()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              <line x1="11" y1="8" x2="11" y2="14"/>
+              <line x1="8" y1="11" x2="14" y2="11"/>
+            </svg>
+            <span>Magnifier</span>
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="user-profile">
+        <div class="user-info">
+          <div class="user-name">Cherry Tomenio</div>
+          <div class="user-role">Business Owner</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN CONTENT -->
+  <main class="main-content">
+    <!-- Main Magnifier Button -->
+    <div class="main-magnifier">
+      <button class="main-magnifier-btn" onclick="toggleMagnifier()" title="Toggle Magnifier">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          <line x1="11" y1="8" x2="11" y2="14"/>
+          <line x1="8" y1="11" x2="14" y2="11"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- AVATAR -->
+    <div class="avatar-container" id="avatar-container">
+      <img 
+        src="https://cdn.magicpatterns.com/uploads/f1i95J4FDYLnkDmxbip4Dw/Digital_Twin.png" 
+        alt="My Twin" 
+        class="avatar-img"
+      >
+    </div>
+
+    <div class="content-wrapper">
+      <!-- WELCOME -->
+      <section class="welcome-section">
+        <h1 class="welcome-title" id="greeting">Good morning, Cherry.</h1>
+        <p class="welcome-subtitle" id="total-count-row">Your Twin has prepared <span id="total-count">0 items</span> for your review.</p>
+      </section>
+
+      <!-- STATS ROW -->
+      <div class="stats-row">
+        <button class="stat-pill active" id="stat-emails" onclick="toggleSection('email')">
+          <svg viewBox="0 0 24 24" fill="none" class="stat-icon">
+            <path d="M4 8C4 6.89543 4.89543 6 6 6H18C19.1046 6 20 6.89543 20 8V14H16L14.5 16.5H9.5L8 14H4V8Z" fill="currentColor" opacity="0.5" />
+            <path d="M4 14V18C4 19.1046 4.89543 20 6 20H18C19.1046 20 20 19.1046 20 18V14H16L14.5 16.5H9.5L8 14H4Z" fill="currentColor" opacity="0.9" />
+          </svg>
+          <span id="stat-email-count">0</span> emails
+        </button>
+        
+        <button class="stat-pill" id="stat-docs" onclick="toggleSection('docs')">
+          <svg viewBox="0 0 24 24" fill="none" class="stat-icon">
+            <path d="M3 7C3 5.89543 3.89543 5 5 5H9.58579C9.851 5 10.1054 5.10536 10.2929 5.29289L11.7071 6.70711C11.8946 6.89464 12.149 7 12.4142 7H19C20.1046 7 21 7.89543 21 9V11H3V7Z" fill="currentColor" opacity="0.5" />
+            <path d="M3 11H21V18C21 19.1046 20.1046 20 19 20H5C3.89543 20 3 19.1046 3 18V11Z" fill="currentColor" opacity="0.9" />
+          </svg>
+          <span id="stat-doc-count">0</span> docs
+        </button>
+        
+        <button class="stat-pill" id="stat-marketing" onclick="toggleSection('marketing')">
+          <svg viewBox="0 0 24 24" fill="none" class="stat-icon">
+            <path d="M12 2C12 2 7 7 7 14L10 17H14L17 14C17 7 12 2 12 2Z" fill="currentColor" opacity="0.9" />
+            <circle cx="12" cy="11" r="2" fill="white" opacity="0.8" />
+            <path d="M7 14L4 15L6 18L7 17V14Z" fill="currentColor" opacity="0.5" />
+            <path d="M17 14L20 15L18 18L17 17V14Z" fill="currentColor" opacity="0.5" />
+            <path d="M10 17L9 22H11L12 19L13 22H15L14 17H10Z" fill="currentColor" opacity="0.6" />
+          </svg>
+          <span id="stat-marketing-count">0</span> posts
+        </button>
+        
+        <button class="stat-pill" id="stat-tasks" onclick="toggleSection('tasks')">
+          <svg viewBox="0 0 24 24" fill="none" class="stat-icon">
+            <circle cx="12" cy="12" r="10" fill="currentColor" opacity="0.15" />
+            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" opacity="0.5" />
+            <path d="M8 12.5L10.5 15L16 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.9" />
+          </svg>
+          <span id="stat-task-count">0</span> tasks
+        </button>
+      </div>
+
+      <!-- PANELS CONTAINER FOR SIDE-BY-SIDE LAYOUT -->
+      <div class="panels-container">
+        <!-- EXPANDED LISTS -->
+        <div class="expanded-list frosted-glass" id="email-list"></div>
+        <div class="expanded-list frosted-glass" id="docs-list"></div>
+        <div class="expanded-list frosted-glass" id="marketing-list"></div>
+        <div class="expanded-list frosted-glass" id="tasks-list"></div>
+
+      <!-- SOPs SECTION -->
+      <div class="instructions-section" id="sops-section" style="display: none;">
+        <div class="instructions-header">
+          <h2>SOPs (How-To Guides)</h2>
+          <button class="instructions-close" onclick="toggleSection('sops')">×</button>
+        </div>
+        <div class="sops-filters">
+          <button class="sop-filter active" onclick="filterSops('all')">All</button>
+          <button class="sop-filter" onclick="filterSops('system')">System</button>
+          <button class="sop-filter" onclick="filterSops('chat')">Chat</button>
+          <button class="sop-filter" onclick="filterSops('email')">Email</button>
+          <button class="sop-filter" onclick="filterSops('instructions')">Instructions</button>
+          <button class="sop-filter" onclick="filterSops('debug')">Debug</button>
+        </div>
+        <div class="sops-list" id="sops-list">
+          <div class="sops-loading">Loading SOPs...</div>
+        </div>
+      </div>
+
+      <!-- Twin Instructions SECTION -->
+      <div class="instructions-section" id="twin-instructions-section" style="display: none;">
+        <div class="instructions-header">
+          <h2>Twin Instructions</h2>
+          <button class="instructions-close" onclick="toggleSection('twin-instructions')">×</button>
+        </div>
+        <div class="instructions-list" id="twin-instructions-list">
+          <div class="sops-loading">Loading Twin Instructions...</div>
+        </div>
+      </div>
+
+      <!-- Sender Rules SECTION -->
+      <div class="instructions-section" id="sender-rules-section" style="display: none;">
+        <div class="instructions-header">
+          <h2>Sender-Specific Rules</h2>
+          <button class="instructions-close" onclick="toggleSection('sender-rules')">×</button>
+        </div>
+        <div class="instructions-list" id="sender-rules-list">
+          <div class="sops-loading">Loading Sender Rules...</div>
+        </div>
+      </div>
+
+      <!-- Email Rules SECTION -->
+      <div class="instructions-section" id="email-rules-section" style="display: none;">
+        <div class="instructions-header">
+          <h2>Email Triage Rules</h2>
+          <button class="instructions-close" onclick="toggleSection('email-rules')">×</button>
+        </div>
+        <div class="email-rules-content" id="email-rules-content">
+          <div class="sops-loading">Loading email rules...</div>
+        </div>
+      </div>
+
+      <!-- Client Master SECTION -->
+      <div class="instructions-section" id="client-master-section" style="display: none;">
+        <div class="instructions-header">
+          <h2>BPS Client Master</h2>
+          <button class="instructions-close" onclick="toggleSection('client-master')">×</button>
+        </div>
+        <div class="client-master-content" id="client-master-content">
+          <div class="sops-loading">Loading client master...</div>
+        </div>
+      </div>
+
+      <!-- Document Rules SECTION -->
+      <div class="instructions-section" id="document-rules-section" style="display: none;">
+        <div class="instructions-header">
+          <h2>Document Processing Rules</h2>
+          <button class="instructions-close" onclick="toggleSection('document-rules')">×</button>
+        </div>
+        <div class="instructions-list" id="document-rules-list">
+          <div class="sops-loading">Loading Document Rules...</div>
+        </div>
+      </div>
+
+      <!-- Marketing Rules SECTION -->
+      <div class="instructions-section" id="marketing-rules-section" style="display: none;">
+        <div class="instructions-header">
+          <h2>Marketing Rules</h2>
+          <button class="instructions-close" onclick="toggleSection('marketing-rules')">×</button>
+        </div>
+        <div class="instructions-list" id="marketing-rules-list">
+          <div class="sops-loading">Loading Marketing Rules...</div>
+        </div>
+      </div>
+
+      <!-- Client Rules SECTION -->
+      <div class="instructions-section" id="client-rules-section" style="display: none;">
+        <div class="instructions-header">
+          <h2>Client-Specific Rules</h2>
+          <button class="instructions-close" onclick="toggleSection('client-rules')">×</button>
+        </div>
+        <div class="instructions-list" id="client-rules-list">
+          <div class="sops-loading">Loading Client Rules...</div>
+        </div>
+      </div>
+
+      <!-- CHAT SECTION -->
+      <!-- INSTRUCTION EDIT MODAL -->
+      <div class="instruction-modal" id="instruction-modal" style="display: none;">
+        <div class="instruction-modal-content">
+          <div class="instruction-modal-header">
+            <h2>Edit Instruction</h2>
+            <button class="instruction-modal-close" onclick="closeInstructionModal()">×</button>
+          </div>
+          <div class="instruction-modal-body">
+            <div class="instruction-edit-category">
+              <label>Category:</label>
+              <select id="edit-category">
+                <option value="general">General</option>
+                <option value="email">Email</option>
+                <option value="chat">Chat</option>
+                <option value="response">Response</option>
+                <option value="approval">Approval</option>
+              </select>
+            </div>
+            <div class="instruction-edit-critical">
+              <label>
+                <input type="checkbox" id="edit-critical">
+                Mark as Critical (must always follow)
+              </label>
+            </div>
+            <div class="instruction-edit-text">
+              <label>Instruction:</label>
+              <textarea id="edit-instruction-text" rows="8"></textarea>
+            </div>
+            <div class="instruction-edit-preview">
+              <label>Preview (how Twin sees it):</label>
+              <div id="edit-preview" class="instruction-preview-box"></div>
+            </div>
+          </div>
+          <div class="instruction-modal-footer">
+            <button class="instruction-modal-btn cancel" onclick="closeInstructionModal()">Cancel</button>
+            <button class="instruction-modal-btn discuss" onclick="discussInstruction()">Discuss with Twin</button>
+            <button class="instruction-modal-btn save" onclick="saveInstructionEdit()">Save Changes</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CHAT SECTION -->
+      <div class="chat-section">
+        <!-- Collapsed -->
+        <div class="chat-collapsed" id="chat-collapsed" onclick="expandChat()">
+          <div class="chat-icon-wrapper">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M4 6C4 4.89543 4.89543 4 6 4H18C19.1046 4 20 4.89543 20 6V14C20 15.1046 19.1046 16 18 16H13L8 20V16H6C4.89543 16 4 15.1046 4 14V6Z" opacity="0.9"/>
+            </svg>
+          </div>
+          <div class="chat-text">
+            <div class="chat-title">Ask My Twin</div>
+            <div class="chat-subtitle">Chat, ask questions, or give instructions</div>
+          </div>
+          <div class="chat-status">
+            <div class="chat-status-dot"></div>
+            Online
+          </div>
+        </div>
+
+        <!-- Expanded -->
+        <div class="chat-expanded" id="chat-expanded">
+          <div class="chat-header">
+            <div class="chat-header-left">
+              <span class="chat-header-icon">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="12" cy="7" r="4" opacity="0.9"/>
+                  <path d="M4 21C4 16.5817 7.58172 13 12 13C16.4183 13 20 16.5817 20 21" opacity="0.5"/>
+                  <path d="M19 2L19.75 4.25L22 5L19.75 5.75L19 8L18.25 5.75L16 5L18.25 4.25L19 2Z" opacity="0.8"/>
+                </svg>
+              </span>
+              <span class="chat-header-title">My Twin</span>
+              <span class="chat-header-status">
+                <div class="chat-status-dot"></div>
+                Online
+              </span>
+            </div>
+            <button class="chat-close" onclick="collapseChat()">×</button>
+          </div>
+
+          <div class="chat-messages" id="chat-messages" style="background: rgba(255, 255, 255, 0.2);">
+            <div class="chat-msg ai">Good morning! I've prepared your daily approvals. The ATO email needs your attention first.</div>
+          </div>
+
+          <div class="chat-input-area" style="position: relative;">
+            <div class="command-dropdown" id="command-dropdown">
+              <div class="command-item" onclick="selectCommand('/pending', 'Show pending approvals')">
+                <div class="command-icon">📋</div>
+                <div class="command-text">
+                  <div class="command-name">/pending</div>
+                  <div class="command-desc">Show all pending approvals</div>
+                </div>
+              </div>
+              <div class="command-item" onclick="selectCommand('/approve ', 'Send email (add ref)')">
+                <div class="command-icon">✅</div>
+                <div class="command-text">
+                  <div class="command-name">/approve</div>
+                  <div class="command-desc">Approve and send an email</div>
+                </div>
+              </div>
+              <div class="command-item" onclick="selectCommand('/revise ', 'Revise draft (add ref + feedback)')">
+                <div class="command-icon">✏️</div>
+                <div class="command-text">
+                  <div class="command-name">/revise</div>
+                  <div class="command-desc">AI revise a draft</div>
+                </div>
+              </div>
+              <div class="command-item" onclick="selectCommand('/coach ', 'Run Communication Coach')">
+                <div class="command-icon">🎯</div>
+                <div class="command-text">
+                  <div class="command-name">/coach</div>
+                  <div class="command-desc">Analyze draft tone & clarity</div>
+                </div>
+              </div>
+              <div class="command-item" onclick="selectCommand('/status', 'Show system status')">
+                <div class="command-icon">🔋</div>
+                <div class="command-text">
+                  <div class="command-name">/status</div>
+                  <div class="command-desc">System health check</div>
+                </div>
+              </div>
+              <div class="command-item" onclick="selectCommand('/help', 'Show all commands')">
+                <div class="command-icon">❓</div>
+                <div class="command-text">
+                  <div class="command-name">/help</div>
+                  <div class="command-desc">List all commands</div>
+                </div>
+              </div>
+            </div>
+            <div class="chat-input-row">
+              <input type="text" class="chat-input" id="chat-input" placeholder="Ask me anything... (type / for commands)" onkeypress="if(event.key==='Enter')sendChat()" oninput="handleCommandInput(event)">
+              <button class="chat-tool">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                  <path d="M14.5 4.5C16.433 4.5 18 6.067 18 8V16C18 19.314 15.314 22 12 22C8.686 22 6 19.314 6 16V7C6 4.791 7.791 3 10 3C12.209 3 14 4.791 14 7V16"/>
+                </svg>
+              </button>
+              <button class="chat-tool">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="9" y="2" width="6" height="12" rx="3" opacity="0.9"/>
+                  <path d="M5 10C5 13.866 8.134 17 12 17C15.866 17 19 13.866 19 10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none" opacity="0.5"/>
+                  <line x1="12" y1="17" x2="12" y2="22" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" opacity="0.5"/>
+                  <line x1="9" y1="22" x2="15" y2="22" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" opacity="0.5"/>
+                </svg>
+              </button>
+              <button class="chat-send-btn" onclick="sendChat()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <path d="M12 3L12 16"/>
+                  <path d="M7 8L12 3L17 8"/>
+                </svg>
+              </button>
+            </div>
+            <div class="chat-new-chat">
+              <button class="chat-new-chat-btn" onclick="newChat()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <line x1="12" y1="5" x2="12" y2="19"/>
+                  <line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                New Chat
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div> <!-- End .panels-container -->
+    </div> <!-- End .content-wrapper -->
+  </main>
+</div>
+
+<!-- APPROVAL MODAL -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modal-title">Email Review</h2>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer">
+      <button class="modal-btn archive" onclick="archiveItem()">Archive</button>
+      <button class="modal-btn save" onclick="saveDraft()">Save Draft</button>
+      <button class="modal-btn primary" id="modal-action-btn" onclick="approveItem()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M8 12.5L10.5 15L16 9"/>
+        </svg>
+        <span id="modal-action-text">Approve & Send</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== STATE =====
+let currentSection = null;
+let approvedItems = new Set();
+let pendingEmails = [];
+let pendingDocs = [];
+let pendingMarketing = [];
+let pendingTasks = [];
+let chatHistory = [];
+
+// ===== INIT =====
+document.addEventListener('DOMContentLoaded', () => {
+  setGreeting();
+  loadData();
+  loadConversations();
+});
+
+// ===== CONVERSATIONS =====
+async function loadConversations() {
+  try {
+    const res = await fetch('/api/conversations');
+    const data = await res.json();
+    const allConvs = data.conversations || [];
+    
+    const twinList = document.getElementById('twin-chat-list');
+    const openList = document.getElementById('open-chat-list');
+    
+    const twinConvs = allConvs.filter(c => c.source === 'twin').slice(0, 5);
+    const openConvs = allConvs.filter(c => c.source === 'opencode').slice(0, 5);
+    
+    if (twinConvs.length === 0) {
+      twinList.innerHTML = '<div class="chat-history-empty">No twin chats</div>';
+    } else {
+      twinList.innerHTML = twinConvs.map(conv => `
+        <div class="chat-history-item" onclick="loadConversation('${conv.id}')">
+          <div class="chat-history-item-title">${conv.title || 'New Chat'}</div>
+          <div class="chat-history-item-time">${formatTime(conv.updated_at)}</div>
+        </div>
+      `).join('');
+    }
+    
+    if (openConvs.length === 0) {
+      openList.innerHTML = '<div class="chat-history-empty">No open chats</div>';
+    } else {
+      openList.innerHTML = openConvs.map(conv => `
+        <div class="chat-history-item" onclick="loadConversation('${conv.id}')">
+          <div class="chat-history-item-title">${conv.title || 'New Chat'}</div>
+          <div class="chat-history-item-time">${formatTime(conv.updated_at)}</div>
+        </div>
+      `).join('');
+    }
+  } catch (e) {
+    console.error('Failed to load conversations:', e);
+  }
+}
+
+function formatTime(timestamp) {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diff = now - date;
+  if (diff < 60000) return 'Just now';
+  if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+  if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
+  return date.toLocaleDateString();
+}
+
+async function loadConversation(convId) {
+  try {
+    const res = await fetch('/api/conversations/' + convId);
+    const data = await res.json();
+    const messages = data.messages || [];
+    const chatMsgs = document.getElementById('chat-messages');
+    chatMsgs.innerHTML = messages.map(m => `
+      <div class="chat-msg ${m.role}">${m.content}</div>
+    `).join('');
+    chatMsgs.scrollTop = chatMsgs.scrollHeight;
+    expandChat();
+  } catch (e) {
+    console.error('Failed to load conversation:', e);
+  }
+}
+
+// ===== MAGNIFIER =====
+let magnifierActive = false;
+
+function toggleMagnifier() {
+  magnifierActive = !magnifierActive;
+  document.body.classList.toggle('magnifier-on', magnifierActive);
+  document.querySelector('.magnifier-btn').classList.toggle('active', magnifierActive);
+}
+
+// ===== GREETING =====
+function setGreeting() {
+  const hour = new Date().getHours();
+  let greeting = 'Good evening';
+  if (hour < 12) greeting = 'Good morning';
+  else if (hour < 17) greeting = 'Good afternoon';
+  document.getElementById('greeting').textContent = `${greeting}, Cherry.`;
+}
+
+// ===== SIDEBAR =====
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  sidebar.classList.toggle('expanded');
+}
+
+// Auto-collapse sidebar when clicking outside
+document.addEventListener('click', function(e) {
+  const sidebar = document.getElementById('sidebar');
+  const toggle = document.querySelector('.sidebar-toggle');
+  if (!sidebar.contains(e.target) && !toggle.contains(e.target)) {
+    sidebar.classList.remove('expanded');
+  }
+});
+
+function toggleNav(el, subId) {
+  const sub = document.getElementById(subId);
+  sub.classList.toggle('open');
+  
+  // Auto-expand sidebar when clicking nav with sub-items
+  const sidebar = document.getElementById('sidebar');
+  sidebar.classList.add('expanded');
+  
+  // Close other submenus
+  document.querySelectorAll('.nav-subitems').forEach(s => {
+    if (s.id !== subId) s.classList.remove('open');
+  });
+}
+
+function setActivePage(page, el) {
+  document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+  if (el) el.classList.add('active');
+}
+
+// ===== DATA =====
+async function loadData() {
+  try {
+    const response = await fetch('/api/pending');
+    const data = await response.json();
+    
+    pendingEmails = data.items.map(item => ({
+      id: item.ref_id,
+      title: item.subject || 'No subject',
+      time: formatTimeAgo(item.created_at),
+      type: 'email',
+      from: item.sender,
+      ref_id: item.ref_id,
+      tier: item.tier
+    }));
+  } catch (err) {
+    console.error('Failed to load pending emails:', err);
+    pendingEmails = [];
+  }
+  
+  pendingDocs = [];
+  pendingMarketing = [];
+  pendingTasks = [];
+  
+  document.getElementById('email-count').textContent = pendingEmails.length;
+  document.getElementById('stat-email-count').textContent = pendingEmails.length;
+  document.getElementById('stat-doc-count').textContent = pendingDocs.length;
+  document.getElementById('stat-marketing-count').textContent = pendingMarketing.length;
+  document.getElementById('stat-task-count').textContent = pendingTasks.length;
+  
+  updateTotalCount();
+  renderAllLists();
+}
+
+function formatTimeAgo(dateStr) {
+  const date = new Date(dateStr.replace(' ', 'T'));
+  const now = new Date();
+  const diffMs = now - date;
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+  
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  return `${diffDays}d ago`;
+}
+
+function updateTotalCount() {
+  const total = pendingEmails.length + pendingDocs.length + pendingMarketing.length + pendingTasks.length;
+  document.getElementById('total-count').textContent = `${total} items`;
+}
+
+function renderAllLists() {
+  renderList('email', pendingEmails);
+  renderList('docs', pendingDocs);
+  renderList('marketing', pendingMarketing);
+  renderList('tasks', pendingTasks);
+}
+
+function renderList(type, items) {
+  const list = document.getElementById(`${type}-list`);
+  const filtered = items.filter(i => !approvedItems.has(i.id));
+  
+  if (filtered.length === 0) {
+    list.classList.remove('show');
+    return;
+  }
+  
+  list.innerHTML = filtered.map(item => `
+    <div class="expanded-item" onclick="openModal('${item.id}', '${item.type}')">
+      <div class="expanded-item-left">
+        <div class="expanded-checkbox"></div>
+        <span class="expanded-title">${item.title}</span>
+      </div>
+      <span class="expanded-time">${item.time}</span>
+    </div>
+  `).join('');
+}
+
+// ===== SOPs =====
+let allSOPs = [];
+
+function loadSOPs() {
+  fetch('/api/sops')
+    .then(r => r.json())
+    .then(data => {
+      allSOPs = data.sops || [];
+      renderSOPs('all');
+    })
+    .catch(e => {
+      document.getElementById('sops-list').innerHTML = '<div class="sops-loading">Error loading SOPs</div>';
+    });
+}
+
+function loadEmailRules() {
+  fetch('/api/email-rules')
+    .then(r => r.json())
+    .then(data => {
+      const container = document.getElementById('email-rules-content');
+      
+      let html = `
+        <div class="email-rules-overview">
+          <div class="email-rules-actions">
+            <button class="email-rules-btn discuss" onclick="discussEmailRules()">
+              <svg viewBox="0 0 24 24" fill="none" width="16" height="16">
+                <circle cx="12" cy="7" r="4" fill="currentColor" opacity="0.9"/>
+                <path d="M4 21C4 16.5817 7.58172 13 12 13C16.4183 13 20 16.5817 20 21" fill="currentColor" opacity="0.5"/>
+                <path d="M19 2L19.75 4.25L22 5L19.75 5.75L19 8L18.25 5.75L16 5L18.25 4.25L19 2Z" fill="currentColor" opacity="0.8"/>
+              </svg>
+              Discuss with Twin
+            </button>
+            <button class="email-rules-btn edit" onclick="requestEmailRuleChange()">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+                <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+              </svg>
+              Request Change
+            </button>
+          </div>
+          
+          <h3>Tier System</h3>
+          <div class="tier-grid">
+            <div class="tier-card tier-1">
+              <div class="tier-num">1</div>
+              <div class="tier-title">REPLY NEEDED</div>
+              <div class="tier-desc">Important client emails requiring personalized response</div>
+            </div>
+            <div class="tier-card tier-2">
+              <div class="tier-num">2</div>
+              <div class="tier-title">REVIEW NEEDED</div>
+              <div class="tier-desc">Non-urgent but needs acknowledgment</div>
+            </div>
+            <div class="tier-card tier-3">
+              <div class="tier-num">3</div>
+              <div class="tier-title">FYI ONLY</div>
+              <div class="tier-desc">Info emails, no response needed</div>
+            </div>
+            <div class="tier-card tier-4">
+              <div class="tier-num">4</div>
+              <div class="tier-title">ARCHIVE</div>
+              <div class="tier-desc">Portal updates, digests, auto-generated</div>
+            </div>
+            <div class="tier-card tier-5">
+              <div class="tier-num">5</div>
+              <div class="tier-title">LOW PRIORITY</div>
+              <div class="tier-desc">Newsletters, promotions, spam-like</div>
+            </div>
+          </div>
+          
+          <h3>Golden Senders (Always Tier 1)</h3>
+          <div class="golden-senders">
+            ${(data.golden_senders || []).map(s => `<span class="golden-badge">${s}</span>`).join('')}
+          </div>
+          
+          <h3>Processing Layers</h3>
+          <div class="layers-list">
+            ${(data.processing_layers || []).map((layer, i) => `
+              <div class="layer-item">
+                <span class="layer-num">${i + 1}</span>
+                <span>${layer}</span>
+              </div>
+            `).join('')}
+          </div>
+          
+          <div class="email-rules-note">
+            <strong>Note:</strong> Email triage rules are system-critical and stored in code for security. 
+            To modify, discuss with Twin or request a change below. Changes will be reviewed and applied safely.
+          </div>
+        </div>
+      `;
+      
+      container.innerHTML = html;
+    })
+    .catch(e => {
+      document.getElementById('email-rules-content').innerHTML = '<div class="sops-loading">Error loading email rules</div>';
+    });
+}
+
+function discussEmailRules() {
+  const message = `I want to discuss the email triage rules. Can you explain how the tier system works and suggest any improvements?`;
+  
+  // Open chat BUT keep email rules section open
+  expandChat();
+  
+  setTimeout(() => {
+    document.getElementById('chat-input').value = message;
+    sendChat();
+  }, 300);
+}
+
+function requestEmailRuleChange() {
+  // Show the request form inside email rules section instead of closing it
+  const contentDiv = document.getElementById('email-rules-content');
+  contentDiv.innerHTML = `
+    <div class="rule-change-form">
+      <h3>Request Email Rule Change</h3>
+      <p class="rule-change-hint">Describe the change you'd like to make to the email triage rules.</p>
+      
+      <div class="rule-change-field">
+        <label>Your Request:</label>
+        <textarea id="rule-change-text" rows="4" placeholder="Example: Add ato.gov.au to Tier 2, or Change Tier 1 to include golden senders only..."></textarea>
+      </div>
+      
+      <div class="rule-change-buttons">
+        <button class="rule-change-btn discuss" onclick="discussRuleChange()">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+          Discuss with Twin
+        </button>
+        <button class="rule-change-btn save" onclick="saveRuleChangeDraft()">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/></svg>
+          Save Draft
+        </button>
+        <button class="rule-change-btn edit" onclick="editRuleChange()">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+          Edit
+        </button>
+        <button class="rule-change-btn submit" onclick="submitRuleChange()">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/></svg>
+          Submit for Approval
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function discussRuleChange() {
+  const text = document.getElementById('rule-change-text').value;
+  if (!text.trim()) {
+    alert('Please describe your change request first');
+    return;
+  }
+  
+  const message = `I want to discuss an email rule change: ${text}. Can you help me refine this?`;
+  expandChat();
+  
+  setTimeout(() => {
+    document.getElementById('chat-input').value = message;
+    sendChat();
+  }, 300);
+}
+
+function saveRuleChangeDraft() {
+  const text = document.getElementById('rule-change-text').value;
+  if (!text.trim()) {
+    alert('Please enter your change request first');
+    return;
+  }
+  
+  fetch('/api/instructions', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      instruction_text: `EMAIL RULE CHANGE DRAFT: ${text}`,
+      category: 'email_rules_change',
+      is_active: false,
+      is_critical: false,
+      description: 'Draft - pending review'
+    })
+  }).then(r => r.json()).then(data => {
+    alert('Draft saved! You can discuss it with Twin or submit for approval.');
+  });
+}
+
+function editRuleChange() {
+  const textarea = document.getElementById('rule-change-text');
+  textarea.focus();
+}
+
+function submitRuleChange() {
+  const text = document.getElementById('rule-change-text').value;
+  if (!text.trim()) {
+    alert('Please enter your change request first');
+    return;
+  }
+  
+  fetch('/api/instructions', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      instruction_text: `EMAIL RULE CHANGE REQUEST: ${text}`,
+      category: 'email_rules_change',
+      is_active: false,
+      is_critical: true,
+      description: 'Pending approval - change to email triage rules'
+    })
+  }).then(r => r.json()).then(data => {
+    alert('Submitted for approval! Twin will review and implement if approved.');
+    loadEmailRules();
+  });
+}
+
+function loadTwinInstructions() {
+  fetch('/api/instructions')
+    .then(r => r.json())
+    .then(data => {
+      const container = document.getElementById('twin-instructions-list');
+      const general = data.general_instructions || [];
+      if (general.length === 0) {
+        container.innerHTML = '<div class="sops-loading">No Twin instructions yet. Add instructions to make Twin smarter.</div>';
+        return;
+      }
+      container.innerHTML = general.map(inst => `
+        <div class="sop-card">
+          <div class="sop-header">
+            <span class="sop-category">${inst.category || 'General'}</span>
+            ${inst.is_critical ? '<span class="sop-critical">Critical</span>' : ''}
+          </div>
+          <div class="sop-title">${inst.instruction?.substring(0, 100) || inst.instruction_text?.substring(0, 100)}...</div>
+          <div class="sop-description">${inst.instruction || inst.instruction_text || ''}</div>
+          <div class="sop-actions">
+            <button class="sop-action-btn" onclick="editInstruction(${inst.id}, '${inst.category}', '${escapeHtml(inst.instruction || inst.instruction_text)}')">Edit</button>
+            <button class="sop-action-btn delete" onclick="deleteInstruction(${inst.id})">Delete</button>
+          </div>
+        </div>
+      `).join('');
+      container.innerHTML += `
+        <button class="sop-add-btn" onclick="showAddInstruction()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Add New Instruction
+        </button>
+      `;
+    })
+    .catch(e => {
+      document.getElementById('twin-instructions-list').innerHTML = '<div class="sops-loading">Error loading instructions</div>';
+    });
+}
+
+function showAddInstruction() {
+  const text = prompt('Enter new instruction:');
+  if (!text) return;
+  const category = prompt('Category (general, email, chat, etc.):', 'general') || 'general';
+  fetch('/api/instructions', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({instruction_text: text, category: category, is_active: true, is_critical: false})
+  }).then(r => r.json()).then(data => {
+    if (data.status === 'success') {
+      loadTwinInstructions();
+    }
+  });
+}
+
+let currentEditingId = null;
+
+function editInstruction(id, category, text) {
+  currentEditingId = id;
+  document.getElementById('edit-category').value = category || 'general';
+  document.getElementById('edit-instruction-text').value = text;
+  document.getElementById('edit-critical').checked = false;
+  document.getElementById('edit-preview').textContent = text;
+  
+  // Update preview on input
+  document.getElementById('edit-instruction-text').oninput = function() {
+    document.getElementById('edit-preview').textContent = this.value;
+  };
+  
+  document.getElementById('instruction-modal').style.display = 'flex';
+}
+
+function closeInstructionModal() {
+  document.getElementById('instruction-modal').style.display = 'none';
+  currentEditingId = null;
+}
+
+function discussInstruction() {
+  const text = document.getElementById('edit-instruction-text').value;
+  const category = document.getElementById('edit-category').value;
+  const isCritical = document.getElementById('edit-critical').checked;
+  
+  // Instead of closing modal, add chat section to it and ask Twin
+  const previewBox = document.getElementById('edit-preview');
+  previewBox.innerHTML = '<div class="instruction-chat-loading">Twin is thinking...</div>';
+  
+  // Ask Twin to review the instruction
+  const message = `Please review this instruction and tell me if it's clear and effective. Should I make any changes?\n\nInstruction (${category}${isCritical ? ' - CRITICAL' : ''}):\n${text}`;
+  
+  fetch('/api/twin-chat', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({message: message, chat_history: []})
+  })
+  .then(r => r.json())
+  .then(data => {
+    const response = data.response || 'Twin is thinking...';
+    previewBox.innerHTML = `
+      <div class="instruction-chat-response">
+        <strong>Twin's Feedback:</strong>
+        <div style="margin-top: 8px; line-height: 1.6;">${response.replace(/\n/g, '<br>')}</div>
+      </div>
+    `;
+  })
+  .catch(e => {
+    previewBox.innerHTML = '<div class="instruction-chat-error">Could not reach Twin. Try again.</div>';
+  });
+}
+
+function saveInstructionEdit() {
+  const text = document.getElementById('edit-instruction-text').value;
+  const category = document.getElementById('edit-category').value;
+  const isCritical = document.getElementById('edit-critical').checked;
+  
+  if (!text.trim()) {
+    alert('Please enter an instruction');
+    return;
+  }
+  
+  // Validate instruction before saving
+  if (text.length < 10) {
+    alert('Instruction is too short. Please provide more detail.');
+    return;
+  }
+  
+  if (text.length > 2000) {
+    alert('Instruction is too long. Please keep it under 2000 characters.');
+    return;
+  }
+  
+  // Show preview and confirm
+  const confirmMsg = `Are you sure you want to save this instruction?
+
+Category: ${category}
+Critical: ${isCritical ? 'Yes' : 'No'}
+Preview: ${text.substring(0, 100)}...
+
+This will be saved and Twin will follow this instruction.`;
+  
+  if (!confirm(confirmMsg)) {
+    return;
+  }
+  
+  fetch('/api/instructions/' + currentEditingId, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      instruction_text: text, 
+      category: category, 
+      is_active: true, 
+      is_critical: isCritical
+    })
+  }).then(r => r.json()).then(data => {
+    if (data.status === 'success') {
+      alert('Instruction saved successfully! Twin will follow this from now on.');
+      closeInstructionModal();
+      loadTwinInstructions();
+    } else {
+      alert('Error saving: ' + (data.message || 'Unknown error'));
+    }
+  });
+}
+
+function deleteInstruction(id) {
+  if (!confirm('Delete this instruction?')) return;
+  fetch('/api/instructions/' + id, {method: 'DELETE'}).then(r => r.json()).then(data => {
+    if (data.status === 'success') {
+      loadTwinInstructions();
+    }
+  });
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  return text.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
+function loadSenderRules() {
+  fetch('/api/sender-instructions')
+    .then(r => r.json())
+    .then(data => {
+      const container = document.getElementById('sender-rules-list');
+      const rules = data.instructions || [];
+      if (rules.length === 0) {
+        container.innerHTML = `
+          <div class="sops-loading">No sender-specific rules yet.</div>
+          <button class="sop-add-btn" onclick="addSenderRule()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Add Sender Rule
+          </button>`;
+        return;
+      }
+      container.innerHTML = rules.map(rule => `
+        <div class="sender-rule-card" id="sender-card-${encodeURIComponent(rule.sender_email || rule.sender || '')}">
+          <div class="sender-rule-header">
+            <span class="sender-rule-email">${rule.sender_email || rule.sender || 'Unknown'}</span>
+            <span class="sender-rule-category">${(rule.category || 'custom').toUpperCase()}</span>
+          </div>
+          <div class="sender-rule-body">${rule.instructions || ''}</div>
+          <div class="sender-rule-actions">
+            <button class="sender-rule-btn" onclick="editSenderRule('${escapeHtml(rule.sender_email || rule.sender || '')}', this)">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+              Edit
+            </button>
+            <button class="sender-rule-btn" onclick="discussSenderRule('${escapeHtml(rule.sender_email || rule.sender || '')}')">
+              <svg viewBox="0 0 24 24" fill="none" width="14" height="14">
+                <circle cx="12" cy="7" r="4" fill="currentColor" opacity="0.9"/>
+                <path d="M4 21C4 16.5817 7.58172 13 12 13C16.4183 13 20 16.5817 20 21" fill="currentColor" opacity="0.5"/>
+                <path d="M19 2L19.75 4.25L22 5L19.75 5.75L19 8L18.25 5.75L16 5L18.25 4.25L19 2Z" fill="currentColor" opacity="0.8"/>
+              </svg>
+              Discuss
+            </button>
+            <button class="sender-rule-btn delete" onclick="deleteSenderRule('${escapeHtml(rule.sender_email || rule.sender || '')}')">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+              Delete
+            </button>
+          </div>
+        </div>
+      `).join('');
+      container.innerHTML += `
+        <button class="sop-add-btn" onclick="addSenderRule()" style="margin-top: 12px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Add Sender Rule
+        </button>`;
+    })
+    .catch(e => {
+      document.getElementById('sender-rules-list').innerHTML = '<div class="sops-loading">Error loading sender rules</div>';
+    });
+}
+
+function addSenderRule() {
+  const email = prompt('Enter sender email address:');
+  if (!email || !email.includes('@')) return;
+  const instructions = prompt('Enter instructions for this sender:');
+  if (!instructions) return;
+  const category = prompt('Category (client, supplier, builder, etc.):', 'client') || 'client';
+  
+  fetch('/api/sender-instructions', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ sender_email: email, instructions: instructions, category: category })
+  }).then(r => r.json()).then(() => loadSenderRules());
+}
+
+function editSenderRule(senderEmail, btn) {
+  const card = btn.closest('.sender-rule-card');
+  const bodyEl = card.querySelector('.sender-rule-body');
+  const currentText = bodyEl.textContent;
+  
+  bodyEl.innerHTML = `
+    <textarea class="sender-edit-textarea" id="sender-edit-${senderEmail}">${currentText}</textarea>
+    <div style="display: flex; gap: 8px; margin-top: 8px;">
+      <button class="sender-rule-btn" onclick="saveSenderRule('${senderEmail}')">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/></svg>
+        Save
+      </button>
+      <button class="sender-rule-btn" onclick="loadSenderRules()">Cancel</button>
+    </div>
+  `;
+}
+
+function saveSenderRule(senderEmail) {
+  const textarea = document.getElementById('sender-edit-' + senderEmail);
+  if (!textarea) return;
+  const newText = textarea.value.trim();
+  if (!newText) { alert('Instructions cannot be empty'); return; }
+  
+  fetch('/api/sender-instructions', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ sender_email: senderEmail, instructions: newText, category: '' })
+  }).then(r => r.json()).then(() => loadSenderRules());
+}
+
+function deleteSenderRule(senderEmail) {
+  if (!confirm('Delete rules for ' + senderEmail + '?')) return;
+  fetch('/api/sender-instructions/' + encodeURIComponent(senderEmail), {
+    method: 'DELETE'
+  }).then(r => r.json()).then(() => loadSenderRules());
+}
+
+function discussSenderRule(senderEmail) {
+  const message = 'I want to discuss the sender rule for ' + senderEmail + '. Can you explain what it does and suggest improvements?';
+  expandChat();
+  setTimeout(() => {
+    document.getElementById('chat-input').value = message;
+    sendChat();
+  }, 300);
+}
+
+function loadClientMaster() {
+  fetch('/api/client-master')
+    .then(r => r.json())
+    .then(data => {
+      const container = document.getElementById('client-master-content');
+      if (data.status === 'error') {
+        container.innerHTML = '<div class="sops-loading">Error loading client data: ' + data.message + '</div>';
+        return;
+      }
+      if (data.status === 'empty' || !data.clients || data.clients.length === 0) {
+        container.innerHTML = '<div class="sops-loading">No clients in BPS_Client_Master yet.</div>';
+        return;
+      }
+      container.innerHTML = `
+        <div class="client-master-stats">
+          <span>${data.count} clients</span>
+        </div>
+        <div class="client-master-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Status</th>
+                <th>Mobile</th>
+                <th>Background</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.clients.slice(0, 50).map(client => `
+                <tr>
+                  <td>${client.first_name || ''} ${client.last_name || ''}</td>
+                  <td>${client.primary_email || client.email || ''}</td>
+                  <td>${client.client_status || ''}</td>
+                  <td>${client.mobile || ''}</td>
+                  <td>${client.background_info || ''}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+    })
+    .catch(e => {
+      document.getElementById('client-master-content').innerHTML = '<div class="sops-loading">Error loading client master</div>';
+    });
+}
+
+function renderSOPs(category) {
+  const container = document.getElementById('sops-list');
+  const filtered = category === 'all' ? allSOPs : allSOPs.filter(s => s.category === category);
+  
+  if (filtered.length === 0) {
+    container.innerHTML = '<div class="sops-loading">No SOPs in this category</div>';
+    return;
+  }
+  
+  container.innerHTML = filtered.map(sop => {
+    const steps = JSON.parse(sop.steps || '[]');
+    return `
+      <div class="sop-card" onclick="toggleSOP(this)">
+        <div class="sop-card-header">
+          <span class="sop-title">${sop.title}</span>
+          <span class="sop-category">${sop.category}</span>
+        </div>
+        <div class="sop-description">${sop.description}</div>
+        <div class="sop-steps">
+          ${steps.map((step, i) => `
+            <div class="sop-step">
+              <span class="sop-step-num">${i + 1}</span>
+              <span>${step.replace(/^\d+\.\s*/, '')}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function toggleSOP(card) {
+  card.classList.toggle('expanded');
+}
+
+function filterSops(category) {
+  document.querySelectorAll('.sop-filter').forEach(f => f.classList.remove('active'));
+  event.target.classList.add('active');
+  renderSOPs(category);
+}
+
+function toggleSection(section) {
+  const lists = ['email-list', 'docs-list', 'marketing-list', 'tasks-list'];
+  const statIds = ['stat-emails', 'stat-docs', 'stat-marketing', 'stat-tasks'];
+  
+  // All instruction-style sections
+  const allSections = {
+    'sops': { el: document.getElementById('sops-section'), loader: () => { if (allSOPs.length === 0) loadSOPs(); } },
+    'twin-instructions': { el: document.getElementById('twin-instructions-section'), loader: loadTwinInstructions },
+    'sender-rules': { el: document.getElementById('sender-rules-section'), loader: loadSenderRules },
+    'email-rules': { el: document.getElementById('email-rules-section'), loader: loadEmailRules },
+    'client-master': { el: document.getElementById('client-master-section'), loader: loadClientMaster },
+    'document-rules': { el: document.getElementById('document-rules-section'), loader: () => loadCategoryInstructions('document-rules-list', 'Document') },
+    'marketing-rules': { el: document.getElementById('marketing-rules-section'), loader: () => loadCategoryInstructions('marketing-rules-list', 'Marketing') },
+    'client-rules': { el: document.getElementById('client-rules-section'), loader: () => loadCategoryInstructions('client-rules-list', 'Email - Sender') },
+  };
+  
+  // Toggle expanded lists (email, docs, marketing, tasks)
+  lists.forEach(id => {
+    const el = document.getElementById(id);
+    if (id === `${section}-list`) {
+      el.classList.toggle('show');
+    } else {
+      el.classList.remove('show');
+    }
+  });
+  
+  // Toggle instruction sections
+  Object.keys(allSections).forEach(key => {
+    const { el, loader } = allSections[key];
+    if (!el) return;
+    if (key === section) {
+      el.style.display = el.style.display === 'none' ? 'block' : 'none';
+      if (el.style.display === 'block' && loader) loader();
+    } else {
+      el.style.display = 'none';
+    }
+  });
+  
+  statIds.forEach(id => {
+    const el = document.getElementById(id);
+    el.classList.toggle('active', id === `stat-${section}`);
+  });
+  
+  currentSection = section;
+  
+  const avatar = document.getElementById('avatar-container');
+  const hasOpenPanel = lists.some(id => document.getElementById(id).classList.contains('show')) || Object.keys(allSections).includes(section);
+  avatar.classList.toggle('expanded', hasOpenPanel);
+}
+
+// Load instructions filtered by category (for Document, Marketing, Client rules)
+function loadCategoryInstructions(containerId, categoryFilter) {
+  fetch('/api/instructions')
+    .then(r => r.json())
+    .then(data => {
+      const container = document.getElementById(containerId);
+      const all = data.general_instructions || [];
+      const filtered = all.filter(inst => (inst.category || '').toLowerCase().includes(categoryFilter.toLowerCase()));
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="sops-loading">No ${categoryFilter} rules yet. Add instructions via Twin Instructions.</div>
+          <button class="sop-add-btn" onclick="showAddInstruction()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Add ${categoryFilter} Rule
+          </button>`;
+        return;
+      }
+      container.innerHTML = filtered.map(inst => `
+        <div class="sop-card">
+          <div class="sop-card-header">
+            <span class="sop-title">${(inst.instruction || inst.instruction_text || '').substring(0, 80)}...</span>
+            <span class="sop-category">${inst.category || 'General'}</span>
+          </div>
+          <div class="sop-description">${inst.instruction || inst.instruction_text || ''}</div>
+          ${inst.is_critical ? '<div style="margin-top:6px;"><span class="sop-critical">CRITICAL</span></div>' : ''}
+        </div>
+      `).join('');
+    })
+    .catch(e => {
+      document.getElementById(containerId).innerHTML = '<div class="sops-loading">Error loading rules</div>';
+    });
+}
+
+// ===== CHAT =====
+function expandChat() {
+  document.getElementById('chat-collapsed').style.display = 'none';
+  document.getElementById('chat-expanded').classList.add('show');
+  document.getElementById('avatar-container').classList.add('expanded');
+}
+
+function collapseChat() {
+  document.getElementById('chat-collapsed').style.display = 'flex';
+  document.getElementById('chat-expanded').classList.remove('show');
+  
+  const anyListOpen = ['email-list', 'docs-list', 'marketing-list', 'tasks-list']
+    .some(id => document.getElementById(id).classList.contains('show'));
+  
+  if (!anyListOpen) {
+    document.getElementById('avatar-container').classList.remove('expanded');
+  }
+}
+
+let commandIndex = -1;
+const commands = ['/pending', '/approve', '/revise', '/coach', '/status', '/help'];
+
+function handleCommandInput(e) {
+  const input = document.getElementById('chat-input');
+  const dropdown = document.getElementById('command-dropdown');
+  const text = input.value;
+  
+  if (text.startsWith('/')) {
+    const matches = commands.filter(c => c.startsWith(text.toLowerCase()));
+    if (matches.length > 0) {
+      dropdown.classList.add('show');
+      commandIndex = 0;
+    } else {
+      dropdown.classList.remove('show');
+      commandIndex = -1;
+    }
+  } else {
+    dropdown.classList.remove('show');
+    commandIndex = -1;
+  }
+  
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (dropdown.classList.contains('show')) {
+      commandIndex = Math.min(commandIndex + 1, commands.length - 1);
+      updateCommandSelection();
+    }
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (dropdown.classList.contains('show')) {
+      commandIndex = Math.max(commandIndex - 1, 0);
+      updateCommandSelection();
+    }
+  } else if (e.key === 'Escape') {
+    dropdown.classList.remove('show');
+    commandIndex = -1;
+  } else if (e.key === 'Tab' && dropdown.classList.contains('show')) {
+    e.preventDefault();
+    input.value = commands[commandIndex] + ' ';
+    dropdown.classList.remove('show');
+    commandIndex = -1;
+  }
+}
+
+function updateCommandSelection() {
+  const items = document.querySelectorAll('.command-item');
+  items.forEach((item, i) => {
+    item.classList.toggle('selected', i === commandIndex);
+  });
+}
+
+function selectCommand(cmd, desc) {
+  const input = document.getElementById('chat-input');
+  input.value = cmd + (cmd.endsWith(' ') && cmd !== '/pending' && cmd !== '/status' && cmd !== '/help' ? '' : '');
+  document.getElementById('command-dropdown').classList.remove('show');
+  commandIndex = -1;
+  if (cmd === '/pending' || cmd === '/status' || cmd === '/help') {
+    sendChat();
+  } else {
+    input.focus();
+  }
+}
+
+async function sendChat() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  
+  const messages = document.getElementById('chat-messages');
+  messages.innerHTML += `<div class="chat-msg user">${escapeHtml(text)}</div>`;
+  chatHistory.push({ role: 'user', text });
+  input.value = '';
+  
+  messages.innerHTML += `<div class="chat-msg ai" id="typing">Typing...</div>`;
+  messages.scrollTop = messages.scrollHeight;
+  
+  try {
+    const response = await fetch('/api/twin-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text, chat_history: chatHistory })
+    });
+    const data = await response.json();
+    document.getElementById('typing')?.remove();
+    chatHistory.push({ role: 'ai', text: data.response });
+    messages.innerHTML += `<div class="chat-msg ai">${formatResponse(data.response)}</div>`;
+    messages.scrollTop = messages.scrollHeight;
+  } catch (err) {
+    document.getElementById('typing')?.remove();
+    messages.innerHTML += `<div class="chat-msg ai">Sorry, I'm having trouble connecting. Please try again.</div>`;
+    messages.scrollTop = messages.scrollHeight;
+  }
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function formatResponse(text) {
+  return escapeHtml(text)
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    .replace(/\n/g, '<br>');
+}
+
+function newChat() {
+  document.getElementById('chat-messages').innerHTML = `
+    <div class="chat-msg ai">Hi Cherry! I'm your Twin. I've prepared your items and I'm ready to help.</div>
+  `;
+  chatHistory = [];
+}
+
+// ===== MODAL =====
+let currentItem = null;
+let currentDraftData = null;
+
+async function openModal(itemId, type) {
+  currentItem = { id: itemId, type };
+  
+  const title = document.getElementById('modal-title');
+  const body = document.getElementById('modal-body');
+  const actionText = document.getElementById('modal-action-text');
+  const actionBtn = document.getElementById('modal-action-btn');
+  
+  title.textContent = `${type} Review`;
+  
+  let content = '';
+  let actionLabel = 'Approve & Send';
+  
+  if (type === 'email') {
+    const email = pendingEmails.find(e => e.id === itemId);
+    
+    // Fetch actual draft from API
+    let draftBody = 'Loading draft...';
+    let senderEmail = email?.from || '';
+    let subject = email?.title || '';
+    
+    try {
+      const response = await fetch('/api/draft/' + itemId);
+      const data = await response.json();
+      if (data.draft) {
+        draftBody = data.draft.draft_body || '';
+        senderEmail = data.draft.sender || senderEmail;
+        subject = data.draft.subject || subject;
+        currentDraftData = data.draft;
+      }
+    } catch (e) {
+      console.error('Error loading draft:', e);
+    }
+    
+    content = `
+      <p class="modal-item-title">${subject || 'Email'}</p>
+      <div class="modal-field">
+        <span class="modal-field-label">From:</span>
+        <span class="modal-field-value">${senderEmail}</span>
+        <span class="modal-field-label">Ref ID:</span>
+        <span class="modal-field-value">${itemId}</span>
+      </div>
+      <div class="modal-field">
+        <span class="modal-field-label">Subject:</span>
+        <span class="modal-field-value">${subject}</span>
+      </div>
+      <div style="margin-top: 12px;">
+        <span class="modal-field-label">Draft:</span>
+        <textarea id="draft-editor" class="draft-textarea" rows="8" style="width: 100%; margin-top: 4px;">${draftBody}</textarea>
+      </div>
+      <div class="modal-recommendation" id="modal-recommendation">
+        ✏️ Edit above, then:<br>
+        • <strong>Save Draft</strong> - Just saves your changes<br>
+        • <strong>Approve & Send</strong> - Saves and sends to client
+      </div>
+    `;
+  } else if (type === 'document') {
+    actionLabel = 'Process';
+    content = `
+      <p class="modal-item-title">Invoice extract: #INV-001</p>
+      <div class="modal-content-box" style="height: 80px; display: flex; align-items: center; justify-content: center; color: rgba(26,22,19,0.4);">
+        📄 Document Preview
+      </div>
+      <div class="modal-content-box" style="background: white;">
+        <table style="width: 100%; font-size: 14px;">
+          <tr><td style="padding: 6px; color: rgba(26,22,19,0.6);">Invoice #</td><td style="padding: 6px; font-weight: 500;">INV-001</td></tr>
+          <tr><td style="padding: 6px; color: rgba(26,22,19,0.6);">Amount</td><td style="padding: 6px; font-weight: 500;">$1,250.00</td></tr>
+          <tr><td style="padding: 6px; color: rgba(26,22,19,0.6);">Date</td><td style="padding: 6px; font-weight: 500;">Oct 24, 2023</td></tr>
+        </table>
+      </div>
+    `;
+  } else if (type === 'marketing') {
+    content = `
+      <p class="modal-item-title">LinkedIn post draft</p>
+      <div style="margin-bottom: 12px;">
+        <span style="background: #dbeafe; color: #1d4ed8; padding: 4px 8px; border-radius: 4px; font-size: 11px; margin-right: 8px;">LinkedIn</span>
+        <span style="font-size: 11px; color: rgba(26,22,19,0.6);">Tomorrow, 9:00 AM</span>
+      </div>
+      <div class="modal-content-box">Tax season is approaching! 📊 Here are 3 quick tips for small business owners to maximize deductions this year...
+
+#TaxTips #SmallBusiness #Accounting</div>
+    `;
+  } else {
+    actionLabel = 'Complete';
+    content = `
+      <p class="modal-item-title">Weekly report ready</p>
+      <div class="modal-content-box">The weekly financial report has been generated and is ready for your final review before distribution.</div>
+    `;
+  }
+  
+  body.innerHTML = content;
+  actionText.textContent = actionLabel;
+  
+  document.getElementById('modal-overlay').classList.add('show');
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('show');
+}
+
+function archiveItem() {
+  if (!currentItem || currentItem.type !== 'email') {
+    if (currentItem) {
+      approvedItems.add(currentItem.id);
+      closeModal();
+      updateTotalCount();
+      renderAllLists();
+    }
+    return;
+  }
+  
+  fetch('/api/archive', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ ref_id: currentItem.id })
+  }).then(r => r.json()).then(data => {
+    if (data.status === 'success') {
+      approvedItems.add(currentItem.id);
+      closeModal();
+      loadData();
+      showToast('Email archived');
+    } else {
+      showToast('Error: ' + data.message);
+    }
+  }).catch(e => {
+    showToast('Error archiving');
+  });
+}
+
+function saveDraft() {
+  if (!currentItem || currentItem.type !== 'email') return;
+  
+  const editor = document.getElementById('draft-editor');
+  if (!editor) return;
+  
+  const newDraft = editor.value.trim();
+  if (!newDraft) {
+    alert('Draft cannot be empty');
+    return;
+  }
+  
+  // Save via API
+  fetch('/api/revise', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ 
+      ref_id: currentItem.id, 
+      new_draft: newDraft,
+      feedback: 'Edited in dashboard'
+    })
+  }).then(r => r.json()).then(data => {
+    if (data.status === 'success') {
+      showToast('Draft saved!');
+      currentDraftData = { ...currentDraftData, draft_body: newDraft };
+    } else {
+      showToast('Error: ' + data.message);
+    }
+  }).catch(e => {
+    showToast('Error saving draft');
+  });
+}
+
+function approveItem() {
+  if (!currentItem || currentItem.type !== 'email') {
+    // Non-email items just mark as done
+    if (currentItem) {
+      approvedItems.add(currentItem.id);
+      closeModal();
+      updateTotalCount();
+      renderAllLists();
+    }
+    return;
+  }
+  
+  // Get current draft from editor
+  const editor = document.getElementById('draft-editor');
+  const draftToSend = editor ? editor.value.trim() : '';
+  
+  if (!draftToSend) {
+    alert('No draft to send');
+    return;
+  }
+  
+  // Confirmation
+  const recipient = currentDraftData?.sender || 'the client';
+  if (!confirm(`Send email to ${recipient}?\n\n"${draftToSend.substring(0, 100)}..."`)) {
+    return;
+  }
+  
+  // Save draft first (in case edited), then approve
+  fetch('/api/revise', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ 
+      ref_id: currentItem.id, 
+      new_draft: draftToSend,
+      feedback: 'Edited before send'
+    })
+  }).then(r => r.json())
+  .then(() => {
+    // Then approve
+    return fetch('/api/approve', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ ref_id: currentItem.id })
+    });
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.status === 'success') {
+      showToast('Email sent to ' + recipient + '!');
+      approvedItems.add(currentItem.id);
+      closeModal();
+      loadData();
+    } else {
+      showToast('Error: ' + data.message);
+    }
+  })
+  .catch(e => {
+    showToast('Error sending email');
+  });
+}
+
+function showToast(message) {
+  // Simple toast notification
+  const existing = document.getElementById('toast-notification');
+  if (existing) existing.remove();
+  
+  const toast = document.createElement('div');
+  toast.id = 'toast-notification';
+  toast.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#22c55e;color:white;padding:12px 24px;border-radius:8px;z-index:10000;font-size:14px;';
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+
+document.getElementById('modal-overlay').addEventListener('click', (e) => {
+  if (e.target.id === 'modal-overlay') closeModal();
+});
+</script>
+
+</body>
+</html>

@@ -1,0 +1,242 @@
+"""
+BackPocket OS - Hooks System
+============================
+Run custom logic on lifecycle events (fire-and-forget)
+"""
+
+import sqlite3
+import json
+import logging
+import threading
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+DB_PATH = "backpocket.db"
+
+SUPPORTED_EVENTS = [
+    "pre_approval", "post_approval",
+    "pre_triage", "post_triage",
+    "pre_send", "post_send"
+]
+
+def init_hooks():
+    """Initialize hooks table."""
+    conn = sqlite3.connect(DB_PATH, timeout=20)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS hooks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE,
+            event TEXT NOT NULL,
+            action_type TEXT NOT NULL,
+            action_config TEXT,
+            enabled INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_run DATETIME
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+    logger.info("HOOKS SYSTEM INITIALIZED")
+
+def save_hook(name: str, event: str, action_type: str, action_config: dict = None, enabled: bool = True) -> int:
+    """Save or update a hook."""
+    conn = sqlite3.connect(DB_PATH, timeout=20)
+    cursor = conn.cursor()
+    config_json = json.dumps(action_config) if action_config else "{}"
+    
+    cursor.execute('''
+        INSERT INTO hooks (name, event, action_type, action_config, enabled)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(name) DO UPDATE SET
+            event=excluded.event,
+            action_type=excluded.action_type,
+            action_config=excluded.action_config,
+            enabled=excluded.enabled
+    ''', (name, event, action_type, config_json, 1 if enabled else 0))
+    
+    hook_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return hook_id
+
+def get_hooks(event: str = None, enabled_only: bool = True) -> list:
+    """Get all hooks, optionally filtered by event."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    query = "SELECT * FROM hooks"
+    conditions = []
+    params = []
+    
+    if event:
+        conditions.append("event = ?")
+        params.append(event)
+    
+    if enabled_only:
+        conditions.append("enabled = 1")
+    
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def delete_hook(hook_id: int) -> bool:
+    """Delete a hook by ID."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM hooks WHERE id = ?", (hook_id,))
+    conn.commit()
+    deleted = cursor.rowcount > 0
+    conn.close()
+    return deleted
+
+def enable_hook(hook_id: int, enabled: bool = True):
+    """Enable or disable a hook."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE hooks SET enabled = ? WHERE id = ?", (1 if enabled else 0, hook_id))
+    conn.commit()
+    conn.close()
+
+def _run_communication_coach_score(data: dict) -> Optional[dict]:
+    """Run Communication Coach score on draft. Returns warning if score < 60."""
+    try:
+        from services.gemini import analyze_draft_with_coach
+        
+        draft = data.get("draft_body", "")
+        
+        email_content = {
+            "subject": data.get("subject", ""),
+            "snippet": ""
+        }
+        
+        analysis = analyze_draft_with_coach(email_content, draft)
+        
+        if not analysis:
+            return None
+        
+        if isinstance(analysis, dict):
+            score = analysis.get("score", 100)
+            if score < 60:
+                return {
+                    "warning": True,
+                    "score": score,
+                    "message": f"Communication Coach score is {score}/100. Consider revising."
+                }
+        
+        return None
+    except Exception as e:
+        logger.warning(f"Communication Coach hook error: {e}")
+        return None
+
+def _run_log_and_notify(data: dict):
+    """Log action to history and send WhatsApp confirmation."""
+    try:
+        import services.database as db
+        from services.whapi import send_whatsapp_message
+        import os
+        
+        ref_id = data.get("ref_id", "")
+        action = data.get("action", "approved")
+        sender = data.get("sender", "unknown")
+        subject = data.get("subject", "No Subject")
+        
+        db.log_action(ref_id, action, data.get("tier", ""), data.get("notes", ""))
+        
+        founder_phone = os.getenv("FOUNDER_PHONE", "")
+        if founder_phone:
+            msg = f"✅ *Action Completed*\nRef: {ref_id}\nTo: {sender}\nSubject: {subject[:50]}"
+            threading.Thread(target=send_whatsapp_message, args=(founder_phone, msg), daemon=True).start()
+        
+    except Exception as e:
+        logger.warning(f"Log/notify hook error: {e}")
+
+def _execute_hook_action(hook: dict, data: dict):
+    """Execute a single hook's action."""
+    action_type = hook.get("action_type", "")
+    action_config = hook.get("action_config", "{}")
+    
+    if action_type == "communication_coach_score":
+        result = _run_communication_coach_score(data)
+        if result:
+            logger.warning(f"HOOK WARNING [{hook['name']}]: {result.get('message', 'Check required')}")
+    
+    elif action_type == "log_and_notify":
+        _run_log_and_notify(data)
+    
+    elif action_type == "webhook":
+        import json
+        try:
+            config = json.loads(action_config) if isinstance(action_config, str) else action_config
+            webhook_url = config.get("url", "")
+            if webhook_url:
+                import urllib.request
+                payload = json.dumps({"event": hook.get("event"), "data": data}).encode()
+                req = urllib.request.Request(webhook_url, data=payload, headers={"Content-Type": "application/json"})
+                urllib.request.urlopen(req, timeout=5)
+                logger.info(f"Webhook sent: {webhook_url}")
+        except Exception as e:
+            logger.warning(f"Webhook hook error: {e}")
+    
+    elif action_type == "python":
+        try:
+            config = json.loads(action_config) if isinstance(action_config, str) else action_config
+            func_name = config.get("function", "")
+            if func_name and hasattr(__import__('services.hooks', fromlist=[func_name]), func_name):
+                func = getattr(__import__('services.hooks', fromlist=[func_name]), func_name)
+                threading.Thread(target=func, args=(data,), daemon=True).start()
+        except Exception as e:
+            logger.warning(f"Python hook error: {e}")
+
+def run_hook(event_name: str, data: dict):
+    """Run all hooks for an event. Fire-and-forget - doesn't block main flow."""
+    if event_name not in SUPPORTED_EVENTS:
+        logger.debug(f"Unknown hook event: {event_name}")
+        return
+    
+    hooks = get_hooks(event=event_name, enabled_only=True)
+    
+    if not hooks:
+        logger.debug(f"No hooks registered for event: {event_name}")
+        return
+    
+    logger.info(f"Running {len(hooks)} hook(s) for event: {event_name}")
+    
+    for hook in hooks:
+        threading.Thread(target=_execute_hook_action, args=(hook, data), daemon=True).start()
+
+def seed_default_hooks():
+    """Create default hooks if none exist."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM hooks")
+    count = cursor.fetchone()[0]
+    conn.close()
+    
+    if count == 0:
+        save_hook(
+            name="pre_approval_coach_check",
+            event="pre_approval",
+            action_type="communication_coach_score",
+            action_config={},
+            enabled=True
+        )
+        save_hook(
+            name="post_approval_log_notify",
+            event="post_approval",
+            action_type="log_and_notify",
+            action_config={},
+            enabled=True
+        )
+        logger.info("Default hooks seeded")
+
+init_hooks()
+seed_default_hooks()

@@ -1,0 +1,9 @@
+{
+  "provider": {
+    "name": "openrouter",
+    "baseURL": "https://openrouter.ai/api/v1",
+    "apiKey": "YOUR_OPENROUTER_API_KEY"
+  },
+  "model": "anthropic/claude-3.5-sonnet",
+  "fallbackModel": "deepseek/deepseek-chat-v3-0324"
+}

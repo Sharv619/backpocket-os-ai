@@ -1,0 +1,2268 @@
+import sys
+import io
+
+# ULTRA EARLY encoding fix for Windows - before ANY imports
+# ruff: noqa: E402
+if sys.platform == 'win32':
+    try:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
+import logging
+# Configure logging BEFORE any other imports that might use logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', encoding='utf-8')
+
+from fastapi import FastAPI, Request
+from dotenv import load_dotenv
+import os
+import asyncio
+import logging
+import random
+from typing import Optional
+from datetime import datetime
+from pydantic import BaseModel
+
+class ApproveRequest(BaseModel):
+    ref_id: str
+
+class ReviseRequest(BaseModel):
+    ref_id: str
+    comment: Optional[str] = None
+    new_draft: Optional[str] = None
+    feedback: Optional[str] = None
+
+class SaveDraftRequest(BaseModel):
+    ref_id: str
+    draft_body: str
+    feedback: Optional[str] = None
+
+class ArchiveRequest(BaseModel):
+    ref_id: str
+    archive: bool = True  # Default to archive
+
+# Load environment variables FIRST
+load_dotenv()
+
+# Global state trackers
+LAST_PATROL_TIME = "Syncing..."
+SCHEDULE_JOBS_DONE = set() # To prevent double-running in the same hour
+
+# Setup logging with UTF-8 support for emojis
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', encoding='utf-8')
+logger = logging.getLogger(__name__)
+
+# ruff: noqa: E402
+from services.google_sheets import test_sheets_connection, log_activity, ensure_sheets_exist
+from services.gmail import send_email
+from services.gemini import triage_email, draft_response, refine_draft, batch_triage_emails, pre_triage_rules
+from services.whapi import send_notification
+from services.self_check import run_self_check, send_morning_pulse
+import services.database as db
+from services.local_audit import run_self_audit
+
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
+
+app = FastAPI(title="BackPocket Twin API")
+logger.info("BACKPOCKET TWIN VERSION 2.2 STARTED")
+
+# --- AUTO-LOGGING HOOKS (System Resilience) ---
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import traceback
+    from datetime import datetime
+    error_msg = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ERROR on {request.url.path}: {str(exc)}\n{traceback.format_exc()}\n---\n"
+    logger.error(error_msg)
+    try:
+        with open("docs/ERROR_LOG.md", "a", encoding="utf-8") as f:
+            f.write(error_msg)
+    except Exception:
+        pass
+    return JSONResponse(status_code=500, content={"status": "error", "message": "Internal Server Error. Logged to docs/ERROR_LOG.md."})
+
+# Initialize session database on startup
+try:
+    from services.session_manager import init_session_db
+    init_session_db()
+    logger.info("Session DB initialized")
+except Exception as e:
+    logger.warning(f"Session DB init skipped: {e}")
+
+# Ensure required directories exist
+for _dir in ['static', 'logs', 'docs']:
+    if not os.path.exists(_dir):
+        os.makedirs(_dir)
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/dashboard")
+async def get_dashboard():
+    return FileResponse("static/index.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"})
+
+class LogRequest(BaseModel):
+    content: str
+    log_type: str = "session" # 'session' or 'journey'
+
+@app.post("/api/dev/auto-log")
+async def api_auto_log(request: LogRequest):
+    """Auto-logging system to keep documentation up-to-date programmatically."""
+    from datetime import datetime
+    try:
+        date_str = datetime.now().strftime('%b %d, %Y')
+        entry = f"\n### Auto-Log Date: {date_str}\n{request.content}\n"
+        
+        file_path = "SESSION_LOG.md" if request.log_type == "session" else "docs/JOURNEY.md"
+        with open(file_path, "a", encoding="utf-8") as f:
+            f.write(entry)
+        return {"status": "success", "file": file_path}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.get("/static/index.html")
+async def get_index():
+    import hashlib
+    import os
+    file_path = "static/index.html"
+    if os.path.exists(file_path):
+        with open(file_path, "rb") as f:
+            file_hash = hashlib.md5(f.read()).hexdigest()[:8]
+    else:
+        file_hash = "unknown"
+    return FileResponse(file_path, headers={
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+        "X-File-Version": file_hash
+    })
+
+def generate_ref_id():
+    """Generate a chronological reference ID: YYYY-MM-XXXXX."""
+    from datetime import datetime
+    prefix = datetime.now().strftime("%Y-%m")
+    
+    conn = db.sqlite3.connect(db.DB_PATH)
+    cursor = conn.cursor()
+    # Find the highest number for this month
+    cursor.execute("SELECT ref_id FROM pending_approvals WHERE ref_id LIKE ? ORDER BY ref_id DESC LIMIT 1", (f"{prefix}-%",))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row:
+        last_id = row[0]
+        try:
+            last_num = int(last_id.split("-")[2])
+            new_num = last_num + 1
+        except Exception as e:
+            logger.warning(f"Error parsing last ID {last_id}, starting from 1: {e}")
+            new_num = 1
+    else:
+        new_num = 1
+        
+    return f"{prefix}-{new_num:05d}"
+
+@app.get("/health")
+async def health_check():
+    pending_refs = db.get_all_pending_refs()
+    return {"status": "healthy", "version": "2.2", "pending": pending_refs}
+
+# ── DASHBOARD API ENDPOINTS ──────────────────────────────────────────────────
+
+@app.get("/api/pending")
+async def get_pending():
+    """Get all pending email approvals for the dashboard."""
+    try:
+        conn = db.sqlite3.connect(db.DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT ref_id, sender, subject, tier, delivered_to, created_at FROM pending_approvals ORDER BY created_at DESC LIMIT 20")
+        rows = cursor.fetchall()
+        conn.close()
+        
+        items = []
+        for row in rows:
+            items.append({
+                "ref_id": row[0],
+                "sender": row[1],
+                "subject": row[2],
+                "tier": row[3],
+                "delivered_to": row[4],
+                "created_at": row[5]
+            })
+        
+        return {"count": len(items), "items": items}
+    except Exception as e:
+        logger.error(f"Error fetching pending: {e}")
+        return {"count": 0, "items": [], "error": str(e)}
+
+@app.post("/api/twin-chat")
+async def twin_chat(request: Request):
+    """Chat with the Twin AI directly from the dashboard."""
+    try:
+        data = await request.json()
+        message = data.get("message", "")
+        conversation_id = data.get("conversation_id", "")
+        context_data = data.get("context", {})  # Current draft context
+        
+        from services.memory import save_message_instant, create_conversation
+        
+        if not conversation_id:
+            conversation_id = create_conversation()
+        
+        if message:
+            save_message_instant(conversation_id, "user", message)
+        
+        # Load Twin memory for this conversation
+        session_context = ""
+        chat_history = data.get("chat_history", [])  # Last few messages for context
+        try:
+            from services.session_manager import get_pending_actions, build_context_summary
+            session_context = build_context_summary()
+            pending_actions = get_pending_actions()
+            if pending_actions:
+                session_context += "\n\n### THINGS WE'VE AGREED TO DO ###\n"
+                for a in pending_actions:
+                    session_context += f"- [{a['status']}] {a['description']}\n"
+        except Exception:
+            pass
+        
+        # Build conversation context from recent chat
+        recent_convo = ""
+        if chat_history:
+            recent_convo += "\n\n### OUR RECENT CONVERSATION ###\n"
+            for msg in chat_history[-6:]:  # Last 6 messages
+                role = msg.get("role", "user")
+                content = msg.get("message", msg.get("html", ""))
+                recent_convo += f"{role}: {content[:100]}\n"
+        
+        # Use AI for all responses - Twin handles everything conversationally
+        try:
+            from services.gemini import get_gemini_client
+            client = get_gemini_client()
+            if client:
+                # Build context
+                draft_context = ""
+                if context_data.get('draft'):
+                    draft_context = f"\n\nCURRENT EMAIL DRAFT:\n{context_data['draft']}\n\nSubject: {context_data.get('subject', 'N/A')}\nFrom: {context_data.get('sender', 'N/A')}"
+                
+                # Check for sender-specific instructions
+                sender = context_data.get('sender', '')
+                sender_instructions = ""
+                if sender:
+                    inst = db.get_sender_instruction(sender)
+                    if inst:
+                        sender_instructions = f"\n\nSPECIAL INSTRUCTIONS FOR THIS SENDER:\n{inst.get('instructions', '')}"
+                
+                # Get database context for Twin to reference
+                db_context = ""
+                pending_refs = [r for r in db.get_all_pending_refs() if not r.startswith("FIND-")]
+                if pending_refs:
+                    db_context += "\n\n### CURRENT PENDING APPROVALS ###\n"
+                    for ref in pending_refs:
+                        p = db.get_pending_approval(ref)
+                        if p:
+                            db_context += f"- Ref #{ref}: {p.get('subject', 'No subject')[:50]} (from {p.get('sender', 'Unknown')})\n"
+                else:
+                    db_context += "\n\n### CURRENT PENDING APPROVALS ###\n- Your inbox is clear! No pending approvals."
+                
+                history = db.get_action_history(5)
+                if history:
+                    db_context += "\n\n### RECENT ACTIVITY ###\n"
+                    for h in history:
+                        db_context += f"- {h['action']}: Ref #{h['ref_id']} ({h.get('created_at', '')})\n"
+                
+                instructions = db.get_all_sender_instructions()
+                if instructions:
+                    db_context += f"\n\n### YOUR INSTRUCTIONS ###\nYou have {len(instructions)} sender-specific instruction sets configured."
+                
+                # Get GENERAL instructions for Twin to reference
+                try:
+                    from services.twin_brain import get_all_instructions
+                    general_instructions = get_all_instructions()
+                    if general_instructions:
+                        db_context += f"\n\n### YOUR GENERAL INSTRUCTIONS ###\nCherry has {len(general_instructions)} active instructions for how you should behave and process emails:"
+                        for inst in general_instructions[:10]:  # Show top 10
+                            inst_text = inst.get('instruction', inst.get('instruction_text', ''))[:150]
+                            db_context += f"\n- [{inst.get('category', 'general')}] {inst_text}..."
+                except Exception as e:
+                    logger.error(f"Error loading general instructions: {e}")
+                
+                # Email Triage System - Core Rules for Twin
+                db_context += """
+### EMAIL TRIAGE SYSTEM (TIER RULES) ###
+This is how you should process and categorize incoming emails:
+
+TIER 1 - REPLY NEEDED: Important client emails requiring personalized response
+- Direct client communications needing a reply
+- Emails with deadlines or urgent matters
+- Financial documents, tax matters, ATO
+- Clients requesting specific actions
+
+TIER 2 - REVIEW NEEDED: Non-urgent but needs acknowledgment
+- General client inquiries
+- Status update requests
+- Non-critical business matters
+
+TIER 3 - FYI ONLY: Info emails, no response needed
+- Internal updates
+- Auto-generated notifications
+- Meeting confirmations
+
+TIER 4 - ARCHIVE: Portal updates, digests, auto-generated
+- Suitedash portal updates
+- Daily digests
+- System notifications
+- Newsletter-style emails
+
+TIER 5 - LOW PRIORITY: Newsletters, promotions, spam-like
+- Marketing emails
+- Newsletters
+- Non-business communications
+
+GOLDEN SENDERS (Always Tier 1):
+- jco064690@gmail.com
+- trustdeed.com.au
+- gjcctax.au
+- cqstax.com
+- almemmolos@gmail.com
+- johnwatts.com.au
+- david@vdmandthorn.com
+- che.tomenio1@gmail.com
+
+PROCESSING LAYERS:
+1. Check priority list (Google Sheets dynamic)
+2. Check golden senders (force Tier 1)
+3. Check pre-triage rules (onboarding, Suitedash)
+4. Run through AI for final tier decision
+"""
+                
+                prompt = f"""You are Cherry's Twin - her AI assistant. She's chatting with you conversationally.
+
+ABOUT YOU:
+- You are Cherry's Digital Twin, running on BackPocket OS
+- You help Cherry with email management, client communication, and business tasks
+- You can discuss emails, drafts, pending approvals, and system status
+- You CAN offer choices to Cherry - use this format: "[CHOICES: Option 1 | Option 2 | Option 3]"
+- When Cherry agrees to something, acknowledge and offer to implement it: "Shall I implement this now?"
+- You CAN take actions when explicitly asked - use the execute_action function
+
+{session_context}
+{recent_convo}
+
+WHAT YOU KNOW:
+- You have access to Cherry's pending approvals list
+- You have access to her action history
+- You have access to sender-specific instructions
+- You know about her email drafts when she's working on them
+- You have memory of past sessions and agreed actions
+
+SELF-CHECK RULES:
+- Only state facts, don't hallucinate
+- If unsure, say "I'm not sure, let me check with you"
+- Don't make up dates, prices, or deadlines
+- Always verify with user before assuming
+
+FORMATTING RULES:
+- Keep responses under 150 words
+- Use headings with ## for major topics
+- Use **bold** for key points
+- Use bullet points for lists
+- Make it easy to read, eyes-friendly
+- Don't start every response with greeting - be natural
+
+{db_context}
+{draft_context}
+{sender_instructions}
+
+Cherry says: "{message}"
+
+Respond conversationally as the Twin. Be helpful, practical, and concise. If she wants to improve a draft, help her. If she wants research, provide insights. If she agrees to something, ask if she wants you to implement it."""
+
+                response_obj = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
+                response = response_obj.text.strip() if response_obj and response_obj.text else f"I understand: '{message}'. What would you like help with?"
+            else:
+                response = f"I understand: '{message}'. The AI is currently unavailable. How can I help?"
+        except Exception as ai_err:
+            logger.error(f"Twin AI error: {ai_err}", exc_info=True)
+            response = f"I understand: '{message}'. How can I help? Discuss the draft, ask for improvements, or research topics."
+        
+        save_message_instant(conversation_id, "assistant", response)
+        
+        from services.memory import auto_title_if_needed
+        new_title = auto_title_if_needed(conversation_id)
+        
+        return {"response": response, "conversation_id": conversation_id, "title": new_title}
+    except Exception as e:
+        import traceback
+        logger.error(f"Twin chat error: {e}\n{traceback.format_exc()}")
+        return {"response": f"Error: {str(e)[:100]}", "error": str(e)}
+
+@app.get("/api/conversations")
+async def get_conversations():
+    """Get list of all conversations for sidebar/history."""
+    try:
+        from services.memory import get_all_conversations
+        conversations = get_all_conversations(limit=30)
+        return {"conversations": conversations}
+    except Exception as e:
+        logger.error(f"Get conversations error: {e}")
+        return {"conversations": [], "error": str(e)}
+
+@app.get("/api/conversations/{conversation_id}")
+async def get_conversation_messages(conversation_id: str):
+    """Get all messages in a specific conversation."""
+    try:
+        from services.memory import get_conversation_messages
+        messages = get_conversation_messages(conversation_id, limit=100)
+        return {"conversation_id": conversation_id, "messages": messages}
+    except Exception as e:
+        logger.error(f"Get messages error: {e}")
+        return {"conversation_id": conversation_id, "messages": [], "error": str(e)}
+
+@app.get("/api/conversations/{conversation_id}/recent")
+async def get_recent(conversation_id: str, limit: int = 10):
+    """Get recent messages from a conversation."""
+    try:
+        from services.memory import get_conversation_messages
+        messages = get_conversation_messages(conversation_id, limit=limit)
+        return {"messages": messages}
+    except Exception as e:
+        return {"messages": [], "error": str(e)}
+
+@app.delete("/api/conversations/{conversation_id}")
+async def delete_conversation(conversation_id: str):
+    """Delete a conversation and its messages."""
+    try:
+        import sqlite3
+        from services.memory import DB_PATH
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute("DELETE FROM chat_messages WHERE conversation_id = ?", (conversation_id,))
+        cur.execute("DELETE FROM chat_conversations WHERE id = ?", (conversation_id,))
+        conn.commit()
+        conn.close()
+        return {"success": True}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@app.get("/api/opencode/conversations")
+async def get_opencode_conversations():
+    """Get all OpenCode conversations for history."""
+    try:
+        from services.memory import get_opencode_conversations
+        conversations = get_opencode_conversations(limit=50)
+        return {"conversations": conversations}
+    except Exception as e:
+        return {"conversations": [], "error": str(e)}
+
+@app.post("/api/opencode-chat")
+async def opencode_chat(request: Request):
+    """Chat with OpenCode - saves instantly to database.
+    
+    This endpoint is for OpenCode to save chat history.
+    """
+    try:
+        from services.memory import save_message_instant, create_conversation
+        
+        data = await request.json()
+        message = data.get("message", "")
+        conversation_id = data.get("conversation_id", "")
+        role = data.get("role", "user")
+        
+        if not conversation_id:
+            conversation_id = create_conversation(source="opencode")
+            logger.info(f"Created new OpenCode conversation: {conversation_id}")
+        
+        if message:
+            msg_id = save_message_instant(conversation_id, role, message)
+            logger.debug(f"Saved message {msg_id} to conversation {conversation_id}")
+        
+        from services.memory import auto_title_if_needed
+        new_title = auto_title_if_needed(conversation_id)
+        
+        return {"conversation_id": conversation_id, "saved": True, "title": new_title}
+    except Exception as e:
+        logger.error(f"OpenCode chat save error: {e}")
+        return {"error": str(e), "saved": False}
+
+@app.get("/api/search")
+async def search_chats(q: str = "", source: str = None):
+    """Search all chat messages."""
+    try:
+        from services.memory import search_messages
+        results = search_messages(q, source=source, limit=30)
+        return {"results": results, "count": len(results)}
+    except Exception as e:
+        return {"results": [], "error": str(e)}
+
+@app.get("/api/conversations/by-source/{source}")
+async def get_conversations_by_source(source: str):
+    """Get conversations filtered by source (twin, opencode, etc)."""
+    try:
+        from services.memory import get_all_conversations
+        conversations = get_all_conversations(limit=50, source=source)
+        return {"source": source, "conversations": conversations}
+    except Exception as e:
+        return {"source": source, "conversations": [], "error": str(e)}
+
+@app.put("/api/conversations/{conversation_id}/title")
+async def rename_conversation(conversation_id: str, request: Request):
+    """Rename/update a conversation title (user editable)."""
+    try:
+        from services.memory import update_conversation_title
+        data = await request.json()
+        new_title = data.get("title", "").strip()
+        
+        if not new_title:
+            return {"success": False, "error": "Title cannot be empty"}
+        
+        if len(new_title) > 100:
+            return {"success": False, "error": "Title too long (max 100 chars)"}
+        
+        update_conversation_title(conversation_id, new_title)
+        logger.info(f"Renamed conversation {conversation_id[:20]} to: {new_title}")
+        
+        return {"success": True, "title": new_title}
+    except Exception as e:
+        logger.error(f"Rename conversation error: {e}")
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/conversations/{conversation_id}/regenerate-title")
+async def regenerate_conversation_title(conversation_id: str):
+    """Regenerate AI title for a conversation (user can ask for better title)."""
+    try:
+        from services.memory import generate_conversation_title
+        new_title = generate_conversation_title(conversation_id)
+        
+        if new_title:
+            logger.info(f"Regenerated title for {conversation_id[:20]}: {new_title}")
+            return {"success": True, "title": new_title}
+        else:
+            return {"success": False, "error": "Could not generate title"}
+    except Exception as e:
+        logger.error(f"Regenerate title error: {e}")
+        return {"success": False, "error": str(e)}
+
+@app.get("/api/sops")
+async def get_sops(category: str = None):
+    """Get all SOPs, optionally filtered by category."""
+    try:
+        from services.memory import get_sops, get_sop_categories
+        sops = get_sops(category=category)
+        categories = get_sop_categories()
+        return {"sops": sops, "categories": categories}
+    except Exception as e:
+        logger.error(f"Get SOPs error: {e}")
+        return {"sops": [], "categories": [], "error": str(e)}
+
+
+@app.get("/api/instructions")
+async def get_instructions():
+    """Get all Twin instructions from database."""
+    try:
+        from services.twin_brain import get_all_instructions, get_sender_instructions
+        general = get_all_instructions()
+        sender = get_sender_instructions()
+        return {
+            "general_instructions": general,
+            "sender_instructions": sender,
+            "total": len(general) + len(sender)
+        }
+    except Exception as e:
+        logger.error(f"Get instructions error: {e}")
+        return {"general_instructions": [], "sender_instructions": [], "error": str(e)}
+
+
+@app.get("/api/email-rules")
+async def get_email_rules():
+    """Get email triage rules - both hardcoded and from database."""
+    try:
+        
+        # Get dynamic priority list from Google Sheets
+        try:
+            from services.google_sheets import get_priority_list
+            priority_list = get_priority_list()
+        except:
+            priority_list = {}
+        
+        # Hardcoded golden senders (for display only - real list is in gemini.py)
+        golden_senders = [
+            "jco064690@gmail.com", "trustdeed.com.au", "gjcctax.au", "cqstax.com", 
+            "almemmolos@gmail.com", "johnwatts.com.au", "david@vdmandthorn.com",
+            "che.tomenio1@gmail.com"
+        ]
+        
+        # Tier 2 - Government/Associations
+        tier_2_senders = [
+            "ato.gov.au", "asic.gov.au", "auditorsinstitute.com", "auditorsintitute.com",
+            "publicaccountants.org.au", "ifpa.com.au", "ndiscommission.gov.au", "stripe.com", "cloudoffis"
+        ]
+        
+        rules = {
+            "tier_definitions": {
+                "1": "REPLY NEEDED - Important client emails requiring personalized response",
+                "2": "REVIEW NEEDED - Non-urgent but needs acknowledgment",  
+                "3": "FYI ONLY - Info emails, no response needed",
+                "4": "ARCHIVE - Portal updates, digests, auto-generated emails",
+                "5": "LOW PRIORITY - Newsletters, promotions, spam-like"
+            },
+            "golden_senders": golden_senders,
+            "tier_2_senders": tier_2_senders,
+            "priority_list": priority_list,
+            "processing_layers": [
+                "Layer 0: Whitelist override (known clients always = Tier 1)",
+                "Layer 1: Pre-triage rules (Suitedash, onboarding, etc.)",
+                "Layer 2: AI Triage (Gemini decides tier)"
+            ]
+        }
+        return rules
+    except Exception as e:
+        logger.error(f"Get email rules error: {e}")
+        return {"error": str(e)}
+
+
+@app.get("/api/whatsapp-status")
+async def get_whatsapp_status():
+    """Get WhatsApp connection status."""
+    try:
+        from services.whapi import test_whapi_connection
+        status = test_whapi_connection()
+        return status
+    except Exception as e:
+        logger.error(f"WhatsApp status error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/whatsapp-test")
+async def test_whatsapp_message():
+    """Test WhatsApp by sending a simple message."""
+    try:
+        from services.whapi import send_whatsapp_message
+        phone = os.getenv("FOUNDER_PHONE", "")
+        if not phone:
+            return {"status": "error", "message": "FOUNDER_PHONE not set"}
+        result = send_whatsapp_message(phone, "🧪 BackPocket Twin: Test message successful! WhatsApp is connected.")
+        return result
+    except Exception as e:
+        logger.error(f"WhatsApp test error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/client-master")
+async def get_client_master():
+    """Fetch Clients_Master sheet data for the dashboard."""
+    try:
+        from services.google_sheets import get_sheets_service
+        import os
+        
+        service = get_sheets_service()
+        if not service:
+            return {"status": "error", "message": "Google Sheets not connected"}
+        
+        spreadsheet_id = os.getenv('SPREADSHEET_ID')
+        
+        # First get available sheets
+        spreadsheet = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+        existing_sheets = [s.get('properties', {}).get('title') for s in spreadsheet.get('sheets', [])]
+        
+        # Try different sheet names that might exist
+        sheet_names = ['Clients_Master', 'BPS_Client_Master', 'Client_Master', 'Clients']
+        range_found = None
+        for sheet_name in sheet_names:
+            if sheet_name in existing_sheets:
+                range_found = f"{sheet_name}!A1:Z100"
+                break
+        
+        if not range_found:
+            return {"status": "error", "message": f"No client sheet found. Available: {existing_sheets}"}
+        
+        result = service.spreadsheets().values().get(
+            spreadsheetId=spreadsheet_id, range=range_found
+        ).execute()
+        
+        values = result.get('values', [])
+        if not values:
+            return {"status": "empty", "clients": []}
+        
+        headers = values[0] if values else []
+        clients = []
+        for row in values[1:]:
+            client = {}
+            for i, header in enumerate(headers):
+                client[header.lower().replace(' ', '_')] = row[i] if i < len(row) else ""
+            clients.append(client)
+        
+        return {"status": "success", "clients": clients, "count": len(clients)}
+    except Exception as e:
+        logger.error(f"Client master error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/instructions")
+async def save_instruction(request: Request):
+    """Save a new instruction or update existing one."""
+    try:
+        from services.database import save_instruction
+        data = await request.json()
+        result = save_instruction(
+            instruction_text=data.get("instruction_text"),
+            category=data.get("category", "general"),
+            target=data.get("target", ""),
+            target_type=data.get("target_type", ""),
+            is_critical=data.get("is_critical", False),
+            is_active=data.get("is_active", True),
+            description=data.get("description", "")
+        )
+        return {"status": "success", "id": result}
+    except Exception as e:
+        logger.error(f"Save instruction error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.put("/api/instructions/{instruction_id}")
+async def update_instruction(instruction_id: int, request: Request):
+    """Update an existing instruction with revision history."""
+    try:
+        from services.database import update_instruction, save_revision, get_instructions
+        data = await request.json()
+        
+        # Get current instruction for revision history
+        current = get_instructions()
+        old_instruction = None
+        for inst in current:
+            if inst.get('id') == instruction_id:
+                old_instruction = inst
+                break
+        
+        # Save revision before updating
+        if old_instruction:
+            changes = {
+                'old': old_instruction,
+                'new': data
+            }
+            save_revision(instruction_id, changes, action="update")
+        
+        update_instruction(
+            instruction_id,
+            instruction_text=data.get("instruction_text"),
+            category=data.get("category"),
+            is_critical=data.get("is_critical"),
+            is_active=data.get("is_active")
+        )
+        return {"status": "success", "message": "Instruction updated with revision history saved"}
+    except Exception as e:
+        logger.error(f"Update instruction error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.delete("/api/instructions/{instruction_id}")
+async def delete_instruction(instruction_id: int):
+    """Delete an instruction with backup."""
+    try:
+        from services.database import delete_instruction, save_revision, get_instructions
+        
+        # Get current instruction for backup
+        current = get_instructions()
+        old_instruction = None
+        for inst in current:
+            if inst.get('id') == instruction_id:
+                old_instruction = inst
+                break
+        
+        # Save deletion as revision before deleting
+        if old_instruction:
+            changes = {
+                'old': old_instruction,
+                'new': None,
+                'action': 'deleted'
+            }
+            save_revision(instruction_id, changes, action="delete")
+        
+        delete_instruction(instruction_id)
+        return {"status": "success", "message": "Instruction deleted (can be recovered from revisions)"}
+    except Exception as e:
+        logger.error(f"Delete instruction error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/instructions/{instruction_id}/revisions")
+async def get_instruction_revisions(instruction_id: int):
+    """Get revision history for an instruction."""
+    try:
+        from services.database import get_revisions
+        revisions = get_revisions(instruction_id=instruction_id, limit=20)
+        return {"revisions": revisions}
+    except Exception as e:
+        logger.error(f"Get revisions error: {e}")
+        return {"revisions": [], "error": str(e)}
+
+
+@app.post("/api/instructions/{instruction_id}/restore")
+async def restore_instruction(instruction_id: int, request: Request):
+    """Restore an instruction from revision history."""
+    try:
+        from services.database import save_instruction
+        data = await request.json()
+        revision_data = data.get("revision_data")
+        
+        if not revision_data:
+            return {"status": "error", "message": "No revision data provided"}
+        
+        # Create new instruction from revision
+        result = save_instruction(
+            instruction_text=revision_data.get("instruction_text"),
+            category=revision_data.get("category", "general"),
+            target=revision_data.get("target", ""),
+            target_type=revision_data.get("target_type", ""),
+            is_critical=revision_data.get("is_critical", False),
+            is_active=True,
+            description=revision_data.get("description", "")
+        )
+        
+        return {"status": "success", "id": result, "message": "Instruction restored from revision"}
+    except Exception as e:
+        logger.error(f"Restore instruction error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/sops/categories")
+async def get_sop_categories():
+    """Get list of SOP categories."""
+    try:
+        from services.memory import get_sop_categories
+        categories = get_sop_categories()
+        return {"categories": categories}
+    except Exception as e:
+        return {"categories": [], "error": str(e)}
+
+@app.get("/api/sops/search")
+async def search_sops(q: str = ""):
+    """Search SOPs by keyword."""
+    try:
+        from services.memory import search_sops
+        results = search_sops(q)
+        return {"results": results, "count": len(results)}
+    except Exception as e:
+        return {"results": [], "error": str(e)}
+
+@app.get("/api/sops/{sop_id}")
+async def get_sop(sop_id: int):
+    """Get a specific SOP by ID."""
+    try:
+        from services.memory import get_sops
+        sops = get_sops()
+        for sop in sops:
+            if sop.get('id') == sop_id:
+                return {"sop": sop}
+        return {"sop": None, "error": "SOP not found"}
+    except Exception as e:
+        return {"sop": None, "error": str(e)}
+
+@app.post("/api/command")
+async def send_command(request: Request):
+    """Execute a WhatsApp command from the dashboard."""
+    try:
+        data = await request.json()
+        command = data.get("command", "")
+        
+        # This would trigger the same command processing as WhatsApp
+        # For now, return success
+        return {"success": True, "message": f"Command '{command}' sent! Check WhatsApp for response."}
+    except Exception as e:
+        return {"success": False, "message": f"Error: {str(e)}"}
+
+@app.post("/api/execute-action")
+async def execute_action(request: Request):
+    """Execute an agreed action when Twin and user agree."""
+    try:
+        data = await request.json()
+        action_type = data.get("action_type", "")
+        description = data.get("description", "")
+        details = data.get("details", {})
+        
+        try:
+            from services.session_manager import add_agreed_action, update_action_status
+            
+            if action_type == "agree":
+                action_id = add_agreed_action(description)
+                logger.info(f"Action agreed: {description} (ID: {action_id})")
+                return {"success": True, "action_id": action_id, "message": "Action recorded. I'll help you implement it."}
+            
+            elif action_type == "complete":
+                action_id = details.get("action_id")
+                if action_id:
+                    update_action_status(action_id, "completed")
+                    return {"success": True, "message": "Action marked as completed!"}
+                return {"success": False, "message": "No action_id provided"}
+            
+            elif action_type == "log_session":
+                from services.session_manager import log_session
+                log_session(
+                    summary=details.get("summary", ""),
+                    files_changed=details.get("files_changed", ""),
+                    decisions=details.get("decisions", ""),
+                    errors=details.get("errors", "")
+                )
+                return {"success": True, "message": "Session logged!"}
+                
+            else:
+                return {"success": False, "message": f"Unknown action type: {action_type}"}
+                
+        except Exception as sm_err:
+            logger.error(f"Session manager error: {sm_err}")
+            return {"success": False, "message": "Session system not available"}
+            
+    except Exception as e:
+        logger.error(f"Execute action error: {e}")
+        return {"success": False, "message": str(e)}
+
+@app.post("/whapi-webhook")
+@app.post("/webhook/whatsapp")
+async def whatsapp_webhook(request: Request):
+    logger.info(f"👉 WEBHOOK ATTEMPT: {request.method} {request.url}")
+    loop = asyncio.get_running_loop()
+    try:
+        raw_body = await request.body()
+        logger.info(f"📦 RAW BYTES RECEIVED: {len(raw_body)} bytes")
+        if raw_body:
+            logger.info(f"📦 RAW BODY: {raw_body.decode('utf-8', errors='ignore')}")
+        data = await request.json()
+        logger.info(f"📦 JSON DATA: {data}")
+        
+        messages = data.get('messages', [])
+        for msg in messages:
+            # Parse text body OR interactive button replies
+            text_body = msg.get('text', {}).get('body', '').strip()
+            
+            # Check for interactive button replies (Whapi V3)
+            interactive = msg.get('interactive', {})
+            if interactive.get('type') == 'button_reply':
+                btn_id = interactive.get('button_reply', {}).get('id', '')
+                if btn_id == 'ButtonsV3:self_check' or btn_id == 'self_check':
+                    text_body = 'self-check'
+                elif btn_id == 'ButtonsV3:test_approve' or btn_id == 'test_approve':
+                    text_body = 'approve'
+                elif btn_id == 'ButtonsV3:test_revise' or btn_id == 'test_revise':
+                    text_body = 'revise'
+                else:
+                    text_body = btn_id
+                    
+            if not text_body:
+                # Still check if it might be a quick_reply or action
+                action = msg.get('action', {}).get('reply', {})
+                if action:
+                    text_body = action.get('title', '').strip() or action.get('id', '').strip()
+
+            if not text_body:
+                continue
+
+            sender_phone = msg.get('from', '').split('@')[0]
+            founder_phone = "".join(filter(str.isdigit, os.getenv("FOUNDER_PHONE", "")))
+
+            # Only process if from the founder (linked account or specific phone)
+            if not sender_phone or sender_phone != founder_phone:
+                logger.warning(f"Message from unknown phone: {sender_phone}")
+                continue
+
+            from services.whapi import send_whatsapp_message
+            import re
+            
+            # Flexible parsing: support both 4-digit and YYYY-MM-XXXXX formats
+            ID_PATTERN = r'(\d{4}-\d{2}-\d{5}|\d{4})'
+            
+            text_body_lower = text_body.lower()
+            
+            # --- EXTRACT IDs FROM QUOTED MESSAGE ---
+            quoted_text = msg.get('context', {}).get('quoted_content', {}).get('body', '')
+            quoted_ids = re.findall(ID_PATTERN, quoted_text) if quoted_text else []
+            
+            # 1. SPECIAL CASE: List Pending
+            if any(kw in text_body_lower for kw in ['pending', 'list', 'status', 'summary']):
+                # But don't trigger if it's a long message
+                if len(text_body_lower.split()) < 6:
+                    pending_refs = db.get_all_pending_refs()
+                    if pending_refs:
+                        summary_lines = []
+                        for rid in pending_refs:
+                            p = db.get_pending_approval(rid)
+                            if p:
+                                if rid.startswith("FIND-"):
+                                    continue
+                                summary_lines.append(f"*#{rid}* — {p.get('subject', 'No Subject')[:50]}")
+                        summary = "\n".join(summary_lines)
+                        await loop.run_in_executor(None, send_whatsapp_message, founder_phone, 
+                            f"🔔 *PENDING APPROVALS:*\n\n{summary}\n\n*QUICK REPLIES:*\n✅ *approve last* - Approve most recent\n✅ *approve 1* - Approve 1st in list\n✅ *approve 00001* (short ref)\n✅ *approve 2026-04-90001* (full)\n\n✏️ *revise last: change tone*")
+                    else:
+                        await loop.run_in_executor(None, send_whatsapp_message, founder_phone, "✅ No pending emails right now.")
+                return {"status": "success"}
+
+            # 1.05 SPECIAL CASE: Self-Check / Diagnostic
+            if any(kw in text_body_lower for kw in ['self-check', 'diagnostic', 'health']):
+                from services.diagnostics import run_system_diagnostic
+                diag = await loop.run_in_executor(None, run_system_diagnostic)
+                status_emoji = "✅" if diag['status'] == 'healthy' else "⚠️"
+                report = f"{status_emoji} *TWIN HEALTH REPORT*\n\n"
+                for svc, res in diag['details'].items():
+                    res_emoji = "🟢" if res.get('status') == 'success' else "🔴"
+                    report += f"{res_emoji} *{svc.upper()}*: {res.get('message', 'Ready')}\n"
+                
+                await loop.run_in_executor(None, send_whatsapp_message, founder_phone, report)
+                return {"status": "success"}
+
+            # 1.1 SPECIAL CASE: Find/Search
+            if text_body_lower.startswith('find '):
+                query = text_body[5:].strip()
+                from services.gmail import search_emails, get_all_account_tokens
+                all_tokens = get_all_account_tokens()
+                
+                logger.info(f"🔍 SEARCHING: '{query}' across {len(all_tokens)} accounts...")
+                all_matches = []
+                for t in all_tokens:
+                    matches = await loop.run_in_executor(None, search_emails, query, t)
+                    all_matches.extend(matches)
+                
+                if not all_matches:
+                    await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"🔍 No emails found for '{query}'.")
+                else:
+                    summary_lines = []
+                    for i, m in enumerate(all_matches[:5]): # Top 5
+                        search_ref = f"FIND-{random.randint(1000,9999)}"
+                        db.save_pending_approval(search_ref, {
+                            "message_id": m['id'],
+                            "thread_id": "",
+                            "sender": m['sender'],
+                            "subject": m['subject'],
+                            "draft_body": m['token_file'],
+                            "delivered_to": m['token_file'],
+                            "tier": "SEARCH"
+                        })
+                        summary_lines.append(f"*{search_ref}* — {m['subject'][:40]}\n   _From: {m['sender'][:30]}_")
+                    
+                    summary = "\n\n".join(summary_lines)
+                    await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"🔍 Found {len(all_matches)} results for '{query}':\n\n{summary}\n\nReply *get <ID>* to rescue to Inbox.")
+                return {"status": "success"}
+
+            # 2. MULTI-COMMAND PARSING
+            keywords = ['approve', 'revise', 'add', 'supplier', 'spam', 'archive', 'delete', 'ignore', 'get']
+            found_commands = []
+            for kw in keywords:
+                for match in re.finditer(rf'\b{kw}\b', text_body_lower):
+                    found_commands.append({'cmd': kw, 'start': match.start()})
+            
+            # Sort by position
+            found_commands.sort(key=lambda x: x['start'])
+            
+            if not found_commands:
+                logger.warning(f"No valid keywords found in: {text_body}")
+                return {"status": "success"}
+            
+            # Get all pending for index/shortcut resolution
+            all_pending_refs = db.get_all_pending_refs()
+            
+            # Process each command block
+            for i in range(len(found_commands)):
+                cmd_info = found_commands[i]
+                cmd = cmd_info['cmd']
+                start_pos = cmd_info['start']
+                end_pos = found_commands[i+1]['start'] if i+1 < len(found_commands) else len(text_body)
+                
+                block_text = text_body[start_pos:end_pos]
+                block_ids = re.findall(ID_PATTERN, block_text)
+                
+                # CRITICAL: If approve/revise command but NO ref_id, DO NOT proceed
+                if cmd in ['approve', 'revise']:
+                    if not block_ids:
+                        # Try to get from quoted message context
+                        block_ids = quoted_ids if quoted_ids else []
+                    
+                    if not block_ids:
+                        # NEW: Try short format (just number) or "last", "1st", "2nd", etc.
+                        short_match = re.search(r'\b(last|first|1st|2nd|3rd|\d+)\b', block_text)
+                        if short_match:
+                            short_val = short_match.group(1).lower()
+                            if short_val == 'last' or short_val == 'first':
+                                if all_pending_refs:
+                                    block_ids = [all_pending_refs[0] if short_val == 'last' else all_pending_refs[-1]]
+                            elif short_val in ['1st', '1']:
+                                if len(all_pending_refs) >= 1:
+                                    block_ids = [all_pending_refs[0]]
+                            elif short_val in ['2nd', '2']:
+                                if len(all_pending_refs) >= 2:
+                                    block_ids = [all_pending_refs[1]]
+                            elif short_val in ['3rd', '3']:
+                                if len(all_pending_refs) >= 3:
+                                    block_ids = [all_pending_refs[2]]
+                            elif short_val.isdigit():
+                                # Match last 4+ digits against pending refs
+                                for pref in all_pending_refs:
+                                    if pref.endswith(short_val) or pref.endswith(short_val.zfill(5)):
+                                        block_ids = [pref]
+                                        break
+                    
+                    if not block_ids:
+                        # No ref_id found - send error message, DO NOT send anything
+                        await loop.run_in_executor(None, send_whatsapp_message, founder_phone, 
+                            f"⚠️ *Missing Ref ID*\n\nTo {cmd}, please specify the reference.\n\nExamples:\n*approve 2026-04-00001* (full)\n*approve 00001* (short)\n*approve last* (most recent)\n*approve 1* (1st pending)\n\nType *pending* to see all.")
+                        continue
+                
+                if not block_ids:
+                    continue
+                
+                if not block_ids:
+                    continue
+                    
+                for ref_id in block_ids:
+                    info = db.get_pending_approval(ref_id)
+                    if not info:
+                        continue
+                        
+                    email_addr = info['sender']
+                    msg_id = info['message_id']
+                    tier = info.get('tier', '1')
+
+                    if cmd == 'get' and tier == "SEARCH":
+                        from services.gmail import rescue_to_inbox
+                        token = info.get('draft_body', 'token.json') # We stored token in draft_body for search results
+                        res = await loop.run_in_executor(None, rescue_to_inbox, msg_id, token)
+                        if res:
+                            await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"⚓ RESCUED: Message back in Inbox ({token}).")
+                            db.delete_pending_approval(ref_id)
+                        else:
+                            await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"❌ Rescue failed for {ref_id}.")
+                        continue
+
+                    # (Normal commands like approve, revise, etc below...)
+                    
+                    # A) APPROVE
+                    if cmd == 'approve':
+                        from_alias = info.get('delivered_to')
+                        subject = info['subject']
+                        draft = info['draft_body']
+                        
+                        logger.info(f"👍 APPROVAL RECEIVED for Ref #{ref_id}")
+                        if from_alias:
+                            token_source = 'token.json'
+                            actual_alias = from_alias
+                            if '|' in from_alias:
+                                actual_alias, token_source = from_alias.split('|', 1)
+                                
+                            if token_source.startswith('token_imap_'):
+                                from services.imap import send_email_smtp
+                                result = await loop.run_in_executor(None, send_email_smtp, token_source, email_addr, f"Re: {subject}", draft)
+                            else:
+                                result = await loop.run_in_executor(None, send_email, email_addr, f"Re: {subject}", draft, actual_alias, token_source)
+                        else:
+                            result = await loop.run_in_executor(None, send_email, email_addr, f"Re: {subject}", draft)
+                            
+                        if result['status'] == 'success':
+                            from services.google_sheets import log_activity
+                            await loop.run_in_executor(None, log_activity, {"email_address": email_addr, "status": f"Approved & Sent (#{ref_id})"})
+                            db.log_action(ref_id, 'approved', info.get('tier', ''), 'Approved via WhatsApp')
+                            db.save_correction(ref_id, 'approve', draft, draft, 'Approved as-is via WhatsApp', sender=email_addr, subject=info.get('subject', ''))
+                            db.delete_pending_approval(ref_id)
+                            await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"✅ *Ref #{ref_id}* sent to {email_addr}!")
+                        else:
+                            await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"❌ Failed to send Ref #{ref_id}: {result.get('message', 'Unknown error')}")
+
+                    # B) REVISE
+                    elif cmd == 'revise':
+                        # Extract comment: everything after the ID in this block, or just the whole block if context used
+                        comment = ""
+                        user_provided_draft = ""
+                        
+                        # Check if user is providing a direct edit (starts with "Hi " or "Dear " etc)
+                        original_block = block_text
+                        if ref_id in block_text:
+                            after_id = block_text.split(ref_id, 1)[1].strip().lstrip(':').strip()
+                            # If the content looks like an email (starts with Hi, Dear, Thanks, etc), treat as direct edit
+                            if after_id.lower().startswith(('hi', 'dear', 'thanks', 'hello', 'best', 'regards', 'warm')):
+                                user_provided_draft = after_id
+                            else:
+                                comment = after_id
+                        else:
+                            after_kw = block_text.replace(cmd, '', 1).strip().lstrip(':').strip()
+                            if after_kw.lower().startswith(('hi', 'dear', 'thanks', 'hello', 'best', 'regards', 'warm')):
+                                user_provided_draft = after_kw
+                            else:
+                                comment = after_kw
+
+                        if user_provided_draft:
+                            # User provided direct revision - save as-is
+                            logger.info(f"✏️ DIRECT REVISION for Ref #{ref_id}")
+                            original_draft = info['draft_body']
+                            
+                            info['draft_body'] = user_provided_draft
+                            db.save_pending_approval(ref_id, info)
+                            db.save_correction(ref_id, 'revise', original_draft, user_provided_draft, 'User direct edit', sender=email_addr, subject=info.get('subject', ''))
+                            db.log_action(ref_id, 'revised', info.get('tier', ''), 'WhatsApp direct edit')
+                            
+                            await loop.run_in_executor(None, send_whatsapp_message, founder_phone, 
+                                f"✏️ *Ref #{ref_id} UPDATED*\n\n{user_provided_draft}\n\n✅ Reply: *approve {ref_id}* to send")
+                            
+                        elif comment:
+                            # User gave AI instructions to rewrite
+                            logger.info(f"❌ REVISION REQUESTED for Ref #{ref_id}: {comment}")
+                            email_object = {"id": msg_id, "threadId": info['thread_id'], "subject": info['subject'], "sender": email_addr}
+                            original_draft = info['draft_body']
+                            new_draft = await loop.run_in_executor(None, refine_draft, email_object, original_draft, comment)
+                            
+                            info['draft_body'] = new_draft
+                            db.save_pending_approval(ref_id, info)
+                            db.save_correction(ref_id, 'revise', original_draft, new_draft, comment, sender=email_addr, subject=info.get('subject', ''))
+                            db.log_action(ref_id, 'revised', info.get('tier', ''), f'WhatsApp revision: {comment}')
+                            
+                            await loop.run_in_executor(None, send_whatsapp_message, founder_phone, 
+                                f"✏️ *Ref #{ref_id} REVISED*\n\n{new_draft}\n\n✅ Reply: *approve {ref_id}* to send\n✏️ Or reply with your own version directly")
+                        else:
+                            # No instructions - show current draft for editing
+                            current_draft = info.get('draft_body', 'No draft found')
+                            await loop.run_in_executor(None, send_whatsapp_message, founder_phone, 
+                                f"📝 *Current Draft (Ref #{ref_id}):*\n\n{current_draft}\n\n✏️ *To revise:* Reply with your new version directly, OR\n*revise {ref_id}: make it friendlier* (AI will rewrite)")
+
+                    # C) SUPPLIER
+                    elif cmd == 'supplier':
+                        logger.info(f"🚚 SUPPLIER CATEGORIZATION for Ref #{ref_id}")
+                        from services.google_sheets import log_expense
+                        log_data = {"from_name": email_addr.split('@')[0], "email_address": email_addr, "subject": info['subject'], "body": info['draft_body'], "expense_data": {"vendor": email_addr.split('@')[0], "amount": "N/A", "due_date": "N/A"}}
+                        await loop.run_in_executor(None, log_expense, log_data)
+                        db.delete_pending_approval(ref_id)
+                        await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"🚚 *Ref #{ref_id}* moved to Supplier Expenses.")
+
+                    # D) SPAM / DELETE / IGNORE
+                    elif cmd in ['spam', 'delete', 'ignore']:
+                        logger.info(f"🗑️ DISCARDING Ref #{ref_id} (Cmd: {cmd})")
+                        db.delete_pending_approval(ref_id)
+                        db.mark_as_processed(msg_id) # Prevent re-triage
+                        await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"🗑️ *Ref #{ref_id}* marked as {cmd} and removed.")
+
+                    # E) ARCHIVE
+                    elif cmd == 'archive':
+                        logger.info(f"🗄️ ARCHIVING Ref #{ref_id}")
+                        db.delete_pending_approval(ref_id)
+                        await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"🗄️ *Ref #{ref_id}* archived and removed from list.")
+
+                    # F) GET (Rescue from Archive/Trash)
+                    elif cmd == 'get':
+                        logger.info(f"⚓ RESCUING Ref #{ref_id}")
+                        token_file = info.get('delivered_to', 'token.json')
+                        if '|' in token_file:
+                            token_file = token_file.split('|', 1)[1]
+                        
+                        from services.gmail import rescue_to_inbox
+                        result = await loop.run_in_executor(None, rescue_to_inbox, msg_id, token_file)
+                        if result:
+                            db.delete_pending_approval(ref_id)
+                            await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"⚓ *Ref #{ref_id}* restored to Inbox & marked Unread! (Acct: {token_file})")
+                        else:
+                            await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"❌ Failed to rescue Ref #{ref_id}.")
+
+                    # G) ADD (Manual Whitelist)
+                    elif cmd == 'add':
+                        logger.info(f"🆕 WHITELISTING Ref #{ref_id}")
+                        from services.google_sheets import add_new_client_to_master
+                        onboard_data = {
+                            "from_name": info.get('sender', '').split('@')[0], 
+                            "email_address": email_addr,
+                            "subject": info['subject'],
+                            "body": "Manual Whitelist Approval",
+                            "to_email": info.get('delivered_to', 'unknown')
+                        }
+                        await loop.run_in_executor(None, add_new_client_to_master, onboard_data)
+                        await loop.run_in_executor(None, send_whatsapp_message, founder_phone, f"✅ *Ref #{ref_id}* Whitelisted! {email_addr} added to BPS_Client_Master as Tier 1.")
+
+            return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return {"status": "error", "message": str(e)}
+
+async def inbox_polling_loop():
+    """SUPERVISOR: Background loop to poll Gmail with bulletproof error recovery."""
+    consecutive_errors = 0
+    while True:
+        try:
+            await inbox_polling_loop_once()
+            consecutive_errors = 0  # Reset on success
+            await asyncio.sleep(60)
+        except Exception as e:
+            consecutive_errors += 1
+            import traceback
+            logger.error(f"🚨 SUPERVISOR CAUGHT ERROR in polling: {e}\n{traceback.format_exc()}")
+            
+            # Smart backoff: sleep longer if it keeps failing
+            backoff_time = min(300, 60 * consecutive_errors)
+            logger.warning(f"Rebooting patrol task in {backoff_time}s (Error count: {consecutive_errors})")
+            await asyncio.sleep(backoff_time)
+
+@app.on_event("startup")
+async def startup_event():
+    # Ensure Google Sheets exist with proper headers
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, ensure_sheets_exist)
+    # Start the polling loop as a background task
+    asyncio.create_task(inbox_polling_loop())
+    # Start the daily scheduled jobs (8 AM Nudge, 4 PM Summary)
+    asyncio.create_task(background_scheduler())
+
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to BackPocket System.io MVP API"}
+
+
+@app.get("/test-sheets")
+async def check_sheets():
+    """Endpoint to check the Google Sheets integration status."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, test_sheets_connection)
+
+@app.get("/test-whatsapp")
+async def test_whatsapp():
+    """Directly test the WhatsApp notification to your phone."""
+    loop = asyncio.get_running_loop()
+    from services.whapi import send_whatsapp_message
+    founder_phone = os.getenv("FOUNDER_PHONE")
+    if not founder_phone:
+        return {"status": "error", "message": "FOUNER_PHONE not set"}
+    
+    # Sanitize phone number
+    clean_phone = "".join(filter(str.isdigit, founder_phone))
+    
+    logger.info(f"TESTING WHATSAPP: Sending to {clean_phone}")
+    text = "🧪 *BackPocket Connection Test*\n\nIf you are reading this, your WhatsApp connection is officially WORKING! 🎉"
+    result = await loop.run_in_executor(None, send_whatsapp_message, clean_phone, text)
+    return {
+        "status": "success", 
+        "whapi_response": result
+    }
+
+@app.get("/run-poll")
+async def run_poll():
+    """Manually trigger the inbox polling logic once."""
+    # We run it in a separate task so the API response returns immediately
+    asyncio.create_task(inbox_polling_loop_once())
+    return {"message": "Manual poll started."}
+
+@app.get("/api/status")
+async def get_system_status():
+    global LAST_PATROL_TIME
+    import os
+    
+    spreadsheet_id = os.getenv('SPREADSHEET_ID', '')
+    spreadsheet_url = ''
+    if spreadsheet_id and spreadsheet_id != 'your_google_sheet_id_here':
+        spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
+    
+    return {
+        "status": "Healthy",
+        "last_patrol": LAST_PATROL_TIME,
+        "pending_count": len([r for r in db.get_all_pending_refs() if not r.startswith("FIND-")]),
+        "ollama": "Active",
+        "spreadsheet_url": spreadsheet_url,
+        "debug_spreadsheet_id": spreadsheet_id
+    }
+
+@app.get("/morning-pulse")
+async def trigger_pulse():
+    """Manually trigger the morning pulse report."""
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, send_morning_pulse)
+    return {"message": "Morning pulse sent successfully!"}
+
+@app.get("/test-triage")
+async def test_triage(subject: str, snippet: str):
+    """Manually test the AI Triage on provided text."""
+    loop = asyncio.get_running_loop()
+    email_content = {"subject": subject, "snippet": snippet}
+    triage = await loop.run_in_executor(None, triage_email, email_content)
+    tier = triage.get('tier', 5)
+    # Only Tier 1 gets a draft - Tier 2+ just gets logged
+    draft = await loop.run_in_executor(None, draft_response, email_content, tier) if tier == 1 else "No draft needed (Tier 2+)"
+    return {
+        "triage": triage,
+        "ai_draft": draft
+    }
+
+@app.get("/api/search")
+async def api_search(q: str):
+    """Search for emails across all accounts via web dashboard."""
+    from services.gmail import search_emails, get_all_account_tokens
+    loop = asyncio.get_running_loop()
+    tokens = await loop.run_in_executor(None, get_all_account_tokens)
+    
+    all_results = []
+    for t in tokens:
+        results = await loop.run_in_executor(None, search_emails, q, t)
+        all_results.extend(results)
+    
+    return {"results": all_results}
+
+
+@app.get("/api/audit")
+async def api_audit():
+    """Trigger a self-diagnosis via local Ollama."""
+    loop = asyncio.get_running_loop()
+    report = await loop.run_in_executor(None, run_self_audit)
+    return {"status": "success", "report": report}
+
+@app.post("/api/rescue")
+async def api_rescue(msg_id: str, token: str = "token.json"):
+    """Restore an email to inbox via web dashboard."""
+    from services.gmail import rescue_to_inbox
+    loop = asyncio.get_running_loop()
+    success = await loop.run_in_executor(None, rescue_to_inbox, msg_id, token)
+    return {"status": "success" if success else "error"}
+
+@app.get("/api/pending")
+async def api_pending():
+    """Get all pending approvals for the dashboard."""
+    pending_refs = db.get_all_pending_refs()
+    results = []
+    for rid in pending_refs:
+        if rid.startswith("FIND-"):
+            continue
+        p = db.get_pending_approval(rid)
+        if p:
+            p['ref_id'] = rid
+            results.append(p)
+    return {"pending": results}
+
+@app.post("/api/approve")
+async def api_approve(request: ApproveRequest):
+    """Approve and send a pending email draft from the dashboard."""
+    ref_id = request.ref_id
+    loop = asyncio.get_running_loop()
+    info = db.get_pending_approval(ref_id)
+    if not info:
+        return {"status": "error", "message": f"Ref #{ref_id} not found"}
+    
+    email_addr  = info.get('sender', '').strip()
+    subject     = info.get('subject', '')
+    draft       = info.get('draft_body', '')
+    from_alias  = info.get('delivered_to', '')
+    
+    # Validate email address
+    if not email_addr or email_addr == 'unknown sender' or '@' not in email_addr:
+        return {"status": "error", "message": f"Cannot send - invalid recipient: '{email_addr}'. Please check the sender address in the pending email."}
+    
+    # Clean up subject - remove any "Re: Re: Re:" duplication
+    if subject.lower().startswith('re: re:'):
+        subject = subject[6:].strip()
+    elif subject.lower().startswith('re:'):
+        subject = subject[4:].strip()
+    
+    # AUTO-MATCH TOKEN: Use the correct account based on "delivered_to"
+    # If email was delivered to cherry@yourwebaccountant.com, send from that account
+    delivered_to = info.get('delivered_to', '')
+    if '|' in delivered_to:
+        # Already has token: format is "alias|token"
+        actual_alias, token_source = delivered_to.split('|', 1)
+    elif delivered_to:
+        # No token - auto-match based on email address
+        actual_alias = delivered_to
+        if 'yourwebaccountant' in delivered_to.lower():
+            token_source = 'token_ywa.json'
+        elif 'bigbossaccountants' in delivered_to.lower():
+            token_source = 'token_imap_admin.json'
+        elif 'bigbossgroup' in delivered_to.lower():
+            token_source = 'token.json'
+        else:
+            token_source = 'token.json'
+    else:
+        actual_alias, token_source = None, 'token.json'
+    
+    if token_source.startswith('token_imap_'):
+        from services.imap import send_email_smtp
+        result = await loop.run_in_executor(None, send_email_smtp, token_source, email_addr, f"Re: {subject}", draft)
+    else:
+        result = await loop.run_in_executor(None, send_email, email_addr, f"Re: {subject}", draft, actual_alias, token_source)
+    
+    if result['status'] == 'success':
+        await loop.run_in_executor(None, log_activity, {"email_address": email_addr, "status": f"Dashboard Approved (#{ref_id})"})
+        db.log_action(ref_id, 'approved', info.get('tier', ''), 'Approved from dashboard')
+        db.save_correction(ref_id, 'approve', draft, draft, 'Approved as-is', sender=email_addr, subject=subject)
+        db.delete_pending_approval(ref_id)
+        
+        # Send WhatsApp notification
+        from services.whapi import send_whatsapp_message
+        founder_phone = os.getenv("FOUNDER_PHONE") or ""
+        if founder_phone:
+            await loop.run_in_executor(None, send_whatsapp_message, founder_phone, 
+                f"✅ *EMAIL SENT*\n\nTo: {email_addr}\nSubject: {subject}\n\nRef: {ref_id}")
+        
+        return {"status": "success", "message": f"Email sent to {email_addr}"}
+    else:
+        return {"status": "error", "message": result.get('message', 'Send failed')}
+
+@app.post("/api/archive")
+async def api_archive_pending(request: ArchiveRequest):
+    """Archive (dismiss) a pending item from the dashboard without sending."""
+    ref_id = request.ref_id
+    should_archive = request.archive
+    info = db.get_pending_approval(ref_id)
+    if not info:
+        return {"status": "error", "message": f"Ref #{ref_id} not found"}
+    
+    from services.google_sheets import log_activity
+    from services.whapi import send_whatsapp_message
+    loop = asyncio.get_running_loop()
+    
+    tier = info.get('tier', '')
+    sender = info.get('sender', '')
+    subject = info.get('subject', '')
+    
+    # Handle based on tier
+    if tier == '4' or 'portal' in sender.lower() or 'suitedash' in sender.lower():
+        # Portal email - log to Portal_Updates
+        await loop.run_in_executor(None, log_activity, {
+            "email_address": sender,
+            "subject": subject,
+            "body": info.get('draft_body', ''),
+            "tier": "4",
+            "status": "Portal Update - Check portal"
+        }, "Portal_Updates")
+        
+        # Send WhatsApp reminder for portal updates
+        phone = os.getenv("FOUNDER_PHONE", "")
+        if phone:
+            await loop.run_in_executor(None, send_whatsapp_message, 
+                phone, 
+                f"Portal Update: {subject}\nCheck Suitedash portal for details."
+            )
+    else:
+        # Normal log
+        status_msg = f"Logged {'& Archived' if should_archive else 'Logged Only'} (#{ref_id})"
+        await loop.run_in_executor(None, log_activity, {
+            "email_address": sender,
+            "subject": subject,
+            "body": info.get('draft_body', ''),
+            "tier": tier,
+            "status": status_msg
+        })
+    
+    db.log_action(ref_id, 'archived', tier, f"{'Archived' if should_archive else 'Logged, kept in inbox'} from dashboard")
+    
+    # Only delete if archiving - otherwise keep in inbox
+    if should_archive:
+        db.delete_pending_approval(ref_id)
+    
+    return {"status": "success", "message": f"Ref #{ref_id} {('logged to Portal_Updates + WhatsApp sent' if tier == '4' else 'logged and archived')}"}
+
+@app.post("/api/revise")
+async def api_revise(request: ReviseRequest):
+    """Request an AI revision OR save direct edits of a pending draft."""
+    ref_id = request.ref_id
+    loop = asyncio.get_running_loop()
+    info = db.get_pending_approval(ref_id)
+    if not info:
+        return {"status": "error", "message": f"Ref #{ref_id} not found"}
+    
+    original = info['draft_body']
+    feedback = request.feedback or request.comment or "Edited"
+    
+    # Check if user provided direct draft (dashboard edit)
+    if request.new_draft:
+        new_draft = request.new_draft
+        info['draft_body'] = new_draft
+        db.save_pending_approval(ref_id, info)
+        db.save_correction(ref_id, 'revise', original, new_draft, feedback)
+        return {"status": "success", "new_draft": new_draft, "message": "Draft saved"}
+    
+    # Otherwise, use AI to revise based on comment
+    if not request.comment:
+        return {"status": "error", "message": "Provide either new_draft or comment"}
+    
+    from services.gemini import refine_draft
+    email_obj = {"id": info['message_id'], "threadId": info['thread_id'], "subject": info['subject'], "sender": info['sender']}
+    new_draft = await loop.run_in_executor(None, refine_draft, email_obj, original, request.comment)
+    info['draft_body'] = new_draft
+    db.save_pending_approval(ref_id, info)
+    db.save_correction(ref_id, 'revise', original, new_draft, request.comment)
+    return {"status": "success", "new_draft": new_draft}
+
+@app.post("/api/save-draft")
+async def api_save_draft(request: SaveDraftRequest):
+    """Save draft edits from dashboard."""
+    ref_id = request.ref_id
+    draft_body = request.draft_body
+    info = db.get_pending_approval(ref_id)
+    if not info:
+        return {"status": "error", "message": f"Ref #{ref_id} not found"}
+    info['draft_body'] = draft_body
+    db.save_pending_approval(ref_id, info)
+    return {"status": "success", "message": "Draft saved"}
+
+@app.get("/api/drafts")
+async def api_get_drafts():
+    """Get all pending drafts."""
+    conn = db.sqlite3.connect(db.DB_PATH)
+    conn.row_factory = db.sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM pending_approvals ORDER BY created_at DESC")
+    rows = cursor.fetchall()
+    conn.close()
+    return {"drafts": [dict(r) for r in rows]}
+
+@app.get("/api/draft/{ref_id}")
+async def api_get_draft(ref_id: str):
+    """Get a specific draft."""
+    draft = db.get_draft(ref_id)
+    if not draft:
+        return {"status": "error", "message": f"Draft #{ref_id} not found"}
+    return {"draft": draft}
+
+class AddClientRequest(BaseModel):
+    ref_id: str
+    first_name: str = ""
+    last_name: str = ""
+    email: str = ""
+    mobile: str = ""
+    background_info: str = ""
+
+@app.post("/api/add-client")
+async def api_add_client(request: AddClientRequest):
+    """Add a new client to Clients_Master from the dashboard."""
+    ref_id = request.ref_id
+    
+    # Get the pending email to extract info if not provided
+    if not request.email:
+        info = db.get_pending_approval(ref_id)
+        if not info:
+            return {"status": "error", "message": f"Ref #{ref_id} not found"}
+        email = info.get('sender', '')
+    else:
+        email = request.email
+    
+    # If no name provided, try to extract from the email or use a placeholder
+    if not request.first_name:
+        # Use email prefix as first name
+        request.first_name = email.split('@')[0].replace('.', ' ').title() if email else "New"
+    
+    from services.google_sheets import add_new_client_to_master
+    loop = asyncio.get_running_loop()
+    
+    client_data = {
+        'from_name': f"{request.first_name} {request.last_name}".strip(),
+        'email_address': email,
+        'mobile': request.mobile,
+        'background_info': request.background_info or f"Added from Ref #{ref_id}"
+    }
+    
+    await loop.run_in_executor(None, add_new_client_to_master, client_data)
+    
+    # Remove from pending if it was there
+    db.delete_pending_approval(ref_id)
+    
+    return {"status": "success", "message": f"Client added: {request.first_name} {request.last_name}"}
+
+@app.post("/api/add-client-from-email")
+async def api_add_client_from_email(request: ApproveRequest):
+    """AI extracts client details from the email and adds to Clients_Master."""
+    ref_id = request.ref_id
+    info = db.get_pending_approval(ref_id)
+    if not info:
+        return {"status": "error", "message": f"Ref #{ref_id} not found"}
+    
+    # Use AI to extract client details from the email
+    from services.gemini import get_gemini_client
+    client = get_gemini_client()
+    if not client:
+        return {"status": "error", "message": "Gemini not available"}
+    
+    # Get full email content - prioritize email_body field, then draft_body
+    raw_email_body = info.get('email_body') or info.get('draft_body') or 'No content available'
+    email_content = f"Sender: {info.get('sender')}\nSubject: {info.get('subject')}\n\nFull Email Content:\n{raw_email_body}"
+    
+    # Log for debugging
+    logger.info(f"🔍 Extracting client from Ref #{ref_id}, email body length: {len(raw_email_body)}")
+    
+    prompt = f"""You need to extract client information from this email. This is CRITICAL - do not miss any details.
+
+SCAN THE EMAIL CAREFULLY FOR:
+1. SIGNATURE BLOCK - This is at the end of the email and contains the sender's name, title, company, phone, email
+2. CONTACT DETAILS - Look for phone numbers like "Mobile: 0412 345 678" or "Ph: (03) 1234 5678"
+3. NAME - First AND Last name from signature (e.g., "Milka Wenas" = first: Milka, last: Wenas)
+
+Return this exact JSON format:
+{{
+  "first_name": "First name only (e.g., Milka)",
+  "last_name": "Last name only (e.g., Wenas) - if they have one",
+  "email": "Their email address from signature",
+  "mobile": "PHONE NUMBER with format 0412 345 678 or similar - look carefully!",
+  "client_status": "New",
+  "accountant_or_auditor": "Empty unless they clearly need an accountant or auditor",
+  "birthdate": "Empty",
+  "background_info": "2-3 sentences about who they are, what company, why reaching out"
+}}
+
+EMAIL:
+{email_content}
+
+Extract all details - especially look for phone numbers in signature blocks!"""
+    
+    response = client.models.generate_content(
+        model='gemini-2.5-flash',
+        contents=prompt,
+        config={'response_mime_type': 'application/json'}
+    )
+    
+    try:
+        import json
+        response_text = response.text.strip() if response and response.text else "{}"
+        client_info = json.loads(response_text)
+    except Exception as e:
+        logger.error(f"Failed to parse client info from AI response: {e}")
+        return {"status": "error", "message": "Could not parse AI response"}
+    
+    # Add to Clients_Master
+    from services.google_sheets import add_new_client_to_master
+    loop = asyncio.get_running_loop()
+    
+    full_name = f"{client_info.get('first_name', '')} {client_info.get('last_name', '')}".strip()
+    
+    # Format mobile: convert 0466 046 250 to +61466046250
+    raw_mobile = client_info.get('mobile', '').strip()
+    formatted_mobile = raw_mobile
+    if raw_mobile:
+        # Remove spaces and +61, then format as +614xxxxxxxx
+        digits = raw_mobile.replace(' ', '').replace('+61', '').replace('+', '')
+        if digits.isdigit() and len(digits) == 10:
+            if digits.startswith('0'):
+                formatted_mobile = '+61' + digits[1:]
+            else:
+                formatted_mobile = '+61' + digits
+        elif digits.isdigit() and len(digits) == 9:
+            formatted_mobile = '0' + digits
+    
+    # Format birthdate: convert DD-MM-YYYY or DD/MM/YYYY to dd-mmm-yyyy
+    raw_bday = client_info.get('birthdate', '').strip()
+    formatted_bday = ''
+    if raw_bday:
+        try:
+            # Try various formats
+            for fmt in ['%d-%m-%Y', '%d/%m/%Y', '%d-%b-%Y', '%Y-%m-%d']:
+                try:
+                    dt = datetime.strptime(raw_bday, fmt)
+                    formatted_bday = dt.strftime('%d-%b-%Y')
+                    break
+                except Exception:
+                    continue
+        except Exception:
+            logger.warning(f"Could not parse birthday '{raw_bday}'")
+            formatted_bday = raw_bday
+    
+    client_data = {
+        'from_name': full_name,
+        'email_address': client_info.get('email', info.get('sender', '')),
+        'mobile': formatted_mobile,
+        'client_status': client_info.get('client_status', 'New'),
+        'accountant_or_auditor': client_info.get('accountant_or_auditor', ''),
+        'birthdate': formatted_bday,
+        'background_info': client_info.get('background_info', f'Added from Ref #{ref_id}')
+    }
+    
+    await loop.run_in_executor(None, add_new_client_to_master, client_data)
+    
+    # Remove from pending
+    db.delete_pending_approval(ref_id)
+    
+    return {"status": "success", "message": f"Client added: {full_name}", "client": client_info}
+
+@app.get("/api/corrections")
+async def api_get_corrections(ref_id: Optional[str] = None):
+    """Get corrections, optionally filtered by ref_id."""
+    corrections = db.get_corrections(ref_id)
+    return {"corrections": corrections}
+
+@app.get("/api/debug-draft/{ref_id}")
+async def api_debug_draft(ref_id: str):
+    """Debug: Get raw draft from database for a specific ref_id."""
+    info = db.get_pending_approval(ref_id)
+    if not info:
+        return {"error": "Ref not found"}
+    return {
+        "ref_id": ref_id,
+        "sender": info.get("sender"),
+        "subject": info.get("subject"),
+        "draft_body": info.get("draft_body"),
+        "tier": info.get("tier"),
+        "created_at": info.get("created_at")
+    }
+
+@app.get("/api/history")
+async def api_get_history(limit: int = 50):
+    """Get action history."""
+    history = db.get_action_history(limit)
+    return {"history": history}
+
+# Coach Instructions & Analysis
+class CoachAnalyzeRequest(BaseModel):
+    ref_id: str
+
+@app.post("/api/coach/analyze")
+async def api_coach_analyze(request: CoachAnalyzeRequest):
+    """Passes the draft to the Communication Coach (GPT-4o) for tone analysis."""
+    ref_id = request.ref_id
+    info = db.get_pending_approval(ref_id)
+    if not info:
+        return {"status": "error", "message": f"Ref #{ref_id} not found."}
+        
+    try:
+        from services.gemini import analyze_draft_with_coach
+        email_content = {
+            "subject": info.get("subject", ""),
+            "snippet": (info.get("email_body") or "")[:1000]
+        }
+        draft_body = info.get("draft_body") or ""
+        
+        analysis = analyze_draft_with_coach(email_content, draft_body)
+        if not analysis:
+            return {"status": "error", "message": "Coach failed to return analysis."}
+            
+        return {"status": "success", "analysis": analysis}
+    except Exception as e:
+        logger.error(f"Coach analyze error: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/coach/yoodli")
+async def api_coach_yoodli():
+    """Provides the Yoodli iframe URL or session for voice practice (Phase 5)."""
+    # In a full integration, you would hit the Yoodli API to generate a temp token.
+    return {
+        "status": "success",
+        "yoodli_url": "https://app.yoodli.ai/practice", 
+        "message": "Yoodli voice practice integration activated."
+    }
+
+# Sender Instructions APIs
+class SenderInstructionRequest(BaseModel):
+    sender_email: str
+    instructions: str
+    category: str = ""
+
+@app.post("/api/sender-instruction")
+async def api_save_sender_instruction(request: SenderInstructionRequest):
+    """Save instructions for a specific sender (Twin will use these when drafting)."""
+    db.save_sender_instruction(request.sender_email, request.instructions, request.category)
+    
+    # Sync to Google Sheets
+    try:
+        from services.google_sheets import sync_instructions_to_sheets
+        all_instructions = db.get_all_sender_instructions()
+        sync_instructions_to_sheets(all_instructions)
+    except Exception as e:
+        logger.error(f"Could not sync to Sheets: {e}")
+    
+    return {"status": "success", "message": f"Instructions saved for {request.sender_email}"}
+
+@app.get("/api/sender-instructions")
+async def api_get_sender_instructions():
+    """Get all sender instructions."""
+    instructions = db.get_all_sender_instructions()
+    return {"instructions": instructions}
+
+@app.post("/api/sync-instructions-to-sheets")
+async def api_sync_instructions():
+    """Manually sync instructions to Google Sheets."""
+    instructions = db.get_all_sender_instructions()
+    try:
+        from services.google_sheets import sync_instructions_to_sheets
+        sync_instructions_to_sheets(instructions)
+        return {"status": "success", "message": f"Synced {len(instructions)} instructions to Sheets"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/sender-instruction/{sender_email}")
+async def api_get_sender_instruction(sender_email: str):
+    """Get instructions for a specific sender."""
+    instruction = db.get_sender_instruction(sender_email)
+    if instruction:
+        return instruction
+    return {"message": "No instructions found"}
+
+@app.delete("/api/sender-instruction/{sender_email}")
+async def api_delete_sender_instruction(sender_email: str):
+    """Delete instructions for a specific sender."""
+    db.delete_sender_instruction(sender_email)
+    return {"status": "success", "message": f"Instruction deleted for {sender_email}"}
+
+
+async def inbox_polling_loop_once():
+    """Patrols ALL connected business accounts and performs Zen Cleanup/Admin logic."""
+    loop = asyncio.get_running_loop()
+    try:
+        logger.info("🛡️ GLOBAL POLL: Starting Patrol...")
+        
+        from services.google_sheets import process_lead_conversions
+        from services.gmail import get_all_account_tokens, get_unread_emails
+        from services.imap import get_all_imap_configs, get_unread_emails_imap
+        
+        # 🟢 CRM Duty: Sync Lead Conversions
+        await loop.run_in_executor(None, process_lead_conversions)
+        
+        # 🧠 Self-Awareness: Check for nudges (Urgent emails pending > 4h)
+        await loop.run_in_executor(None, run_self_check)
+        
+        # 🔄 WhatsApp Retry Engine
+        # (It can be implemented later on whatsapp_service.resend_failed())
+        
+        all_gmail_tokens = get_all_account_tokens()
+        all_imap_tokens = get_all_imap_configs()
+        
+        all_accounts = [{"file": t, "type": "gmail"} for t in all_gmail_tokens] + \
+                       [{"file": t, "type": "imap"} for t in all_imap_tokens]
+        
+        # 🕵️ ACCOUNT PATROL (Concurrent 4x Speed)
+        async def fetch_acc(acc):
+            t_file, a_type = acc["file"], acc["type"]
+            logger.info(f"🕵️ PATROLLING Account: {t_file} ({a_type})")
+            if a_type == "gmail":
+                return await loop.run_in_executor(None, get_unread_emails, t_file), t_file, a_type
+            return await loop.run_in_executor(None, get_unread_emails_imap, t_file), t_file, a_type
+
+        account_results = await asyncio.gather(*(fetch_acc(a) for a in all_accounts))
+        
+        all_emails_to_triage = []
+        for unread_emails, t_file, a_type in account_results:
+            for email in unread_emails:
+                msg_id = email.get('id')
+                if not msg_id or db.is_processed(msg_id):
+                    continue
+                
+                email['token_file'], email['acc_type'] = t_file, a_type
+                
+                pre_triage = pre_triage_rules(email)
+                if pre_triage:
+                    logger.info(f"🛡️ PRE-FILTER: {email.get('subject')[:30]}... (Tier {pre_triage['tier']})")
+                    await process_triaged_email(email, pre_triage, loop)
+                    db.mark_as_processed(msg_id)
+                else:
+                    all_emails_to_triage.append(email)
+                
+        # --- BATCH TRIAGE REMAINING (HUGE COST SAVINGS) ---
+        if all_emails_to_triage:
+            logger.info(f"🧠 BATCH TRIAGE: Processing {len(all_emails_to_triage)} emails...")
+            
+            # Using while loop to avoid potential slicing issues in some static analysis
+            idx = 0
+            while idx < len(all_emails_to_triage):
+                batch = all_emails_to_triage[idx : idx + 5]
+                # Results is now a dict {message_id: triage_data}
+                results = await loop.run_in_executor(None, batch_triage_emails, batch)
+                
+                for email in batch:
+                    msg_id = email.get('id')
+                    triage = results.get(msg_id)
+                    
+                    if triage:
+                        await process_triaged_email(email, triage, loop)
+                        db.mark_as_processed(msg_id)
+                    else:
+                        logger.warning(f"Missing triage result for {msg_id} in batch.")
+                        # This should rarely happen now because batch_triage_emails has fallback
+                
+                idx += 5
+        
+        global LAST_PATROL_TIME
+        LAST_PATROL_TIME = datetime.now().strftime("%I:%M %p")
+        logger.info(f"🛡️ PATROL COMPLETE at {LAST_PATROL_TIME}")
+    except Exception as e:
+        logger.error(f"Error in global poll: {e}")
+
+async def background_scheduler():
+    """Background task to run daily nudges and summaries."""
+    global SCHEDULE_JOBS_DONE
+    from services.whapi import send_pending_items_summary, send_morning_nudge, send_spam_bulk_ask
+    while True:
+        try:
+            now = datetime.now()
+            hour, today = now.hour, now.strftime("%Y-%m-%d")
+            if hour == 8 and f"nudge_{today}" not in SCHEDULE_JOBS_DONE:
+                try:
+                    send_morning_nudge()
+                except Exception as nudge_err:
+                    logger.error(f"Nudge error: {nudge_err}")
+                SCHEDULE_JOBS_DONE.add(f"nudge_{today}")
+            if hour == 16 and f"summary_{today}" not in SCHEDULE_JOBS_DONE:
+                try:
+                    send_pending_items_summary()
+                except Exception as summary_err:
+                    logger.error(f"Summary error: {summary_err}")
+                try:
+                    send_spam_bulk_ask()
+                except Exception as spam_err:
+                    logger.error(f"Spam ask error: {spam_err}")
+                SCHEDULE_JOBS_DONE.add(f"summary_{today}")
+            if hour == 0:
+                SCHEDULE_JOBS_DONE.clear()
+        except Exception as e:
+            logger.error(f"Scheduler Error: {e}")
+        await asyncio.sleep(300)
+
+async def process_triaged_email(email, triage, loop):
+    """Handles the logic after an email has been triaged, following Cherry's Handwritten Map."""
+    from services.google_sheets import log_activity, check_client_identity
+    from services.gmail import get_historical_context, archive_message
+    from services.imap import archive_message_imap
+    from services.whapi import send_notification, send_whatsapp_message
+    from services.gemini import draft_response
+
+    clean_email = email.get('clean_email', '')
+    token_file = email.get('token_file')
+    acc_type = email.get('acc_type')
+    msg_id = email.get('id')
+    tier = triage.get('tier', 5)
+    
+    from_name = email.get('sender', 'Unknown')
+    snippet = email.get('snippet', '')
+    is_gmail = (acc_type == "gmail")
+    # 🌟 0. SPECIAL ONBOARDING FLOW
+    if triage.get('is_onboarding_triggered'):
+        from services.google_sheets import add_new_client_to_master
+        from services.gemini import get_gemini_client
+        logger.info(f"🆕 RUNNING AUTO-ONBOARDING for {msg_id}")
+        prompt = f"Extract Name and Email from this form:\n\n{email['snippet']}\n\nReturn ONLY JSON with 'name' and 'email' keys."
+        ai = get_gemini_client()
+        if not ai:
+            logger.error("Gemini client not initialized for onboarding")
+            return
+        res = ai.models.generate_content(model='gemini-2.0-flash', contents=prompt, config={'response_mime_type': 'application/json'})
+        import json
+        response_text = res.text.strip() if res and res.text else '{}'
+        client_details = json.loads(response_text)
+        onboard_data = {
+            "from_name": client_details.get('name', 'Unknown Name'),
+            "email_address": client_details.get('email', 'unknown@link.com'),
+            "subject": email['subject'], "body": email['snippet'], "to_email": email['delivered_to'], "actionable_items": "Client successfully auto-onboarded."
+        }
+        await loop.run_in_executor(None, add_new_client_to_master, onboard_data)
+        from services.whapi import send_whatsapp_message
+        await loop.run_in_executor(None, send_whatsapp_message, os.getenv("FOUNDER_PHONE"), f"✨ *NEW CLIENT ONBOARDED!* \n\nName: {onboard_data['from_name']}\nEmail: {onboard_data['email_address']}")
+        return # Complete.
+
+    # 🛡️ 1. CLIENT IDENTITY CHECK
+    client = await loop.run_in_executor(None, check_client_identity, clean_email)
+    if client:
+        from_name = f"{client.get('first_name','')} {client.get('last_name','')}".strip() or from_name
+    
+    log_data = {
+        "from_name": from_name.replace("'", "").replace('"', ''),
+        "email_address": clean_email,
+        "subject": email.get('subject', 'No Subject'),
+        "body": snippet,
+        "tier": str(tier),
+        "status": "Pending",
+        "actionable_items": triage.get('action_plan', 'None Needed')
+    }
+
+    # Log all activity to the main Action Log (which also handles tier-routing)
+    await loop.run_in_executor(None, log_activity, log_data, "Action_Log")
+
+    # --- TIER 1 / 2 (CHERRY'S REFINED RULES) ---
+    if tier == 1 or tier == 2:
+        ref_id = generate_ref_id()
+        # Doc Signed Check
+        is_doc_signed, is_call = triage.get('is_doc_signed'), triage.get('is_call_centre')
+        if is_doc_signed:
+            logger.info("✍️ DOC SIGNED: Logging to Portal_Updates but STAYING in Inbox.")
+            await loop.run_in_executor(None, log_activity, {
+                "from_name": from_name, "email_address": clean_email, "subject": email['subject'],
+                "body": snippet, "tier": str(tier), "status": "Logged (Needs Filing)"
+            }, "Portal_Updates")
+        
+        # Check for urgent call centre message
+        is_urgent = triage.get('is_urgent', False)
+        if is_call:
+            urgency = "⚠️ URGENT - " if is_urgent else ""
+            await loop.run_in_executor(None, send_whatsapp_message, os.getenv("FOUNDER_PHONE"), f"📞 {urgency}*Call Centre Message* from Business 1300:\n\n{snippet[:200]}...")
+        
+        # Check for new client registration (Suitedash)
+        is_new_client = triage.get('is_new_client_registration', False)
+        if is_new_client:
+            logger.info("🆕 NEW CLIENT REGISTRATION: Auto-extracting and onboarding.")
+            email_body = email.get('snippet', '') + '\n\n' + email.get('body', '')
+            
+            # Auto-extract client details using AI
+            from services.gemini import get_gemini_client
+            client = get_gemini_client()
+            if client:
+                raw_email_body = email_body[:5000]
+                prompt = f"""Extract new client information from this Suitedash registration email.
+
+SCAN FOR:
+1. NAME - First AND Last name
+2. EMAIL ADDRESS
+3. PHONE/MOBILE - Look for formats like 0412 345 678, +61 412 345 678
+4. COMPANY NAME if mentioned
+
+Return JSON:
+{{
+  "first_name": "First name",
+  "last_name": "Last name",
+  "email": "email@address.com",
+  "mobile": "0412 345 678",
+  "client_status": "New",
+  "accountant_or_auditor": "",
+  "birthdate": "",
+  "background_info": "New client from Suitedash portal"
+}}
+
+EMAIL:
+{raw_email_body}"""
+                
+                try:
+                    response = client.models.generate_content(
+                        model='gemini-2.5-flash',
+                        contents=prompt,
+                        config={'response_mime_type': 'application/json'}
+                    )
+                    import json
+                    client_info = json.loads(response.text.strip()) if response and response.text else {}
+                    
+                    if client_info.get('email'):
+                        # Add to Clients_Master
+                        from services.google_sheets import add_new_client_to_master
+                        client_info['from_name'] = f"{client_info.get('first_name', '')} {client_info.get('last_name', '')}".strip()
+                        await loop.run_in_executor(None, add_new_client_to_master, client_info)
+                        logger.info(f"🆕 Auto-onboarded new client: {client_info.get('email')}")
+                        
+                        # Send WhatsApp notification
+                        await loop.run_in_executor(None, send_whatsapp_message, os.getenv("FOUNDER_PHONE"), 
+                            f"✨ *NEW CLIENT AUTO-ONBOARDED!*\n\nName: {client_info.get('first_name')} {client_info.get('last_name')}\nEmail: {client_info.get('email')}\nMobile: {client_info.get('mobile', 'N/A')}")
+                except Exception as e:
+                    logger.error(f"Error auto-onboarding client: {e}")
+
+        # 🛡️ STAY IN INBOX per Cherry's Map
+        logger.info(f"🛡️ TIER {tier} SHIELD: {clean_email} stays in Inbox.")
+        
+        # Only Tier 1 gets a draft - Tier 2 just logs
+        suggested_actions = []
+        sender_instructions = ""
+        if tier == 1:
+            hist_context = await loop.run_in_executor(None, get_historical_context, clean_email)
+            draft_result = await loop.run_in_executor(None, draft_response, email, tier, hist_context, client)
+            
+            # Handle both old string return and new dict return
+            if isinstance(draft_result, dict):
+                draft_body = draft_result.get('draft', 'Error generating draft')
+                suggested_actions = draft_result.get('suggested_actions', [])
+                sender_instructions = draft_result.get('sender_instructions', '')
+            else:
+                draft_body = draft_result
+        else:
+            draft_body = f"[Tier 2 - Govt/Assoc - Logged] Subject: {email['subject']}\n\nNo reply needed. Logged to spreadsheet."
+        
+        # Save full email content for client extraction later
+        email_body = email.get('snippet', '') + '\n\n' + email.get('body', '')
+
+        db.save_pending_approval(ref_id, {
+            "message_id": msg_id, "thread_id": email.get('threadId', ''), "sender": clean_email,
+            "subject": email['subject'], "draft_body": draft_body,
+            "delivered_to": f"{email.get('delivered_to', 'unknown')}|{token_file}", "tier": str(tier),
+            "email_body": email_body[:5000],  # Save first 5000 chars for client extraction
+            "suggested_actions": json.dumps(suggested_actions),  # Save as JSON string
+            "sender_instructions": sender_instructions
+        })
+        action_hint = f"Draft ready. (Ref #{ref_id}) Stay in Inbox." if tier == 1 else f"Logged. (Ref #{ref_id}) No reply needed."
+        await loop.run_in_executor(None, send_notification, email, tier, action_hint, ref_id)
+        
+        # Auto-acknowledge for Tier 1 (existing clients) - DISABLED for now
+        # TODO: Re-enable after testing - needs to happen AFTER approval, not during triage
+        # if tier == 1 and not is_new_client:
+        #     whitelist_emails, whitelist_domains = _get_client_whitelist()
+        #     is_existing_client = clean_email in whitelist_emails or any(clean_email.endswith('@' + d) for d in whitelist_domains)
+        #     
+        #     if is_existing_client:
+        #         logger.info(f"AUTO-ACK: Would send acknowledgement to existing client {clean_email}")
+
+    # --- TIER 3 / 4 (ARCHIVE & LOG) ---
+    elif tier == 3 or tier == 4:
+        has_activity, is_portal = triage.get('has_activity'), triage.get('is_portal_update')
+        is_portal_digest = triage.get('is_portal_digest', False)
+        
+        # Portal Daily Digest special handling
+        if is_portal_digest:
+            # 1. Log to Activity_Log sheet (always)
+            await loop.run_in_executor(None, log_activity, log_data, "Action_Log")
+            
+            # 2. Log to Updates_Archive sheet (always)
+            await loop.run_in_executor(None, log_activity, log_data, "Portal_Updates")
+            
+            # 3. Send WhatsApp only if has activity
+            if has_activity:
+                logger.info("PORTAL DIGEST WITH ACTIVITY: Sending WhatsApp reminder.")
+                await loop.run_in_executor(None, send_whatsapp_message, os.getenv("FOUNDER_PHONE"), f"Suitedash Portal Activity: {email['subject']}\nCheck: {snippet[:150]}...")
+            else:
+                logger.info("PORTAL DIGEST: No activity. Silent.")
+        else:
+            # Normal portal updates handling
+            if is_portal and "digest" in email['subject'].lower():
+                if has_activity:
+                    logger.info("PORTAL ACTIVITY: Notifying Cherry.")
+                    await loop.run_in_executor(None, send_whatsapp_message, os.getenv("FOUNDER_PHONE"), f"Suitedash Portal Activity: {email['subject']}\nCheck: {snippet[:150]}...")
+                    await loop.run_in_executor(None, log_activity, log_data, "Portal_Updates")
+                else:
+                    logger.info("PORTAL DIGEST: No activity. Archiving silently.")
+        
+        # Archive or Move to Special Label (e.g. Quickbooks)
+        logger.info(f"TIER {tier} ARCHIVE.")
+        is_qb = "quickbooks" in clean_email or ("intuit.com" in clean_email and "invoice" in email['subject'].lower())
+        
+        if is_qb and "your webaccountant" in email['subject'].lower():
+            from services.gmail import move_to_label
+            logger.info("QUICKBOOKS RULE: Moving to 'Quickbooks Recurring Invoice' label.")
+            if is_gmail:
+                await loop.run_in_executor(None, move_to_label, msg_id, "Quickbooks Recurring Invoice", token_file)
+            else:
+                await loop.run_in_executor(None, archive_message_imap, msg_id, token_file)
+        else:
+            if is_gmail:
+                await loop.run_in_executor(None, archive_message, msg_id, token_file)
+            else:
+                await loop.run_in_executor(None, archive_message_imap, msg_id, token_file)
+
+        # Specialized Logging (only for non-digest portal updates)
+        if is_portal and not is_portal_digest: 
+            await loop.run_in_executor(None, log_activity, log_data, "Portal_Updates")
+        elif not is_portal_digest:
+            # Tier 3 = Suppliers (log to Supplier_Expenses, stay in inbox)
+            if tier == 3:
+                await loop.run_in_executor(None, log_activity, log_data, "Supplier_Expenses")
+                logger.info("TIER 3 (Supplier): Logged to Supplier_Expenses, STAYING in Inbox.")
+                # Don't archive - stay in inbox for now
+            else:
+                await loop.run_in_executor(None, log_activity, log_data, "Action_Log")
+
+    elif tier == 5:
+        # SPAM: Log to SPAM sheet and archive
+        logger.info(f"TIER 5 SPAM: Logging to SPAM sheet and archiving {clean_email}.")
+        await loop.run_in_executor(None, log_activity, log_data, "SPAM")
+        if is_gmail:
+            await loop.run_in_executor(None, archive_message, msg_id, token_file)
+        else:
+            await loop.run_in_executor(None, archive_message_imap, msg_id, token_file)
+
+@app.get("/test-buttons")
+async def test_buttons():
+    """Manually trigger a button test to the founder."""
+    from services.whapi import whatsapp_service
+    founder_phone = "".join(filter(str.isdigit, os.getenv("FOUNDER_PHONE", "")))
+    if not founder_phone:
+        return {"status": "error", "message": "FOUNDER_PHONE not set"}
+    
+    test_text = "🤖 *BACKPOCKET TWIN: BUTTON TEST*\n\nIf you see these buttons, click one to verify it works!"
+    buttons = [
+        {"id": "test_approve", "title": "✅ Approve"},
+        {"id": "test_revise", "title": "🔄 Revise"},
+        {"id": "self_check", "title": "🔍 Self-Check"}
+    ]
+    res = whatsapp_service.send_buttons(founder_phone, test_text, buttons)
+    return {"status": "success", "whapi_response": res}
+
+@app.get("/self-check")
+async def api_self_check():
+    """Manual self-check triggered from Dashboard/API."""
+    from services.diagnostics import run_system_diagnostic
+    return run_system_diagnostic()
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False, use_colors=False, log_level="warning")
