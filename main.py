@@ -1895,7 +1895,7 @@ async def startup_event():
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to BackPocket System.io MVP API"}
+    return FileResponse("static/index.html")
 
 
 @app.get("/test-sheets")
