@@ -73,7 +73,7 @@ Communication Coach (GPT-4o via OpenRouter):
 
 ```bash
 # OpenRouter (for Claude & GPT-4o) ✅ CONFIGURED
-OPENROUTER_API_KEY=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
+OPENROUTER_API_KEY=your_openrouter_key_here
 
 # Local AI (Ollama) ✅ CONFIGURED
 OLLAMA_MODEL=deepseek-r1:1.5b
