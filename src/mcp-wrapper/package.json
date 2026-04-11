@@ -1,0 +1,26 @@
+{
+  "name": "backpocket-mcp-server",
+  "version": "1.0.0",
+  "description": "BackPocket Local MCP Server - Tradie-specific orchestrator for leads, quotes, and business logic",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "tradie",
+    "construction",
+    "backpocket"
+  ],
+  "author": "BackPocket Team",
+  "license": "MIT",
+  "dependencies": {
+    "sqlite3": "^5.1.6"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
