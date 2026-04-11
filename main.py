@@ -483,24 +483,23 @@ async def twin_chat(request: Request):
                     for h in history:
                         db_context += f"- {h['action']}: Ref #{h['ref_id']} ({h.get('created_at', '')})\n"
 
-                instructions = db.get_all_sender_instructions()
-                if instructions:
-                    db_context += f"\n\n### YOUR INSTRUCTIONS ###\nYou have {len(instructions)} sender-specific instruction sets configured."
+                # Get RAG-based context (smart retrieval)
+                from services.twin_brain import build_twin_context
 
-                # Get GENERAL instructions for Twin to reference
-                try:
-                    from services.twin_brain import get_all_instructions
+                sender = context_data.get("sender", "")
 
-                    general_instructions = get_all_instructions()
-                    if general_instructions:
-                        db_context += f"\n\n### YOUR GENERAL INSTRUCTIONS ###\nCherry has {len(general_instructions)} active instructions for how you should behave and process emails:"
-                        for inst in general_instructions[:10]:  # Show top 10
-                            inst_text = inst.get(
-                                "instruction", inst.get("instruction_text", "")
-                            )[:150]
-                            db_context += f"\n- [{inst.get('category', 'general')}] {inst_text}..."
-                except Exception as e:
-                    logger.error(f"Error loading general instructions: {e}")
+                # Use smart context building instead of loading everything
+                twin_context = build_twin_context(sender_email=sender)
+                db_context += twin_context if twin_context else ""
+
+                # Get learned patterns for this sender/subject (RAG!)
+                learned = db.get_learned_patterns(
+                    sender_email=sender, subject=context_data.get("subject", "")
+                )
+                if learned:
+                    db_context += f"\n\n### LEARNED FROM PAST CORRECTIONS ###\nTwin learned from {len(learned)} similar situations:"
+                    for pat in learned[:3]:
+                        db_context += f"\n- [{pat.get('correction_type')}] {pat.get('subject', 'N/A')[:60]}: {pat.get('feedback', 'N/A')[:80]}"
 
                 # Email Triage System - Core Rules for Twin
                 db_context += """
