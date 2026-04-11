@@ -94,6 +94,79 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Fetch data from `/api/construction/*` endpoints
 - Auto-loads on page init: `document.addEventListener('DOMContentLoaded', ...)`
 
+### 6. **MCP (Model Context Protocol) Orchestrator** ✨ NEW
+- Uses standardized MCP servers instead of custom API boilerplate
+- **Gmail MCP**: Search, draft, send emails
+- **Google Drive MCP**: File organization
+- **Google Maps MCP**: Distance, routing, travel time
+- **BackPocket Local MCP**: Database queries + tradie business logic
+- Configuration: `.mcp.json` (4 servers defined)
+- Custom server: `src/mcp-wrapper/server.js` (13 tradie tools)
+- Enables AI to coordinate across all services seamlessly
+- Example: Email → Lead → Quote → Maps → Send in one workflow
+
+---
+
+## MCP Orchestrator Setup
+
+### Quick Start
+```bash
+# 1. Install BackPocket Local MCP server
+cd src/mcp-wrapper
+npm install
+
+# 2. Start MCP server (runs on stdio)
+node server.js
+
+# 3. Configure in Claude Code / Claude Desktop
+# Copy .mcp.json to ~/.claude/config.json (macOS)
+# Or use .mcp.json in project root for development
+
+# 4. Available MCP Servers
+# - Gmail MCP: search/send emails
+# - Google Drive MCP: manage files
+# - Google Maps MCP: calculate distance/routes
+# - BackPocket Local MCP: database + tradie logic (13 tools)
+```
+
+### BackPocket Local MCP Tools (13 Total)
+1. **search_leads** - Find leads by status, job type, budget, location
+2. **create_quote** - Generate quote with tradie pricing ($150/hr)
+3. **get_quote_template** - Pricing templates by job type
+4. **get_pipeline_summary** - Quote pipeline status
+5. **record_payment** - Log payment received
+6. **get_overdue_quotes** - Quotes needing follow-up
+7. **get_job_patterns** - Historical data (price, duration, issues)
+8. **get_client_history** - Client past jobs and preferences
+9. **calculate_job_distance** - Distance to job (uses Google Maps MCP)
+10. **estimate_travel_time** - Travel time + calendar block suggestion
+11. **draft_follow_up_email** - Email template (for Gmail MCP)
+12. **match_quote_to_email** - Link emails to quotes
+13. **suggest_next_action** - AI-recommended next step
+
+### Real-World Example
+```
+Email: "Leaking tap, Parramatta, budget $200"
+↓
+Gmail MCP finds email
+↓
+BackPocket Local MCP → search_leads (Plumbing, Parramatta)
+↓
+BackPocket Local MCP → get_quote_template (Plumbing = $150/hr)
+↓
+Google Maps MCP → distance (Alexandria to Parramatta = 25min)
+↓
+BackPocket Local MCP → create_quote (1.5hrs + $120 materials = $414)
+↓
+BackPocket Local MCP → draft_follow_up_email
+↓
+Gmail MCP → send_message
+↓
+User Decision: "Accept Job & Send Quote ($414)?"
+```
+
+For full MCP documentation, see: `docs/MCP_ORCHESTRATOR.md`
+
 ---
 
 ## Database Schema
