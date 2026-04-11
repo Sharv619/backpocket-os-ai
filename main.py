@@ -2834,6 +2834,7 @@ async def process_triaged_email(email, triage, loop):
     from services.imap import archive_message_imap
     from services.whapi import send_notification, send_whatsapp_message
     from services.gemini import draft_response
+    import json
 
     clean_email = email.get("clean_email", "")
     token_file = email.get("token_file")
