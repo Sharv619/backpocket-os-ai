@@ -16,14 +16,14 @@
 
 ## PHASE 3: TEAM ROLES (Assigned)
 - [x] Team Lead: Cherry
-- [x] Lead Builder: Himanshu
-- [x] UI/Integration: Durand
+- [x] Lead Builder (Backend & Frontend Wiring): Himanshu
 - [x] Pitcher/Marketer: Echo
-- [x] Domain Expert: Allan
+- [x] Domain Expert/IT: Allan
+- [x] The "Digital" Employee: Pip (The AI Twin)
 
 ## PHASE 4: THE BUILD (Sat 1:00 PM - Sun 1:00 PM)
-- [x] **Technical**: End-to-end triage code exists (needs API keys for real emails).
-- [x] **UI**: Dashboard implemented (static/index.html)
+- [ ] **Technical**: End-to-end triages works for real emails.
+- [ ] **UI**: Dashboard matches Magic Patterns design (Himanshu/Echo).
 - [x] **Demo Mode**: 5 mock pending emails ready for demo
 - [ ] **Bonus**: Landing page created with Bolt/Lovable.
 - [ ] **Save**: Git Push every 60 minutes.

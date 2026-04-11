@@ -3,10 +3,10 @@
 
 ## 👥 The Team (Role Assignments)
 *   **Cherry (Leader/Visionary)**: Project Management, Pitch Delivery, Stakeholder alignment.
-*   **Himanshu (Lead Tech)**: Backend & Agentic RAG logic. Perfecting the "Brain."
-*   **Durand Sinclair (Tech Team)**: Frontend Dashboard & API Integrations (WhatsApp/Gmail).
-*   **Echo (Marketing/Enthusiast)**: Pitch Deck (Magic Patterns), Storytelling, and Demo Recordings.
-*   **Allan (IT/Enthusiast)**: Domain Expert, QA Testing, and Real-world Data Research ($9B Gap).
+*   **Himanshu (Lead Tech)**: Backend & Agentic RAG logic. Frontend API Wiring.
+*   **Echo (Marketing/Pitcher)**: Pitch Deck (Magic Patterns), UI/UX adjustments, and Demo Recordings.
+*   **Allan (IT/Domain Expert)**: QA Testing, Real-world Data Research ($9B Gap), and the "Steve" reality check.
+*   **Pip (The AI Twin)**: The digital team member handling Steve's automation (Agentic RAG).
 
 ---
 
@@ -33,7 +33,7 @@
 
 ## 📅 The Hackathon Sprint Schedule
 *   **FRI NIGHT**: Finalize MVP "Happy Path" (One email -> One alert).
-*   **SAT MORNING**: Build the "Wow" UI features (Durand) & Polish RAG logic (Himanshu).
+*   **SAT MORNING**: Build the "Wow" UI features (Himanshu & Echo) & Polish RAG logic (Himanshu).
 *   **SAT AFTERNOON**: Allan & Echo build the Case Study & Slide Deck.
 *   **SUN MORNING**: Demo Freeze. Team rehearsals.
 *   **SUN AFTERNOON**: THE LAUNCH.
