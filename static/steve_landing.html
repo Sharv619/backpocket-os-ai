@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BackPocket OS | For Builders & Tradies</title>
+  <style>
+    /* Base & Typography */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+    
+    :root {
+      --bg: #f7f7f5;
+      --surface: #ffffff;
+      --border: #e8e8e4;
+      --text: #1a1a1a;
+      --muted: #6b6b6b;
+      --sub: #999999;
+      --accent: #2c2c2c;
+      --blue-bg: #e3edfa;
+      --blue-text: #2563eb;
+      --amber-bg: #fffbeb;
+      --amber-border: #e5d5a0;
+      --amber-text: #92700c;
+      --radius-lg: 24px;
+      --radius-md: 16px;
+      --radius-sm: 8px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, sans-serif;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Layout */
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Navigation */
+    nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 24px 0;
+    }
+    
+    .logo {
+      font-size: 20px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .badge {
+      font-size: 11px;
+      background: var(--border);
+      padding: 4px 8px;
+      border-radius: 6px;
+      color: var(--muted);
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      text-decoration: none;
+      padding: 12px 24px;
+      border-radius: 99px;
+      font-weight: 600;
+      font-size: 14px;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+    }
+
+    /* Hero Section */
+    .hero {
+      text-align: center;
+      padding: 80px 0 60px;
+      animation: fadeUp 0.8s ease-out;
+    }
+
+    .hero-note {
+      display: inline-block;
+      background: var(--amber-bg);
+      border: 1px dashed var(--amber-border);
+      color: var(--amber-text);
+      padding: 8px 16px;
+      border-radius: 99px;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 24px;
+    }
+
+    .hero h1 {
+      font-size: 56px;
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -1.5px;
+      margin-bottom: 24px;
+      max-width: 800px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .hero p {
+      font-size: 20px;
+      color: var(--muted);
+      max-width: 600px;
+      margin: 0 auto 40px;
+    }
+
+    /* Features Grid */
+    .features-header {
+      text-align: center;
+      margin: 80px 0 40px;
+    }
+    .features-header h2 {
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 24px;
+      margin-bottom: 100px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 32px;
+      transition: box-shadow 0.3s ease, border-color 0.3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card:hover {
+      box-shadow: 0 20px 40px rgba(0,0,0,0.04);
+      border-color: #d1d1cc;
+    }
+
+    .card-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      margin-bottom: 24px;
+    }
+
+    .card.blue .card-icon { background: var(--blue-bg); color: var(--blue-text); }
+    .card.amber .card-icon { background: var(--amber-bg); color: var(--amber-text); }
+    
+    .card h3 {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+
+    .card p {
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    /* Visual Mockup inside Card */
+    .mock-ui {
+      margin-top: 24px;
+      background: var(--bg);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      border: 1px solid var(--border);
+    }
+    
+    .mock-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .mock-row:last-child { margin-bottom: 0; }
+    
+    .mock-avatar {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      background: var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700; color: var(--muted);
+    }
+    
+    .mock-text-lg { height: 12px; border-radius: 4px; background: var(--border); width: 60%; margin-bottom: 6px; }
+    .mock-text-sm { height: 8px; border-radius: 4px; background: #e0e0dc; width: 40%; }
+    
+    .mock-pill {
+      font-size: 10px;
+      padding: 4px 8px;
+      background: var(--blue-bg);
+      color: var(--blue-text);
+      border-radius: 4px;
+      font-weight: 700;
+      margin-top: 8px;
+      display: inline-block;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 40px 0;
+      text-align: center;
+      color: var(--sub);
+      font-size: 14px;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 768px) {
+      .hero h1 { font-size: 40px; }
+      .hero p { font-size: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <nav>
+      <div class="logo">
+        BackPocket <span class="badge">OS</span>
+      </div>
+      <a href="https://project-backpocket-os-platform-463.magicpatterns.app/app" class="btn-primary">View Prototype</a>
+    </nav>
+
+    <header class="hero">
+      <div class="hero-note">Built for Tradies & Builders in Western Sydney</div>
+      <h1>13 hours of admin, done by your Digital Twin.</h1>
+      <p>Stop doing quotes at 9 PM. BackPocket OS is an AI system that lives on your phone, handling emails, quotes, and follow-ups while you're on the tools.</p>
+      <a href="https://project-backpocket-os-platform-463.magicpatterns.app/app" class="btn-primary" style="padding: 16px 32px; font-size: 16px;">Try the Prototype</a>
+    </header>
+
+    <div class="features-header">
+      <h2>The One-Man Army Setup</h2>
+    </div>
+
+    <div class="grid">
+      <!-- Feature 1 -->
+      <div class="card blue">
+        <div class="card-icon">📥</div>
+        <h3>AI Inbox & Triage</h3>
+        <p>Your Twin reads every email instantly. It categorises leads, supplier updates, and invoices, filtering out the noise.</p>
+        <div class="mock-ui">
+          <div class="mock-row">
+            <div class="mock-avatar">S</div>
+            <div style="flex: 1;">
+              <div class="mock-text-lg" style="width: 80%; background: #1a1a1a;"></div>
+              <div class="mock-text-sm">Kitchen renovation quote</div>
+              <div class="mock-pill">★ AI Drafted Response</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feature 2 -->
+      <div class="card amber">
+        <div class="card-icon">🎤</div>
+        <h3>Voice Capture</h3>
+        <p>On the go? Tap the mic and speak your site notes. The AI will transcribe dimensions and link them directly to the active quote.</p>
+        <div class="mock-ui">
+          <div style="text-align: center; padding: 12px 0;">
+            <div style="width: 48px; height: 48px; background: var(--accent); border-radius: 50%; margin: 0 auto; display: flex; align-items: center; justify-content: center; color: white;">🎙️</div>
+            <div class="mock-text-sm" style="margin: 12px auto 0; width: 60%; background: var(--muted);"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feature 3 -->
+      <div class="card">
+        <div class="card-icon">📅</div>
+        <h3>Smart Scheduling</h3>
+        <p>Calendar-driven workflows. When a client accepts a quote, the AI suggests the best site visit days based on your current route.</p>
+        <div class="mock-ui">
+          <div class="mock-row" style="background: #f3e8ff; padding: 12px; border-radius: var(--radius-sm);">
+            <div style="flex: 1;">
+              <div style="font-size: 12px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px;">Site Inspection</div>
+              <div class="mock-text-sm" style="background: #a855f7;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feature 4 -->
+      <div class="card">
+        <div class="card-icon">📈</div>
+        <h3>Automated Marketing</h3>
+        <p>Lightweight marketing for tradies who lack time. Upload a "Before and After" photo, and the AI drafts a ready-to-post Instagram update.</p>
+        <div class="mock-ui">
+          <div style="height: 60px; background: #e0e0dc; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; color: var(--sub); font-size: 12px;">Image Preview</div>
+          <div class="mock-pill" style="background: #f0fdf4; color: #16a34a;">Ready for TikTok</div>
+        </div>
+      </div>
+      
+      <!-- Feature 5 -->
+      <div class="card blue" style="grid-column: 1 / -1; display: flex; gap: 40px; align-items: center;">
+        <div style="flex: 1;">
+          <div class="card-icon">📄</div>
+          <h3>The Smart Quoting Engine</h3>
+          <p>A guided quote builder that walks you from initial enquiry to signed contract. The AI reads supplier receipts (like Bunnings) via its Vision capabilities, automatically adding materials to the job ledger so you never undercharge.</p>
+        </div>
+        <div class="mock-ui" style="flex: 1; margin-top: 0; padding: 24px;">
+          <div class="mock-row"><div class="mock-text-lg"></div></div>
+          <div class="mock-row"><div class="mock-text-lg" style="width: 40%"></div></div>
+          <div class="mock-row"><div class="mock-text-lg" style="width: 70%"></div></div>
+          <hr style="border: none; border-top: 1px dashed var(--border); margin: 16px 0;">
+          <div class="mock-row" style="justify-content: space-between;">
+            <strong style="font-size: 14px;">Total Quote</strong>
+            <strong style="font-size: 14px;">$12,450.00</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <p>Built for the WSTI AI Hackathon &copy; 2026. Powered by BackPocket OS.</p>
+  </footer>
+
+</body>
+</html>
