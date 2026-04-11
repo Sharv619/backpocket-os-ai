@@ -2818,6 +2818,100 @@
       <div id="payments-container"></div>
     </section>
 
+    <!-- ===== WORKFLOW SECTIONS ===== -->
+
+    <!-- EMAIL WORKFLOWS -->
+    <section id="email" class="section" style="display: none;">
+      <div class="section-header">
+        <h2>📧 Email Workflows</h2>
+        <button onclick="refreshEmail()" class="btn-small">↻ Refresh</button>
+      </div>
+      <div id="email-stats" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px;">
+        <div class="stat-card">
+          <div class="stat-value" id="pending-emails">0</div>
+          <div class="stat-label">Pending</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="processed-emails">0</div>
+          <div class="stat-label">Processed</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="rules-active">0</div>
+          <div class="stat-label">Rules Active</div>
+        </div>
+      </div>
+      <div id="email-container"></div>
+    </section>
+
+    <!-- DOCUMENT WORKFLOWS -->
+    <section id="docs" class="section" style="display: none;">
+      <div class="section-header">
+        <h2>📄 Document Workflows</h2>
+        <button onclick="refreshDocs()" class="btn-small">↻ Refresh</button>
+      </div>
+      <div id="docs-stats" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px;">
+        <div class="stat-card">
+          <div class="stat-value" id="total-docs">0</div>
+          <div class="stat-label">Total Docs</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="pending-analysis">0</div>
+          <div class="stat-label">Pending Analysis</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="docs-processed">0</div>
+          <div class="stat-label">Processed</div>
+        </div>
+      </div>
+      <div id="docs-container"></div>
+    </section>
+
+    <!-- MARKETING WORKFLOWS -->
+    <section id="marketing" class="section" style="display: none;">
+      <div class="section-header">
+        <h2>📱 Marketing Workflows</h2>
+        <button onclick="refreshMarketing()" class="btn-small">↻ Refresh</button>
+      </div>
+      <div id="marketing-stats" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px;">
+        <div class="stat-card">
+          <div class="stat-value" id="posts-published">0</div>
+          <div class="stat-label">Posts Published</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="engagement-rate">0%</div>
+          <div class="stat-label">Engagement</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="followers-growth">+0</div>
+          <div class="stat-label">New Followers</div>
+        </div>
+      </div>
+      <div id="marketing-container"></div>
+    </section>
+
+    <!-- TASK WORKFLOWS -->
+    <section id="tasks" class="section" style="display: none;">
+      <div class="section-header">
+        <h2>✓ Task Workflows</h2>
+        <button onclick="refreshTasks()" class="btn-small">↻ Refresh</button>
+      </div>
+      <div id="tasks-stats" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px;">
+        <div class="stat-card">
+          <div class="stat-value" id="total-tasks">0</div>
+          <div class="stat-label">Total Tasks</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="completed-tasks">0</div>
+          <div class="stat-label">Completed</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="overdue-tasks">0</div>
+          <div class="stat-label">Overdue</div>
+        </div>
+      </div>
+      <div id="tasks-container"></div>
+    </section>
+
   </main>
 </div>
 
@@ -4816,6 +4910,174 @@ async function generateStartupStory() {
   function refreshLeads() { loadLeads(); }
   function refreshPipeline() { loadPipeline(); }
   function refreshPayments() { loadPayments(); }
+
+  // ===== WORKFLOW LOADERS =====
+
+  async function loadEmail() {
+    try {
+      const res = await fetch('/api/email-rules');
+      const data = await res.json();
+
+      const rules = data.rules || [];
+      document.getElementById('rules-active').textContent = rules.length;
+      document.getElementById('pending-emails').textContent = rules.filter(r => r.status === 'pending').length;
+      document.getElementById('processed-emails').textContent = rules.filter(r => r.status === 'processed').length;
+
+      let html = '';
+      if (rules.length > 0) {
+        rules.forEach(rule => {
+          html += `
+            <div class="lead-card" style="cursor: pointer;">
+              <div class="lead-client">${rule.sender || 'Unknown Sender'}</div>
+              <div class="lead-job">${rule.rule_type || 'Email Rule'}</div>
+              <div class="lead-status">Status: ${rule.status} | Created: ${new Date(rule.created_at).toLocaleDateString()}</div>
+            </div>
+          `;
+        });
+      } else {
+        html = '<p style="color:#aaa;">No email rules configured</p>';
+      }
+
+      const container = document.getElementById('email-container');
+      if (container) container.innerHTML = html;
+    } catch (e) {
+      console.error('Error loading email workflows:', e);
+      document.getElementById('email-container').innerHTML = '<p style="color:#DC2626;">Error loading email workflows</p>';
+    }
+  }
+
+  async function loadDocs() {
+    try {
+      const res = await fetch('/api/documents');
+      const data = await res.json();
+
+      const docs = data.documents || [];
+      document.getElementById('total-docs').textContent = docs.length;
+      document.getElementById('pending-analysis').textContent = docs.filter(d => d.status === 'pending').length;
+      document.getElementById('docs-processed').textContent = docs.filter(d => d.status === 'processed').length;
+
+      let html = '';
+      if (docs.length > 0) {
+        docs.forEach(doc => {
+          html += `
+            <div class="lead-card" style="cursor: pointer;">
+              <div class="lead-client">${doc.file_name || 'Unnamed Document'}</div>
+              <div class="lead-job">${doc.doc_type || 'Document'}</div>
+              <div class="lead-status">Status: ${doc.status} | Type: ${doc.file_type}</div>
+            </div>
+          `;
+        });
+      } else {
+        html = '<p style="color:#aaa;">No documents yet</p>';
+      }
+
+      const container = document.getElementById('docs-container');
+      if (container) container.innerHTML = html;
+    } catch (e) {
+      console.error('Error loading documents:', e);
+      document.getElementById('docs-container').innerHTML = '<p style="color:#DC2626;">Error loading documents</p>';
+    }
+  }
+
+  async function loadMarketing() {
+    try {
+      const res = await fetch('/api/marketing/activity');
+      const data = await res.json();
+
+      const activity = data.activity || [];
+      const insights = data.insights || {};
+
+      document.getElementById('posts-published').textContent = insights.total_posts || 0;
+      document.getElementById('engagement-rate').textContent = (insights.engagement_rate || 0) + '%';
+      document.getElementById('followers-growth').textContent = '+' + (insights.new_followers || 0);
+
+      let html = '';
+      if (activity.length > 0) {
+        activity.forEach(post => {
+          html += `
+            <div class="quote-card">
+              <div style="display: flex; justify-content: space-between; align-items: start;">
+                <div>
+                  <div style="font-weight: bold; color: #fff;">${post.platform || 'Social Media'}</div>
+                  <div style="font-size: 12px; color: #aaa;">${post.title || 'Post'}</div>
+                </div>
+                <div style="text-align: right;">
+                  <div style="color: #00ff88; font-size: 14px;">📊 ${post.engagement || 0}</div>
+                  <div class="quote-status status-accepted">${post.status || 'published'}</div>
+                </div>
+              </div>
+            </div>
+          `;
+        });
+      } else {
+        html = '<p style="color:#aaa;">No marketing activity yet</p>';
+      }
+
+      const container = document.getElementById('marketing-container');
+      if (container) container.innerHTML = html;
+    } catch (e) {
+      console.error('Error loading marketing:', e);
+      document.getElementById('marketing-container').innerHTML = '<p style="color:#DC2626;">Error loading marketing data</p>';
+    }
+  }
+
+  async function loadTasks() {
+    try {
+      const res = await fetch('/api/workflow/stages');
+      const data = await res.json();
+
+      const tasks = data.tasks || [];
+      const stages = data.stages || {};
+
+      document.getElementById('total-tasks').textContent = tasks.length;
+      document.getElementById('completed-tasks').textContent = tasks.filter(t => t.status === 'completed').length;
+      document.getElementById('overdue-tasks').textContent = tasks.filter(t => t.overdue).length;
+
+      let html = '';
+      if (tasks.length > 0) {
+        tasks.forEach(task => {
+          const statusClass = task.status === 'completed' ? 'status-accepted' : task.overdue ? 'status-declined' : 'status-draft';
+          html += `
+            <div class="payment-item">
+              <div style="display: flex; justify-content: space-between;">
+                <div>
+                  <div style="font-weight: bold; color: #fff;">${task.title || 'Task'}</div>
+                  <div style="font-size: 12px; color: #aaa;">Stage: ${task.stage || 'pending'}</div>
+                </div>
+                <div style="text-align: right;">
+                  <div class="quote-status ${statusClass}">${task.status}</div>
+                </div>
+              </div>
+              <div style="font-size: 11px; color: #888; margin-top: 5px;">
+                Due: ${task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No due date'}
+              </div>
+            </div>
+          `;
+        });
+      } else {
+        html = '<p style="color:#aaa;">No tasks yet</p>';
+      }
+
+      const container = document.getElementById('tasks-container');
+      if (container) container.innerHTML = html;
+    } catch (e) {
+      console.error('Error loading tasks:', e);
+      document.getElementById('tasks-container').innerHTML = '<p style="color:#DC2626;">Error loading tasks</p>';
+    }
+  }
+
+  function refreshEmail() { loadEmail(); }
+  function refreshDocs() { loadDocs(); }
+  function refreshMarketing() { loadMarketing(); }
+  function refreshTasks() { loadTasks(); }
+
+  // Load workflow data on init
+  document.addEventListener('DOMContentLoaded', () => {
+    loadEmail();
+    loadDocs();
+    loadMarketing();
+    loadTasks();
+  });
 
   // Load construction data on page load
   document.addEventListener('DOMContentLoaded', function() {
