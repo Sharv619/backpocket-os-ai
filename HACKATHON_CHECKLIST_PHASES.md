@@ -45,7 +45,7 @@
 ### ✅ Complete
 - 5-tier triage logic in `services/gemini.py`
 - WhatsApp commands (approve, revise, supplier, find, get)
-- Database schema + mock data (5 sample emails)
+- Database schema + mock data (5 sample emails) 
 - Dashboard UI
 - Twin instructions (20 rules)
 - Docs organized into structured folders

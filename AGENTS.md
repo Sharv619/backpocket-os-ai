@@ -61,3 +61,10 @@ Before any change:
 - Fixed document upload bytes handling
 - Fixed Ollama API endpoint (/api/chat)
 - Added Documents section with Moondream AI
+
+## Vercel Deployment
+
+- `vercel.json` - Python adapter config
+- `runtime.txt` - Python 3.12
+- Static files served from `/static/`
+- Note: Ollama/Moondream won't work on Vercel (needs local server)
