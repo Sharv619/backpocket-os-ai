@@ -2393,7 +2393,7 @@
           </button>
         </div>
         
-        <textarea id="voice-invoice-text" rows="3" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:10px;color:inherit;font-size:13px;resize:vertical;font-family:inherit;">Finished the landscaping at Smith's place, four hours labour at $85, materials $120, GST applies, send invoice to client.</textarea>
+        <textarea id="voiceInput" rows="3" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:10px;color:inherit;font-size:13px;resize:vertical;font-family:inherit;">Finished the landscaping at Smith's place, four hours labour at $85, materials $120, GST applies, send invoice to client.</textarea>
         
         <!-- ElevenLabs Integration (when API key added) -->
         </div>
@@ -2402,7 +2402,7 @@
           <input id="voice-invoice-client" placeholder="Client name" style="flex:1;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:8px 12px;color:inherit;font-size:13px;" value="Smith">
           <input id="voice-invoice-email" placeholder="Client email (optional)" style="flex:1;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:8px 12px;color:inherit;font-size:13px;">
         </div>
-        <button onclick="createVoiceInvoice()" id="create-invoice-btn" style="margin-top:12px;background:linear-gradient(135deg,#2d7a4f,#3a9d6b);color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;width:100%;">
+        <button onclick="createVoiceInvoice()" id="voiceInvoiceBtn" style="margin-top:12px;background:linear-gradient(135deg,#2d7a4f,#3a9d6b);color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;width:100%;">
           Create Invoice PDF
         </button>
         <p id="invoice-status" style="margin:8px 0 0;font-size:12px;opacity:0.6;text-align:center;"></p>
@@ -4397,7 +4397,7 @@ let isRecording = false;
 
 function startSpeechToText() {
   const btn = document.getElementById('stt-btn');
-  const textarea = document.getElementById('voice-invoice-text');
+  const textarea = document.getElementById('voiceInput');
   
   // Check browser support
   if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
@@ -4446,7 +4446,7 @@ function startSpeechToText() {
 
 async function testVoiceOutput() {
   const btn = document.getElementById('tts-btn');
-  const textarea = document.getElementById('voice-invoice-text');
+  const textarea = document.getElementById('voiceInput');
   const text = textarea.value || 'Hello! This is a test of the text to speech system.';
   
   // Try ElevenLabs first if API key is configured
@@ -4490,10 +4490,10 @@ async function testVoiceOutput() {
 }
 
 async function createVoiceInvoice() {
-  const text    = document.getElementById('voice-invoice-text').value.trim();
+  const text    = document.getElementById('voiceInput').value.trim();
   const client  = document.getElementById('voice-invoice-client').value.trim() || 'Client';
   const email   = document.getElementById('voice-invoice-email').value.trim();
-  const btn     = document.getElementById('create-invoice-btn');
+  const btn     = document.getElementById('voiceInvoiceBtn');
   const status  = document.getElementById('invoice-status');
 
   if (!text) { showToast('Please describe the job first.'); return; }

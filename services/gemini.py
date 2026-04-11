@@ -6,7 +6,7 @@ import json
 import requests
 import math
 import re
-from google import genai
+import google.generativeai as genai
 from dotenv import load_dotenv
 from datetime import datetime
 
@@ -96,13 +96,15 @@ def _get_cached_priority_list():
 # COST OPTIMIZATION: ML-based API Router (from Network Guardian)
 # ────────────────────────────────────────────────────────────────────
 
+
 def _sanitize_text(text: str) -> str:
     """Sanitize text for entropy calculation."""
     if not text:
         return ""
     text = text.lower()
-    text = re.sub(r'[^a-z0-9]', '', text)
+    text = re.sub(r"[^a-z0-9]", "", text)
     return text[:100]  # First 100 chars only
+
 
 def calculate_entropy(text: str) -> float:
     """Calculate Shannon entropy to determine email complexity.
@@ -116,6 +118,7 @@ def calculate_entropy(text: str) -> float:
     digit_ratio = sum(c.isdigit() for c in sanitized) / len(sanitized)
 
     return round(entropy + (digit_ratio * 2), 2)
+
 
 def _should_use_full_ai(email_content: dict, tier: int) -> bool:
     """Determine if email needs full AI processing (cost optimization).
@@ -135,6 +138,7 @@ def _should_use_full_ai(email_content: dict, tier: int) -> bool:
 
     # High entropy emails get full AI
     return entropy_score > 3.5
+
 
 def get_gemini_client():
     """Initializes and returns the Gemini AI client."""
@@ -736,7 +740,9 @@ def triage_email(email_content, client_context=None):
         return {"tier": 5, "reason": f"AI Error: {str(e)}"}
 
 
-def _draft_response_openrouter(email_content: dict, tier: int, historical_context="", client_info=None) -> str:
+def _draft_response_openrouter(
+    email_content: dict, tier: int, historical_context="", client_info=None
+) -> str:
     """Generate draft using OpenRouter API."""
     openrouter_key = os.getenv("OPENROUTER_API_KEY")
     if not openrouter_key:
@@ -748,7 +754,7 @@ def _draft_response_openrouter(email_content: dict, tier: int, historical_contex
     prompt = f"""You are a professional email assistant. Generate a brief, professional response to this email.
 
 Subject: {subject}
-From: {email_content.get('sender', '')}
+From: {email_content.get("sender", "")}
 
 Message snippet: {snippet}
 
@@ -771,13 +777,16 @@ Generate a concise (2-3 sentences), professional response draft."""
         )
         response.raise_for_status()
         result = response.json()
-        draft = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+        draft = (
+            result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+        )
         if draft:
             logger.info(f"✓ OpenRouter draft: {draft[:50]}...")
             return draft
     except Exception as e:
         logger.warning(f"OpenRouter failed: {e}")
         return None
+
 
 def draft_response(email_content, tier, historical_context="", client_info=None):
     """Generates a professional draft response using cost-optimized ML router.
@@ -788,7 +797,9 @@ def draft_response(email_content, tier, historical_context="", client_info=None)
     3. High-entropy: Use OpenRouter/Gemini
     """
     # Cost optimization: Check if full AI is needed
-    entropy = calculate_entropy(email_content.get("subject", "") + " " + email_content.get("snippet", ""))
+    entropy = calculate_entropy(
+        email_content.get("subject", "") + " " + email_content.get("snippet", "")
+    )
     logger.info(f"📊 Email entropy: {entropy} (Tier {tier})")
 
     if not _should_use_full_ai(email_content, tier) and entropy < 3.0:
@@ -798,13 +809,17 @@ def draft_response(email_content, tier, historical_context="", client_info=None)
         return f"Thanks for reaching out. I'll review this and get back to you shortly."
 
     # Try OpenRouter first (better quota)
-    openrouter_draft = _draft_response_openrouter(email_content, tier, historical_context, client_info)
+    openrouter_draft = _draft_response_openrouter(
+        email_content, tier, historical_context, client_info
+    )
     if openrouter_draft:
         return openrouter_draft
 
     # Fall back to Ollama (local, no quota)
     try:
-        ollama_res = get_ollama_response(email_content.get("subject", "") + " " + email_content.get("snippet", ""))
+        ollama_res = get_ollama_response(
+            email_content.get("subject", "") + " " + email_content.get("snippet", "")
+        )
         if ollama_res and ollama_res != "Error generating draft.":
             logger.info("💾 Used Ollama for draft (local)")
             return ollama_res
