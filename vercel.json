@@ -2,11 +2,7 @@
   "builds": [
     {
       "src": "main.py",
-      "use": "@vercel/python"
-    },
-    {
-      "src": "static/",
-      "use": "@vercel/static"
+      "use": "@vercel/python@0.6.0"
     }
   ],
   "routes": [
@@ -18,5 +14,13 @@
       "src": "/(.*)",
       "dest": "main.py"
     }
-  ]
+  ],
+  "functions": {
+    "main.py": {
+      "runtime": "python3.12"
+    }
+  },
+  "env": {
+    "VERCEL": "1"
+  }
 }
