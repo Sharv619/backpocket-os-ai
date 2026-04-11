@@ -19,12 +19,11 @@ UPLOAD_DIR = "uploads"
 #   2. gemma-3-12b  — lighter, 32k ctx, free
 #   3. nemotron-12b — NVIDIA, 128k ctx, free (image+video), good fallback
 VISION_MODEL_PRIMARY = os.getenv(
-    "OPENROUTER_VISION_MODEL", "google/gemma-3-27b-it:free"
+    "OPENROUTER_VISION_MODEL", "openrouter/auto"
 )
 VISION_MODELS = [
     VISION_MODEL_PRIMARY,
-    "google/gemma-3-12b-it:free",
-    "nvidia/nemotron-nano-12b-v2-vl:free",
+    "openrouter/auto",
 ]
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
 
