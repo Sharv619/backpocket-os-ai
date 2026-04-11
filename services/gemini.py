@@ -124,13 +124,56 @@ def get_ollama_response(prompt, json_mode=False):
         logger.warning(f"Ollama not available: {e}")
         return None
 
+def get_local_ai_response(prompt, sys_prompt="You are a helpful assistant.", json_mode=False):
+    """Call local AI server on the same WiFi network (private, no cloud)."""
+    local_url = os.getenv("LOCAL_AI_URL", "").rstrip("/")
+    if not local_url:
+        return None
+
+    payload = {
+        "messages": [
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": prompt}
+        ]
+    }
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
+
+    try:
+        response = requests.post(
+            f"{local_url}/api/chat",
+            headers={"Content-Type": "application/json"},
+            json=payload,
+            timeout=60
+        )
+        if response.status_code == 200:
+            data = response.json()
+            # Support both OpenAI-style and plain {response: ...} formats
+            if "choices" in data:
+                return data["choices"][0]["message"]["content"]
+            return data.get("response") or data.get("content") or data.get("text")
+        else:
+            logger.error(f"Local AI Error: {response.text}")
+            return None
+    except Exception as e:
+        logger.error(f"Local AI request failed: {e}")
+        return None
+
+
 def get_openrouter_response(prompt, model="openai/gpt-4o", sys_prompt="You are a helpful assistant.", json_mode=False):
-    """Call OpenRouter for GPT-4o (Coach) or Claude 3.5 (Complex)."""
+    """Call AI: local server first (private), OpenRouter as fallback."""
+    # 1. Try local AI first (private, on-prem)
+    local_result = get_local_ai_response(prompt, sys_prompt=sys_prompt, json_mode=json_mode)
+    if local_result:
+        logger.info("Using local AI server (private mode).")
+        return local_result
+
+    # 2. Fallback to OpenRouter (cloud)
     api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
-        logger.warning("OPENROUTER_API_KEY not set.")
+        logger.warning("LOCAL_AI_URL not set and OPENROUTER_API_KEY missing — Coach unavailable.")
         return None
-        
+
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -138,7 +181,6 @@ def get_openrouter_response(prompt, model="openai/gpt-4o", sys_prompt="You are a
         "X-Title": "BackPocket OS",
         "Content-Type": "application/json"
     }
-    
     payload = {
         "model": model,
         "messages": [
@@ -148,7 +190,7 @@ def get_openrouter_response(prompt, model="openai/gpt-4o", sys_prompt="You are a
     }
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
-        
+
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=60)
         if response.status_code == 200:

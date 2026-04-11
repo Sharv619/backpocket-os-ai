@@ -766,6 +766,6 @@ def migrate_schema():
     
     conn.close()
 
-migrate_schema()
 init_memory()
+migrate_schema()
 init_sops()

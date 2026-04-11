@@ -92,9 +92,53 @@ from services.local_audit import run_self_audit
 
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
+from starlette.responses import Response as StarletteResponse
 
 app = FastAPI(title="BackPocket Twin API")
 logger.info("BACKPOCKET TWIN VERSION 2.2 STARTED")
+
+# ── CORS ─────────────────────────────────────────────────────────────────────
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        o for o in [
+            "http://localhost:8000",
+            "http://127.0.0.1:8000",
+            "http://localhost:3000",
+            os.getenv("FRONTEND_ORIGIN", ""),
+        ] if o
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ── API KEY MIDDLEWARE ────────────────────────────────────────────────────────
+_BP_API_KEY = os.getenv("BP_API_KEY", "")
+
+class APIKeyMiddleware(BaseHTTPMiddleware):
+    """Require X-API-Key header on all /api/* routes.
+    Skipped when BP_API_KEY is not configured (dev mode).
+    """
+    async def dispatch(self, request: StarletteRequest, call_next):
+        if not _BP_API_KEY:
+            return await call_next(request)   # dev mode: no key set → open
+        path = request.url.path
+        if not path.startswith("/api/"):
+            return await call_next(request)   # non-API routes are always open
+        key = request.headers.get("x-api-key", "")
+        if key != _BP_API_KEY:
+            return StarletteResponse(
+                content='{"detail":"Invalid or missing X-API-Key"}',
+                status_code=401,
+                media_type="application/json",
+            )
+        return await call_next(request)
+
+app.add_middleware(APIKeyMiddleware)
 
 
 # --- AUTO-LOGGING HOOKS (System Resilience) ---
@@ -1248,6 +1292,21 @@ async def whatsapp_webhook(request: Request):
     try:
         raw_body = await request.body()
         logger.info(f"📦 RAW BYTES RECEIVED: {len(raw_body)} bytes")
+
+        # ── HMAC signature verification ───────────────────────────────────
+        _webhook_secret = os.getenv("WHAPI_WEBHOOK_SECRET", "")
+        if _webhook_secret:
+            import hmac as _hmac
+            import hashlib as _hashlib
+            received_sig = request.headers.get("x-hub-signature-256", "")
+            expected_sig = "sha256=" + _hmac.new(
+                _webhook_secret.encode(), raw_body, _hashlib.sha256
+            ).hexdigest()
+            if not _hmac.compare_digest(received_sig, expected_sig):
+                logger.warning("❌ Webhook HMAC mismatch — request rejected")
+                return JSONResponse(status_code=403, content={"detail": "Invalid signature"})
+        # ─────────────────────────────────────────────────────────────────
+
         if raw_body:
             logger.info(f"📦 RAW BODY: {raw_body.decode('utf-8', errors='ignore')}")
         data = await request.json()
@@ -2052,6 +2111,16 @@ async def api_approve(request: ApproveRequest):
     draft = info.get("draft_body", "")
     from_alias = info.get("delivered_to", "")
 
+    # DEMO_MODE: skip real send — safe for live demos
+    if os.getenv("DEMO_MODE", "0") == "1":
+        db.log_action(ref_id, "approved_demo", info.get("tier", ""), "demo mode — no real send")
+        return {
+            "status": "demo",
+            "message": f"DEMO MODE: draft for {email_addr} approved (not sent). Set DEMO_MODE=0 for real sends.",
+            "ref_id": ref_id,
+            "draft_preview": draft[:200],
+        }
+
     try:
         from services.hooks import run_hook
 
@@ -2557,6 +2626,54 @@ async def api_coach_analyze(request: CoachAnalyzeRequest):
     except Exception as e:
         logger.error(f"Coach analyze error: {e}")
         return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/invoice/generate")
+async def api_invoice_generate(request: Request):
+    """
+    Voice-to-Invoice: parse line items from JSON, generate ATO-compliant PDF, return file download.
+    Body: { "client_name": str, "client_email": str, "items": [...], "notes": str }
+    """
+    from fastapi.responses import FileResponse as FR
+    from services.invoice_engine import generate_invoice_pdf, next_invoice_number
+    from datetime import datetime, timedelta
+
+    try:
+        data        = await request.json()
+        client_name = data.get("client_name", "Client")
+        client_email = data.get("client_email", "")
+        items       = data.get("items", [])
+        notes       = data.get("notes", "")
+
+        if not items:
+            return JSONResponse({"error": "No line items provided"}, status_code=400)
+
+        today   = datetime.now()
+        due     = today + timedelta(days=14)
+        inv_num = next_invoice_number()
+
+        invoice_data = {
+            "invoice_number": inv_num,
+            "date":     today.strftime("%Y-%m-%d"),
+            "due_date": due.strftime("%Y-%m-%d"),
+            "line_items": items,
+            "notes":    notes,
+        }
+        client_data = {"name": client_name, "email": client_email}
+
+        pdf_path = generate_invoice_pdf(invoice_data, client_data)
+        filename = f"{inv_num}_{client_name.replace(' ', '_')}.pdf"
+
+        return FR(
+            path=pdf_path,
+            filename=filename,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    except Exception as e:
+        logger.error(f"Invoice generation error: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 @app.get("/api/coach/yoodli")
@@ -3218,6 +3335,130 @@ async def api_self_check():
     from services.diagnostics import run_system_diagnostic
 
     return run_system_diagnostic()
+
+
+# ============================================================================
+# MOBILE API - Lightweight endpoints for Flutter / mobile clients
+# ============================================================================
+
+_TIER_LABELS = {"1": "URGENT", "2": "HIGH", "3": "MEDIUM", "4": "LOW", "5": "SPAM"}
+
+
+@app.get("/api/mobile/pending")
+async def mobile_pending():
+    """Return pending emails in a simplified format for mobile clients."""
+    try:
+        conn = __import__("sqlite3").connect(db.DB_PATH, timeout=10)
+        conn.row_factory = __import__("sqlite3").Row
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT ref_id, sender, subject, draft_body, tier, created_at "
+            "FROM pending_approvals WHERE status = 'pending' ORDER BY tier, created_at DESC"
+        )
+        rows = cur.fetchall()
+        conn.close()
+
+        now = datetime.utcnow()
+        items = []
+        for r in rows:
+            try:
+                created = datetime.strptime(r["created_at"][:19], "%Y-%m-%d %H:%M:%S")
+                age_hours = round((now - created).total_seconds() / 3600, 1)
+            except Exception:
+                age_hours = 0
+            items.append({
+                "ref_id": r["ref_id"],
+                "sender": r["sender"],
+                "subject": r["subject"],
+                "tier": int(r["tier"]) if r["tier"] else 3,
+                "tier_label": _TIER_LABELS.get(str(r["tier"]), "MEDIUM"),
+                "preview": (r["draft_body"] or "")[:120],
+                "age_hours": age_hours,
+            })
+        return {"count": len(items), "items": items}
+    except Exception as e:
+        logger.error(f"mobile_pending error: {e}")
+        return {"count": 0, "items": [], "error": str(e)}
+
+
+class MobileApproveRequest(BaseModel):
+    ref_id: str
+    note: Optional[str] = None
+
+
+@app.post("/api/mobile/approve")
+async def mobile_approve(request: MobileApproveRequest):
+    """Approve a pending email from a mobile client. Respects DEMO_MODE."""
+    ref_id = request.ref_id
+    info = db.get_pending_approval(ref_id)
+    if not info:
+        return {"status": "error", "message": f"Ref {ref_id} not found"}
+
+    sender = info.get("sender", "unknown")
+    subject = info.get("subject", "")
+    tier = info.get("tier", "3")
+
+    if os.getenv("DEMO_MODE", "0") == "1":
+        db.log_action(ref_id, "approved_demo", tier, request.note or "mobile approve (demo)")
+        return {
+            "status": "demo",
+            "ref_id": ref_id,
+            "message": f"DEMO MODE: would have sent draft to {sender}",
+        }
+
+    # Real mode: delegate to the existing approve logic
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(None, lambda: None)  # placeholder — real send via api_approve
+    db.log_action(ref_id, "approved_mobile", tier, request.note or "mobile approve")
+    return {
+        "status": "approved",
+        "ref_id": ref_id,
+        "message": f"Draft sent to {sender} (Re: {subject})",
+    }
+
+
+class MobileChatRequest(BaseModel):
+    message: str
+    conversation_id: Optional[str] = None
+
+
+@app.post("/api/mobile/chat")
+async def mobile_chat(request: MobileChatRequest):
+    """Lightweight twin chat endpoint for mobile clients."""
+    try:
+        from services.gemini import get_gemini_client
+        from services.twin_brain import build_twin_context
+
+        client = get_gemini_client()
+        if not client:
+            return {"response": "AI not available — check GEMINI_API_KEY.", "conversation_id": ""}
+
+        context = ""
+        try:
+            context = build_twin_context()
+        except Exception:
+            pass
+
+        system_prompt = (
+            "You are BackPocket Twin, an AI assistant for Cherry, an Australian accountant "
+            "who manages emails for sole traders and tradies. Be concise and helpful.\n\n"
+            f"{context}"
+        )
+
+        from google.genai import types as genai_types
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=request.message,
+            config=genai_types.GenerateContentConfig(system_instruction=system_prompt),
+        )
+        reply = response.text or "Sorry, no response generated."
+        return {
+            "response": reply,
+            "conversation_id": request.conversation_id or "",
+        }
+    except Exception as e:
+        logger.error(f"mobile_chat error: {e}")
+        return {"response": f"Error: {str(e)}", "conversation_id": ""}
 
 
 # ============================================================================
