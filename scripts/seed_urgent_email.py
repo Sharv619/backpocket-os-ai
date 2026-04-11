@@ -5,10 +5,10 @@ import base64
 def send_test_urgent_email():
     service = get_gmail_service()
     
-    # We send it to cherry@yourwebaccountant.com which is one of the brands
-    to = "cherry@yourwebaccountant.com"
+    # We send it to steve@backpocket.os which is one of the brands
+    to = "steve@backpocket.os"
     subject = "URGENT: Tax Return Problem"
-    body = "Hi Cherry, I have a problem with my tax return and need it filed today or I get fined. Please help!"
+    body = "Hi Steve, I have a problem with my tax return and need it filed today or I get fined. Please help!"
     
     message = MIMEText(body)
     message['to'] = to

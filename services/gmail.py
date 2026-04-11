@@ -1,11 +1,13 @@
 import os
 import sys
 import io
+import json
 import logging
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+from dotenv import load_dotenv
 
 if sys.platform == 'win32':
     try:
@@ -15,6 +17,8 @@ if sys.platform == 'win32':
             sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
     except Exception:
         pass
+
+load_dotenv()
 
 # If modifying these scopes, delete the file token.json.
 SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
@@ -27,19 +31,29 @@ def get_gmail_service(token_file='token.json'):
     creds = None
     if os.path.exists(token_file):
         creds = Credentials.from_authorized_user_file(token_file, SCOPES)
-    
+
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            if not os.path.exists('gmail_credentials.json'):
-                logger.error("Error: gmail_credentials.json not found.")
+            oauth_json_str = os.getenv('GMAIL_OAUTH_JSON')
+
+            if oauth_json_str:
+                try:
+                    oauth_config = json.loads(oauth_json_str)
+                    flow = InstalledAppFlow.from_client_config(oauth_config, SCOPES)
+                    creds = flow.run_local_server(port=0)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Error: GMAIL_OAUTH_JSON is not valid JSON: {e}")
+                    return None
+            elif os.path.exists('gmail_credentials.json'):
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    'gmail_credentials.json', SCOPES)
+                creds = flow.run_local_server(port=0)
+            else:
+                logger.error("Error: GMAIL_OAUTH_JSON env var or gmail_credentials.json not found.")
                 return None
-            
-            flow = InstalledAppFlow.from_client_secrets_file(
-                'gmail_credentials.json', SCOPES)
-            creds = flow.run_local_server(port=0)
-            
+
         with open(token_file, 'w') as token:
             token.write(creds.to_json())
 
@@ -201,9 +215,9 @@ def get_historical_context(email_address, max_results=3):
             for msg in messages:
                 msg_data = service.users().messages().get(userId='me', id=msg['id'], format='minimal').execute()
                 snippet = msg_data.get('snippet', '')
-                # Is it from Cherry or the Client?
+                # Is it from Steve or the Client?
                 label_ids = msg_data.get('labelIds', [])
-                role = "Cherry" if 'SENT' in label_ids else "Client"
+                role = "Steve" if 'SENT' in label_ids else "Client"
                 all_context.append(f"- [{role}]: {snippet}")
                 
         except Exception as e:

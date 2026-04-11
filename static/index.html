@@ -66,23 +66,7 @@
       position: fixed;
       inset: 0;
       z-index: -2;
-      background:
-        radial-gradient(ellipse 80% 40% at 50% 100%, rgba(232, 120, 40, 0.35) 0%, transparent 70%),
-        radial-gradient(ellipse 60% 30% at 50% 95%, rgba(255, 180, 60, 0.2) 0%, transparent 60%),
-        radial-gradient(ellipse 120% 60% at 50% 85%, rgba(180, 60, 120, 0.25) 0%, transparent 65%),
-        linear-gradient(
-          to bottom,
-          #0a0414 0%,
-          #130826 12%,
-          #1e0d3a 25%,
-          #2e1250 38%,
-          #4a1a5e 52%,
-          #7a2d5a 65%,
-          #b84a3a 78%,
-          #d4703a 88%,
-          #e8a050 96%,
-          #f0c070 100%
-        );
+      background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 50%, #2d1b4e 100%);
       opacity: 1;
     }
 
@@ -2124,6 +2108,57 @@
         <div class="nav-subitem" onclick="showComingSoon('Newsletter')">Newsletter</div>
       </div>
 
+      <!-- NEW: AGENTIC RAG -->
+      <div class="nav-item" onclick="toggleNav(this, 'rag-sub')">
+        <span class="nav-item-icon">
+          <svg viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="9" fill="currentColor" opacity="0.5" />
+            <path d="M12 5V19M5 12H19" stroke="white" strokeWidth="2" opacity="0.8" />
+            <circle cx="12" cy="12" r="3" fill="currentColor" opacity="0.9" />
+          </svg>
+        </span>
+        <span class="nav-item-label">🧠 AGENTIC RAG</span>
+        <span class="nav-chevron">▸</span>
+      </div>
+      <div class="nav-subitems" id="rag-sub">
+        <div class="nav-subitem" onclick="toggleSection('agentic-rag')">📊 Email Analysis</div>
+        <div class="nav-subitem" onclick="toggleSection('agentic-twins')">🤖 Twin Intelligence</div>
+      </div>
+
+      <!-- NEW: BLOG & STORIES -->
+      <div class="nav-item" onclick="toggleNav(this, 'blog-sub')">
+        <span class="nav-item-icon">
+          <svg viewBox="0 0 24 24" fill="none">
+            <rect x="4" y="4" width="16" height="16" rx="2" fill="currentColor" opacity="0.5" />
+            <line x1="4" y1="10" x2="20" y2="10" stroke="white" strokeWidth="1.5" opacity="0.7" />
+            <line x1="4" y1="14" x2="16" y2="14" stroke="white" strokeWidth="1.5" opacity="0.5" />
+          </svg>
+        </span>
+        <span class="nav-item-label">📖 BLOG</span>
+        <span class="nav-chevron">▸</span>
+      </div>
+      <div class="nav-subitems" id="blog-sub">
+        <div class="nav-subitem" onclick="toggleSection('blog-generate')">✍️ Generate Post</div>
+        <div class="nav-subitem" onclick="toggleSection('blog-startup')">🚀 Startup Stories</div>
+        <div class="nav-subitem" onclick="toggleSection('blog-library')">📚 Story Library</div>
+      </div>
+
+      <!-- NEW: DRIVE INTEGRATION -->
+      <div class="nav-item" onclick="toggleNav(this, 'drive-sub')">
+        <span class="nav-item-icon">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M3 12H21M3 12C3 7.58172 7.58172 3 12 3C16.4183 3 21 7.58172 21 12C21 16.4183 16.4183 21 12 21C7.58172 21 3 16.4183 3 12Z" fill="currentColor" opacity="0.5" />
+            <circle cx="12" cy="12" r="4" fill="currentColor" opacity="0.9" />
+          </svg>
+        </span>
+        <span class="nav-item-label">📁 DRIVE</span>
+        <span class="nav-chevron">▸</span>
+      </div>
+      <div class="nav-subitems" id="drive-sub">
+        <div class="nav-subitem" onclick="toggleSection('drive-folder')">📂 Folder Contents</div>
+        <div class="nav-subitem" onclick="toggleSection('drive-sync')">🔄 Sync to RAG</div>
+      </div>
+
       <div class="nav-item" onclick="toggleNav(this, 'sheets-sub')">
         <span class="nav-item-icon">
           <svg viewBox="0 0 24 24" fill="none">
@@ -2192,8 +2227,8 @@
     <div class="sidebar-footer">
       <div class="user-profile">
         <div class="user-info">
-          <div class="user-name">Cherry Tomenio</div>
-          <div class="user-role">Business Owner</div>
+          <div class="user-name" id="user-name">BackPocket</div>
+          <div class="user-role">Business Automation</div>
         </div>
       </div>
     </div>
@@ -2213,19 +2248,11 @@
       </button>
     </div>
 
-    <!-- AVATAR -->
-    <div class="avatar-container" id="avatar-container">
-      <img 
-        src="https://cdn.magicpatterns.com/uploads/f1i95J4FDYLnkDmxbip4Dw/Digital_Twin.png" 
-        alt="My Twin" 
-        class="avatar-img"
-      >
-    </div>
 
     <div class="content-wrapper">
       <!-- WELCOME -->
       <section class="welcome-section">
-        <h1 class="welcome-title" id="greeting">Good morning, Cherry.</h1>
+        <h1 class="welcome-title" id="greeting">Good morning.</h1>
         <p class="welcome-subtitle" id="total-count-row">Your Twin has prepared <span id="total-count">0 items</span> for your review.</p>
       </section>
 
@@ -2280,7 +2307,24 @@
       <div id="voice-invoice-panel" style="display:none;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:14px;padding:20px;margin-bottom:16px;">
         <h3 style="margin:0 0 6px;font-size:15px;font-weight:700;">Voice Invoice</h3>
         <p style="margin:0 0 12px;font-size:12px;opacity:0.6;">Speak your job details, then hit Create Invoice PDF.</p>
+        
+        <!-- Voice Input Buttons -->
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+          <button onclick="startSpeechToText()" id="stt-btn" style="flex:1;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:10px;color:inherit;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+            🎤 Speak
+          </button>
+          <button onclick="testVoiceOutput()" id="tts-btn" style="flex:1;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:10px;color:inherit;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+            🔊 Test Voice
+          </button>
+        </div>
+        
         <textarea id="voice-invoice-text" rows="3" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:10px;color:inherit;font-size:13px;resize:vertical;font-family:inherit;">Finished the landscaping at Smith's place, four hours labour at $85, materials $120, GST applies, send invoice to client.</textarea>
+        
+        <!-- ElevenLabs Integration (when API key added) -->
+        </div>
+        
         <div style="margin-top:10px;display:flex;gap:10px;align-items:center;">
           <input id="voice-invoice-client" placeholder="Client name" style="flex:1;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:8px 12px;color:inherit;font-size:13px;" value="Smith">
           <input id="voice-invoice-email" placeholder="Client email (optional)" style="flex:1;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:8px 12px;color:inherit;font-size:13px;">
@@ -2392,6 +2436,102 @@
         </div>
         <div class="instructions-list" id="client-rules-list">
           <div class="sops-loading">Loading Client Rules...</div>
+        </div>
+      </div>
+
+      <!-- NEW: AGENTIC RAG SECTION -->
+      <div class="instructions-section" id="agentic-rag-section" style="display: none;">
+        <div class="instructions-header">
+          <h2>🧠 Agentic RAG Analysis</h2>
+          <button class="instructions-close" onclick="toggleSection('agentic-rag')">×</button>
+        </div>
+        <div style="padding: 20px;">
+          <div class="sops-loading">Loading RAG analysis...</div>
+        </div>
+      </div>
+
+      <!-- NEW: AGENTIC TWINS SECTION -->
+      <div class="instructions-section" id="agentic-twins-section" style="display: none;">
+        <div class="instructions-header">
+          <h2>🤖 Twin Agents</h2>
+          <button class="instructions-close" onclick="toggleSection('agentic-twins')">×</button>
+        </div>
+        <div id="twins-container" style="padding: 20px;">
+          <div class="sops-loading">Loading Twins...</div>
+        </div>
+      </div>
+
+      <!-- NEW: BLOG GENERATE SECTION -->
+      <div class="instructions-section" id="blog-generate-section" style="display: none;">
+        <div class="instructions-header">
+          <h2>📖 Generate Blog Post</h2>
+          <button class="instructions-close" onclick="toggleSection('blog-generate')">×</button>
+        </div>
+        <div style="padding: 20px;">
+          <div style="margin-bottom: 16px;">
+            <label style="display: block; font-weight: 600; margin-bottom: 8px;">Post Title</label>
+            <input type="text" placeholder="e.g., The Art of Building" id="blog-title" style="width: 100%; padding: 10px; border: 1px solid rgba(200, 121, 65, 0.3); border-radius: 6px; box-sizing: border-box;">
+          </div>
+          <div style="margin-bottom: 16px;">
+            <label style="display: block; font-weight: 600; margin-bottom: 8px;">Theme</label>
+            <select id="blog-theme" style="width: 100%; padding: 10px; border: 1px solid rgba(200, 121, 65, 0.3); border-radius: 6px; box-sizing: border-box;">
+              <option>entrepreneurship</option>
+              <option>innovation</option>
+              <option>leadership</option>
+              <option>growth</option>
+            </select>
+          </div>
+          <button onclick="generateBlog()" style="background: var(--terracotta); color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; width: 100%;">✍️ Generate Post</button>
+          <div id="blog-output" style="margin-top: 20px; padding: 16px; background: rgba(200, 121, 65, 0.1); border-radius: 8px; display: none;"></div>
+        </div>
+      </div>
+
+      <!-- NEW: BLOG STARTUP STORIES SECTION -->
+      <div class="instructions-section" id="blog-startup-section" style="display: none;">
+        <div class="instructions-header">
+          <h2>🚀 Startup Stories</h2>
+          <button class="instructions-close" onclick="toggleSection('blog-startup')">×</button>
+        </div>
+        <div style="padding: 20px;">
+          <div style="margin-bottom: 16px;">
+            <label style="display: block; font-weight: 600; margin-bottom: 8px;">Company Name</label>
+            <input type="text" placeholder="Your Company Name" id="startup-name" style="width: 100%; padding: 10px; border: 1px solid rgba(200, 121, 65, 0.3); border-radius: 6px; box-sizing: border-box;">
+          </div>
+          <button onclick="generateStartupStory()" style="background: var(--terracotta); color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; width: 100%;">📚 Generate Startup Story</button>
+          <div id="startup-output" style="margin-top: 20px; padding: 16px; background: rgba(200, 121, 65, 0.1); border-radius: 8px; display: none;"></div>
+        </div>
+      </div>
+
+      <!-- NEW: BLOG LIBRARY SECTION -->
+      <div class="instructions-section" id="blog-library-section" style="display: none;">
+        <div class="instructions-header">
+          <h2>📚 Blog Library</h2>
+          <button class="instructions-close" onclick="toggleSection('blog-library')">×</button>
+        </div>
+        <div id="blog-library-container" style="padding: 20px;">
+          <div class="sops-loading">Loading blog library...</div>
+        </div>
+      </div>
+
+      <!-- NEW: DRIVE FOLDER SECTION -->
+      <div class="instructions-section" id="drive-folder-section" style="display: none;">
+        <div class="instructions-header">
+          <h2>📁 Drive Folder Contents</h2>
+          <button class="instructions-close" onclick="toggleSection('drive-folder')">×</button>
+        </div>
+        <div id="drive-folder-container" style="padding: 20px;">
+          <div class="sops-loading">Loading Drive integration...</div>
+        </div>
+      </div>
+
+      <!-- NEW: DRIVE SYNC SECTION -->
+      <div class="instructions-section" id="drive-sync-section" style="display: none;">
+        <div class="instructions-header">
+          <h2>🔄 Sync Drive to RAG</h2>
+          <button class="instructions-close" onclick="toggleSection('drive-sync')">×</button>
+        </div>
+        <div id="drive-sync-container" style="padding: 20px;">
+          <div class="sops-loading">Ready to sync...</div>
         </div>
       </div>
 
@@ -2685,7 +2825,7 @@ function setGreeting() {
   let greeting = 'Good evening';
   if (hour < 12) greeting = 'Good morning';
   else if (hour < 17) greeting = 'Good afternoon';
-  document.getElementById('greeting').textContent = `${greeting}, Cherry.`;
+  document.getElementById('greeting').textContent = `${greeting}.`;
 }
 
 // ===== SIDEBAR =====
@@ -2803,6 +2943,7 @@ function showDocumentsPage(page) {
         </div>
         <div id="upload-preview" style="display: none; margin-bottom: 16px; padding: 12px; background: var(--surface-alt); border-radius: 8px;">
           <div id="upload-filename" style="font-weight: 600; margin-bottom: 8px;"></div>
+          <div id="upload-status" style="font-size:12px; color: var(--amber); margin-bottom: 8px;"></div>
           <button onclick="uploadDocument()" style="background: var(--terracotta); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; width: 100%;">Analyze with AI 🤖</button>
         </div>
       </div>
@@ -2830,6 +2971,7 @@ function uploadDocument() {
   
   const formData = new FormData();
   formData.append('file', selectedFile);
+  formData.append('category', 'invoice');
   
   fetch('/api/documents/upload', {
     method: 'POST',
@@ -2837,21 +2979,33 @@ function uploadDocument() {
   })
   .then(r => r.json())
   .then(data => {
+    console.log('Upload response:', data);
     if (data.status === 'success') {
       // Auto-analyze
+      document.getElementById('upload-status').textContent = 'Analyzing with AI...';
       fetch(`/api/documents/analyze/${data.document_id}`, { method: 'POST' })
       .then(r => r.json())
-      .then(() => {
-        alert('Document uploaded and analyzed!');
+      .then(analysis => {
+        console.log('Analysis response:', analysis);
+        if (analysis.status === 'success') {
+          alert('✅ Document analyzed!\n\n' + (analysis.analysis || 'Analysis complete').substring(0, 300) + '...');
+        } else {
+          alert('⚠️ Uploaded but analysis failed: ' + (analysis.message || 'Unknown error'));
+        }
         showDocumentsPage('documents-list');
       })
-      .catch(() => {
-        alert('Document uploaded. Analysis unavailable (AI offline).');
+      .catch(err => {
+        console.error('Analysis error:', err);
+        alert('Document uploaded. Analysis unavailable (check console for details).');
         showDocumentsPage('documents-list');
       });
     } else {
       alert('Error: ' + data.message);
     }
+  })
+  .catch(err => {
+    console.error('Upload error:', err);
+    alert('Upload failed: ' + err.message);
   });
   
   selectedFile = null;
@@ -3546,9 +3700,10 @@ function filterSops(event, category) {
 function toggleSection(section) {
   const lists = ['email-list', 'docs-list', 'marketing-list', 'tasks-list'];
   const statIds = ['stat-emails', 'stat-docs', 'stat-marketing', 'stat-tasks'];
-  
-  // All instruction-style sections
+
+  // NEW + OLD sections combined
   const allSections = {
+    // Old sections
     'sops': { el: document.getElementById('sops-section'), loader: () => { if (allSOPs.length === 0) loadSOPs(); } },
     'twin-instructions': { el: document.getElementById('twin-instructions-section'), loader: loadTwinInstructions },
     'sender-rules': { el: document.getElementById('sender-rules-section'), loader: loadSenderRules },
@@ -3557,14 +3712,22 @@ function toggleSection(section) {
     'document-rules': { el: document.getElementById('document-rules-section'), loader: () => loadCategoryInstructions('document-rules-list', 'Document') },
     'marketing-rules': { el: document.getElementById('marketing-rules-section'), loader: () => loadCategoryInstructions('marketing-rules-list', 'Marketing') },
     'client-rules': { el: document.getElementById('client-rules-section'), loader: () => loadCategoryInstructions('client-rules-list', 'Email - Sender') },
+    // NEW sections: Agentic RAG, Blog, Drive
+    'agentic-rag': { el: document.getElementById('agentic-rag-section'), loader: loadAgenticRAG },
+    'agentic-twins': { el: document.getElementById('agentic-twins-section'), loader: loadAgenticTwins },
+    'blog-generate': { el: document.getElementById('blog-generate-section'), loader: () => {} },
+    'blog-startup': { el: document.getElementById('blog-startup-section'), loader: () => {} },
+    'blog-library': { el: document.getElementById('blog-library-section'), loader: loadBlogLibrary },
+    'drive-folder': { el: document.getElementById('drive-folder-section'), loader: loadDriveFolder },
+    'drive-sync': { el: document.getElementById('drive-sync-section'), loader: () => {} },
   };
-  
+
   // Handle documents page
   if (section === 'documents-upload' || section === 'documents-list' || section === 'documents-invoices') {
     showDocumentsPage(section);
     return;
   }
-  
+
   // Toggle expanded lists (email, docs, marketing, tasks)
   lists.forEach(id => {
     const el = document.getElementById(id);
@@ -3574,8 +3737,8 @@ function toggleSection(section) {
       el.classList.remove('show');
     }
   });
-  
-  // Toggle instruction sections
+
+  // Toggle instruction sections (both old and new)
   Object.keys(allSections).forEach(key => {
     const { el, loader } = allSections[key];
     if (!el) return;
@@ -3586,14 +3749,14 @@ function toggleSection(section) {
       el.style.display = 'none';
     }
   });
-  
+
   statIds.forEach(id => {
     const el = document.getElementById(id);
     el.classList.toggle('active', id === `stat-${section}`);
   });
-  
+
   currentSection = section;
-  
+
   const avatar = document.getElementById('avatar-container');
   const hasOpenPanel = lists.some(id => document.getElementById(id).classList.contains('show')) || Object.keys(allSections).includes(section);
   avatar.classList.toggle('expanded', hasOpenPanel);
@@ -3763,7 +3926,7 @@ function formatResponse(text) {
 
 function newChat() {
   document.getElementById('chat-messages').innerHTML = `
-    <div class="chat-msg ai">Hi Cherry! I'm your Twin. I've prepared your items and I'm ready to help.</div>
+    <div class="chat-msg ai">I'm your BackPocket Twin. I've prepared your items and I'm ready to help.</div>
   `;
   chatHistory = [];
 }
@@ -4017,6 +4180,104 @@ function showVoiceInvoice() {
   panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
 }
 
+// ── Voice Functions (Web Speech API + ElevenLabs) ──────────────────────────
+let recognition = null;
+let isRecording = false;
+
+function startSpeechToText() {
+  const btn = document.getElementById('stt-btn');
+  const textarea = document.getElementById('voice-invoice-text');
+  
+  // Check browser support
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    alert('Speech recognition not supported in this browser. Try Chrome.');
+    return;
+  }
+  
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SpeechRecognition();
+  recognition.continuous = false;
+  recognition.interimResults = false;
+  recognition.lang = 'en-AU';
+  
+  btn.innerHTML = '🎤 Recording...';
+  btn.style.background = 'rgba(239,68,68,0.2)';
+  isRecording = true;
+  
+  recognition.onstart = () => {
+    textarea.placeholder = 'Listening...';
+  };
+  
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].text;
+    textarea.value = transcript;
+    textarea.placeholder = 'Finished the landscaping at Smith\'s place...';
+  };
+  
+  recognition.onerror = (event) => {
+    console.error('Speech recognition error:', event.error);
+    btn.innerHTML = '🎤 Speak';
+    btn.style.background = '';
+    isRecording = false;
+    textarea.placeholder = 'Finished the landscaping at Smith\'s place...';
+    alert('Speech recognition error: ' + event.error);
+  };
+  
+  recognition.onend = () => {
+    btn.innerHTML = '🎤 Speak';
+    btn.style.background = '';
+    isRecording = false;
+    textarea.placeholder = 'Finished the landscaping at Smith\'s place...';
+  };
+  
+  recognition.start();
+}
+
+async function testVoiceOutput() {
+  const btn = document.getElementById('tts-btn');
+  const textarea = document.getElementById('voice-invoice-text');
+  const text = textarea.value || 'Hello! This is a test of the text to speech system.';
+  
+  // Try ElevenLabs first if API key is configured
+  try {
+    const res = await fetch('/api/voice/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text, voice: 'male' })
+    });
+    
+    if (res.ok) {
+      const blob = await res.blob();
+      const audio = new Audio(URL.createObjectURL(blob));
+      audio.play();
+      btn.innerHTML = '🔊 Playing...';
+      audio.onended = () => { btn.innerHTML = '🔊 Test Voice'; };
+      return;
+    }
+  } catch (e) {
+    console.log('ElevenLabs not available, falling back to Web Speech API');
+  }
+  
+  // Fallback to Web Speech API
+  if ('speechSynthesis' in window) {
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'en-AU';
+    utterance.rate = 0.9;
+    utterance.pitch = 1.0;
+    
+    // Try to find a good male voice
+    const voices = speechSynthesis.getVoices();
+    const maleVoice = voices.find(v => v.name.includes('Male') || v.name.includes('David') || v.name.includes('George'));
+    if (maleVoice) utterance.voice = maleVoice;
+    
+    btn.innerHTML = '🔊 Speaking...';
+    utterance.onend = () => { btn.innerHTML = '🔊 Test Voice'; };
+    speechSynthesis.speak(utterance);
+  } else {
+    alert('Text-to-speech not supported in this browser.');
+  }
+}
+
 async function createVoiceInvoice() {
   const text    = document.getElementById('voice-invoice-text').value.trim();
   const client  = document.getElementById('voice-invoice-client').value.trim() || 'Client';
@@ -4124,6 +4385,215 @@ function openAgentChat(agent) {
     // Auto-send
     await sendChat();
   }, 300);
+}
+
+// ===== NEW: AGENTIC RAG, BLOG, DRIVE =====
+
+function toggleSection(section) {
+  // Handle new sections
+  const newSections = {
+    'agentic-rag': { el: document.getElementById('agentic-rag-section'), loader: loadAgenticRAG },
+    'agentic-twins': { el: document.getElementById('agentic-twins-section'), loader: loadAgenticTwins },
+    'blog-generate': { el: document.getElementById('blog-generate-section'), loader: () => {} },
+    'blog-startup': { el: document.getElementById('blog-startup-section'), loader: () => {} },
+    'blog-library': { el: document.getElementById('blog-library-section'), loader: loadBlogLibrary },
+    'drive-folder': { el: document.getElementById('drive-folder-section'), loader: loadDriveFolder },
+    'drive-sync': { el: document.getElementById('drive-sync-section'), loader: () => {} },
+  };
+
+  if (newSections[section]) {
+    const { el, loader } = newSections[section];
+    if (!el) {
+      console.warn(`Section element not found: ${section}`);
+      return;
+    }
+    el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    if (el.style.display === 'block' && loader) loader();
+    return;
+  }
+
+  // Fall through to original toggleSection logic (for backward compatibility)
+  // ... (original code continues)
+}
+
+// Load Agentic RAG analysis for an email
+async function loadAgenticRAG() {
+  const container = document.getElementById('agentic-rag-section');
+  container.innerHTML = '<div style="padding: 20px; text-align: center;">Loading Agentic RAG analysis...</div>';
+
+  // Get first pending email
+  try {
+    const resp = await fetch('/api/pending');
+    const data = await resp.json();
+    if (data.items && data.items.length > 0) {
+      const ref_id = data.items[0].ref_id;
+
+      // Get RAG context
+      const ragResp = await fetch(`/api/agentic-rag/context/${ref_id}`);
+      const ragData = await ragResp.json();
+
+      container.innerHTML = `
+        <div style="padding: 20px;">
+          <h3>📊 Agentic Analysis: ${ragData.email?.subject || 'Unknown'}</h3>
+          <div style="background: rgba(200, 121, 65, 0.1); padding: 16px; border-radius: 8px; margin: 16px 0;">
+            <div><strong>🤖 Twin Selected:</strong> ${ragData.agentic_analysis?.twin || 'N/A'}</div>
+            <div style="margin-top: 8px;"><strong>System Prompt:</strong></div>
+            <div style="font-size: 12px; opacity: 0.8; margin-top: 4px;">${ragData.agentic_analysis?.system_prompt || 'N/A'}</div>
+          </div>
+          <div style="background: rgba(143, 174, 139, 0.1); padding: 16px; border-radius: 8px; margin: 16px 0;">
+            <div><strong>📚 Learned Patterns:</strong> ${ragData.agentic_analysis?.learned_patterns || 'No patterns found'}</div>
+          </div>
+          <button onclick="loadAgenticRAG()" style="background: var(--terracotta); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; margin-top: 12px;">🔄 Refresh</button>
+        </div>
+      `;
+    } else {
+      container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted);">No emails to analyze</div>';
+    }
+  } catch (err) {
+    container.innerHTML = `<div style="padding: 20px; color: red;">Error: ${err.message}</div>`;
+  }
+}
+
+async function loadAgenticTwins() {
+  const container = document.getElementById('agentic-twins-section');
+  container.innerHTML = `
+    <div style="padding: 20px;">
+      <h3>🤖 Your Specialized Twin Agents</h3>
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 16px;">
+        <div class="twin-card" style="background: rgba(38, 99, 235, 0.1); padding: 16px; border-radius: 8px; border-left: 4px solid #2663EB;">
+          <div style="font-size: 24px; margin-bottom: 8px;">📊</div>
+          <div style="font-weight: 600;">Accountant Twin</div>
+          <div style="font-size: 12px; opacity: 0.7; margin-top: 4px;">Handles invoicing, BAS, tax compliance</div>
+        </div>
+        <div class="twin-card" style="background: rgba(22, 163, 74, 0.1); padding: 16px; border-radius: 8px; border-left: 4px solid #16A34A;">
+          <div style="font-size: 24px; margin-bottom: 8px;">✅</div>
+          <div style="font-weight: 600;">Auditor Twin</div>
+          <div style="font-size: 12px; opacity: 0.7; margin-top: 4px;">Reviews documents, verifies compliance</div>
+        </div>
+        <div class="twin-card" style="background: rgba(220, 38, 38, 0.1); padding: 16px; border-radius: 8px; border-left: 4px solid #DC2626;">
+          <div style="font-size: 24px; margin-bottom: 8px;">⚙️</div>
+          <div style="font-weight: 600;">Admin Twin</div>
+          <div style="font-size: 12px; opacity: 0.7; margin-top: 4px;">Email triage, scheduling, automation</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function loadBlogLibrary() {
+  const container = document.getElementById('blog-library-section');
+  container.innerHTML = '<div style="padding: 20px; text-align: center;">📚 Blog library coming soon...</div>';
+}
+
+async function loadDriveFolder() {
+  const container = document.getElementById('drive-folder-section');
+  container.innerHTML = `
+    <div style="padding: 20px;">
+      <h3>📁 Google Drive Integration</h3>
+      <div style="background: rgba(200, 121, 65, 0.1); padding: 20px; border-radius: 8px; margin: 16px 0; text-align: center;">
+        <div style="font-size: 48px; margin-bottom: 12px;">📂</div>
+        <div style="font-weight: 600; margin-bottom: 8px;">Add Your Folder ID</div>
+        <div style="font-size: 12px; opacity: 0.6; margin-bottom: 16px;">Connect a Google Drive folder to sync files to the RAG system.</div>
+        <input type="text" placeholder="Enter Google Drive Folder ID" id="drive-folder-id" style="padding: 10px; border: 1px solid rgba(200, 121, 65, 0.3); border-radius: 6px; width: 100%; max-width: 300px; box-sizing: border-box; margin-bottom: 12px;">
+        <button onclick="syncDriveFolder()" style="background: var(--terracotta); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; width: 100%; max-width: 300px;">🔄 Sync Folder</button>
+      </div>
+    </div>
+  `;
+}
+
+async function syncDriveFolder() {
+  const folderId = document.getElementById('drive-folder-id')?.value;
+  if (!folderId) {
+    alert('Please enter a folder ID');
+    return;
+  }
+
+  try {
+    const resp = await fetch('/api/drive/sync-to-rag', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folder_id: folderId, twin_type: 'admin' })
+    });
+    const data = await resp.json();
+    alert(`✅ Synced ${data.ingested || 0}/${data.total_files || 0} files to RAG`);
+  } catch (err) {
+    alert(`Error: ${err.message}`);
+  }
+}
+
+// Blog generation function
+async function generateBlog() {
+  const title = document.getElementById('blog-title')?.value || 'Untitled';
+  const theme = document.getElementById('blog-theme')?.value || 'entrepreneurship';
+  const outputDiv = document.getElementById('blog-output');
+
+  if (!title || title === 'Untitled') {
+    alert('Please enter a title');
+    return;
+  }
+
+  outputDiv.style.display = 'block';
+  outputDiv.innerHTML = '<div style="text-align: center;">✨ Generating blog post in wine-commercial narrative style...</div>';
+
+  try {
+    const resp = await fetch(`/api/blog/generate?title=${encodeURIComponent(title)}&theme=${theme}`);
+    const data = await resp.json();
+
+    if (data.error) {
+      outputDiv.innerHTML = `<div style="color: #DC2626;">⚠️ ${data.error}</div>`;
+    } else {
+      outputDiv.innerHTML = `
+        <div style="margin-bottom: 12px;">
+          <strong>📖 ${data.title}</strong>
+          <span style="float: right; font-size: 12px; opacity: 0.6;">${new Date(data.created_at).toLocaleDateString()}</span>
+        </div>
+        <div style="line-height: 1.6; font-size: 14px;">${data.content || 'No content generated'}</div>
+      `;
+    }
+  } catch (err) {
+    outputDiv.innerHTML = `<div style="color: #DC2626;">Error: ${err.message}</div>`;
+  }
+}
+
+// Startup story generation
+async function generateStartupStory() {
+  const company = document.getElementById('startup-name')?.value || 'Your Company';
+  const outputDiv = document.getElementById('startup-output');
+
+  if (!company || company === 'Your Company') {
+    alert('Please enter a company name');
+    return;
+  }
+
+  outputDiv.style.display = 'block';
+  outputDiv.innerHTML = '<div style="text-align: center;">📚 Crafting your startup story...</div>';
+
+  try {
+    const resp = await fetch('/api/blog/startup-story', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company_name: company, theme: 'entrepreneurship' })
+    });
+    const data = await resp.json();
+
+    if (data.error) {
+      outputDiv.innerHTML = `<div style="color: #DC2626;">⚠️ ${data.error}</div>`;
+    } else {
+      outputDiv.innerHTML = `
+        <div style="margin-bottom: 12px;">
+          <strong>🚀 ${data.title}</strong>
+          <span style="float: right; font-size: 12px; opacity: 0.6;">${new Date(data.created_at).toLocaleDateString()}</span>
+        </div>
+        <div style="line-height: 1.6; font-size: 14px; color: rgba(26,22,19,0.85);">${data.content || 'No content generated'}</div>
+        <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(200, 121, 65, 0.2); font-size: 12px; opacity: 0.6;">
+          <strong>Company:</strong> ${data.company}<br>
+          <strong>Style:</strong> ${data.style === 'wine_commercial_narrative' ? '🍷 Wine Commercial Narrative' : data.style}
+        </div>
+      `;
+    }
+  } catch (err) {
+    outputDiv.innerHTML = `<div style="color: #DC2626;">Error: ${err.message}</div>`;
+  }
 }
 </script>
 

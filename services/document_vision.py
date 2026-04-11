@@ -3,6 +3,7 @@ import base64
 import logging
 import sqlite3
 import uuid
+import requests
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -12,8 +13,28 @@ logger = logging.getLogger(__name__)
 DB_PATH = "backpocket.db"
 UPLOAD_DIR = "uploads"
 
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "moondream")
+# ── OpenRouter vision config ──────────────────────────────────────────────────
+# Tried in order until one succeeds. All free-tier, all support image input.
+#   1. gemma-3-27b  — best quality, 131k ctx, free (may rate-limit)
+#   2. gemma-3-12b  — lighter, 32k ctx, free
+#   3. nemotron-12b — NVIDIA, 128k ctx, free (image+video), good fallback
+VISION_MODEL_PRIMARY = os.getenv(
+    "OPENROUTER_VISION_MODEL", "google/gemma-3-27b-it:free"
+)
+VISION_MODELS = [
+    VISION_MODEL_PRIMARY,
+    "google/gemma-3-12b-it:free",
+    "nvidia/nemotron-nano-12b-v2-vl:free",
+]
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+# Known valid image magic bytes
+_IMAGE_MAGIC = {
+    b"\xff\xd8\xff": "jpeg",
+    b"\x89PNG": "png",
+    b"GIF8": "gif",
+    b"RIFF": "webp",  # RIFF....WEBP
+}
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -103,70 +124,125 @@ def delete_document(doc_id):
     return True
 
 
-def analyze_document(doc_id):
-    """Analyze document using Moondream vision model."""
+def _call_openrouter_vision(image_b64: str, prompt: str, model: str) -> str:
+    """Send a base64 image + prompt to OpenRouter vision model. Returns response text."""
+    api_key = os.getenv("OPENROUTER_API_KEY", "")
+    if not api_key:
+        raise ValueError("OPENROUTER_API_KEY not set")
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "HTTP-Referer": "https://backpocket.os",
+        "X-Title": "BackPocket OS",
+        "Content-Type": "application/json",
+    }
+
+    # OpenRouter vision format: content is a list with text + image_url parts
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"},
+                    },
+                ],
+            }
+        ],
+        "max_tokens": 1500,
+    }
+
+    response = requests.post(
+        OPENROUTER_BASE_URL, headers=headers, json=payload, timeout=60
+    )
+
+    if response.status_code != 200:
+        raise Exception(
+            f"OpenRouter vision error {response.status_code}: {response.text[:300]}"
+        )
+
+    data = response.json()
+    return data["choices"][0]["message"]["content"]
+
+
+def analyze_document(doc_id, custom_prompt: str | None = None):
+    """Analyze a document image using OpenRouter vision (gemma-3-27b-it:free).
+    Falls back to gemma-3-12b-it:free if the primary model fails.
+    """
     doc = get_document(doc_id)
     if not doc:
         return {"status": "error", "message": "Document not found"}
 
     file_path = doc["file_path"]
     if not os.path.exists(file_path):
-        return {"status": "error", "message": "File not found"}
+        return {"status": "error", "message": "File not found on disk"}
+
+    # Non-image files (e.g. PDFs) — skip vision, return a helpful message
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext not in (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"):
+        return {
+            "status": "error",
+            "message": f"Vision model requires an image file. Got: {ext}. "
+            "Please upload a JPG or PNG.",
+        }
 
     try:
         with open(file_path, "rb") as f:
-            image_data = base64.b64encode(f.read()).decode("utf-8")
+            image_b64 = base64.b64encode(f.read()).decode("utf-8")
+    except Exception as e:
+        return {"status": "error", "message": f"Could not read file: {e}"}
 
-        import requests
+    prompt = custom_prompt or (
+        "You are a document analysis assistant for an Australian accounting firm.\n"
+        "Analyse this document image and extract:\n"
+        "1. Document type (invoice, receipt, contract, tax form, letter, other)\n"
+        "2. Key information: dates, dollar amounts, ABN/ACN, names, addresses\n"
+        "3. Any action items or deadlines visible\n"
+        "4. A plain-English summary of what this document is about\n\n"
+        "Be concise. If something is not visible, say 'not visible'."
+    )
 
-        ollama_url = f"{OLLAMA_BASE_URL}/api/chat"
+    ai_response = None
+    used_model = None
 
-        prompt = """You are a document analysis assistant. Analyze this image and extract:
-1. Document type (invoice, receipt, contract, letter, form, other)
-2. Key information (dates, amounts, names, addresses)
-3. Any important text or numbers
-4. Brief summary of what's in the document
+    # Try models in order until one succeeds
+    for model in VISION_MODELS:
+        try:
+            logger.info(f"Vision analysis: trying {model} for doc {doc_id}")
+            ai_response = _call_openrouter_vision(image_b64, prompt, model)
+            used_model = model
+            logger.info(
+                f"Vision analysis success with {model} ({len(ai_response)} chars)"
+            )
+            break
+        except Exception as e:
+            logger.warning(f"Vision model {model} failed: {e}. Trying next...")
 
-Return as JSON with keys: document_type, key_info, important_text, summary"""
-
-        payload = {
-            "model": OLLAMA_MODEL,
-            "messages": [{"role": "user", "content": prompt, "images": [image_data]}],
-            "stream": False,
+    if not ai_response:
+        return {
+            "status": "error",
+            "message": "All vision models failed. Check OPENROUTER_API_KEY.",
         }
 
-        response = requests.post(ollama_url, json=payload, timeout=180)
+    # Persist analysis to DB
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE documents SET ai_analysis = ?, status = 'analyzed' WHERE id = ?",
+        (ai_response, doc_id),
+    )
+    conn.commit()
+    conn.close()
 
-        logger.info(f"Ollama response status: {response.status_code}")
-        logger.info(f"Ollama response body: {response.text[:500]}")
-
-        if response.status_code == 200:
-            result = response.json()
-            ai_response = result.get("message", {}).get("content", "")
-
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                UPDATE documents 
-                SET ai_analysis = ?, status = 'analyzed', extracted_data = ?
-                WHERE id = ?
-            """,
-                (ai_response, "{}", doc_id),
-            )
-            conn.commit()
-            conn.close()
-
-            return {"status": "success", "analysis": ai_response}
-        else:
-            return {
-                "status": "error",
-                "message": f"Ollama error: {response.status_code}",
-            }
-
-    except Exception as e:
-        logger.error(f"Document analysis error: {e}")
-        return {"status": "error", "message": str(e)}
+    return {
+        "status": "success",
+        "analysis": ai_response,
+        "model_used": used_model,
+        "document_id": doc_id,
+    }
 
 
 init_documents_table()

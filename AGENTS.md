@@ -33,12 +33,24 @@ Key tables: `pending_approvals`, `instructions`, `sender_instructions`, `sops`, 
 4. **Dashboard path** - `/static/index.html` not `/`
 5. **Gemini model** - Use `gemini-2.5-flash` (not 2.0 - deprecated)
 
+## Mobile API Endpoints (Flutter)
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/mobile/pending` | GET | Simplified inbox for mobile (tier_label, preview, age_hours) |
+| `/api/mobile/approve` | POST | One-tap approve `{"ref_id": "...", "note": "optional"}` |
+| `/api/mobile/chat` | POST | Lightweight twin chat `{"message": "..."}` |
+
+All require `X-API-Key` header when `BP_API_KEY` is set in `.env`.
+
 ## Validation Commands
 
 ```bash
-python3 -c "import main"                # Test import
-curl http://127.0.0.1:8000/api/pending # Test pending API
-ruff check .                            # Lint
+python3 -c "import main"                       # Test import
+curl http://127.0.0.1:8000/api/pending         # Test pending API
+curl http://127.0.0.1:8000/api/mobile/pending  # Test mobile API
+ruff check .                                    # Lint
+./START_DEMO.sh                                 # Full demo reset + start
 ```
 
 ## CHANGE PROTOCOL

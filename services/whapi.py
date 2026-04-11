@@ -142,7 +142,7 @@ class WhatsAppService:
             return {"status": "error", "message": str(e)}
 
     def send_notification(self, email_summary: Dict, tier: int, ai_draft: str, ref_id: str = "????") -> Dict[str, Any]:
-        """Send a T1/T2 email notification to Cherry with draft and approval shortcuts."""
+        """Send a T1/T2 email notification to Steve with draft and approval shortcuts."""
         try:
             founder_phone = os.getenv("FOUNDER_PHONE", "")
             if not founder_phone:
@@ -173,7 +173,7 @@ class WhatsAppService:
 
     def send_daily_email_summary(self, pending_refs: Optional[List] = None, archived_today: Optional[List] = None, trashed_today: Optional[List] = None) -> Dict[str, Any]:
         """
-        Send Cherry a daily summary of ALL email activity by tier.
+        Send Steve a daily summary of ALL email activity by tier.
         - pending_refs: list of pending approval ref IDs (T1/T2 drafts)
         - archived_today: list of dicts with subject/sender/tier for T3/T4 archived
         - trashed_today: list of dicts for T5 trashed
@@ -252,12 +252,12 @@ def send_whatsapp_message(to_number: str, text: str) -> Dict[str, Any]:
 
 
 def send_notification(email_summary: Dict, tier: int, ai_draft: str, ref_id: str = "????") -> Dict[str, Any]:
-    """Send a T1/T2 notification to Cherry with draft and approval shortcuts."""
+    """Send a T1/T2 notification to Steve with draft and approval shortcuts."""
     return whatsapp_service.send_notification(email_summary, tier, ai_draft, ref_id)
 
 
 def send_daily_email_summary(pending_refs: Optional[List] = None, archived_today: Optional[List] = None, trashed_today: Optional[List] = None) -> Dict[str, Any]:
-    """Send Cherry's daily email activity summary by tier."""
+    """Send Steve's daily email activity summary by tier."""
     return whatsapp_service.send_daily_email_summary(pending_refs or [], archived_today or [], trashed_today or [])
 
 
@@ -304,7 +304,7 @@ def send_pending_items_summary():
 
 
 def send_morning_nudge():
-    """8 AM daily: Remind Cherry of any overnight pending drafts."""
+    """8 AM daily: Remind Steve of any overnight pending drafts."""
     import services.database as db
     pending_refs = [r for r in db.get_all_pending_refs() if not r.startswith("FIND-")]
     founder_phone = os.getenv("FOUNDER_PHONE", "")
@@ -313,7 +313,7 @@ def send_morning_nudge():
     
     
     if pending_refs:
-        lines = ["☀️ *Good morning, Cherry!*\n"]
+        lines = ["☀️ *Good morning, Steve!*\n"]
         lines.append(f"You have *{len(pending_refs)} email(s)* waiting for review:\n")
         
         # Group by tier
@@ -331,13 +331,13 @@ def send_morning_nudge():
         lines.append("\n💡 Reply *pending* to see all, or open dashboard for details.")
         msg = "\n".join(lines)
     else:
-        msg = "☀️ *Good morning, Cherry!* 🎉 Your inbox is clear — no pending emails!"
+        msg = "☀️ *Good morning, Steve!* 🎉 Your inbox is clear — no pending emails!"
     
     send_whatsapp_message(founder_phone, msg)
 
 
 def send_spam_bulk_ask():
-    """Optional: Ask Cherry if there's bulk spam to clear (can be expanded later)."""
+    """Optional: Ask Steve if there's bulk spam to clear (can be expanded later)."""
     pass
 
 

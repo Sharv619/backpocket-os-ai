@@ -95,7 +95,7 @@ def send_morning_pulse():
         else:
             pulse_msg += "\n"
             
-        pulse_msg += "Zero-cost & Scalable. Have a productive day, Cherry! 🚀"
+        pulse_msg += "Zero-cost & Scalable. Have a productive day, Steve! 🚀"
         
         clean_phone = "".join(filter(str.isdigit, founder_phone))
         send_whatsapp_message(clean_phone, pulse_msg)

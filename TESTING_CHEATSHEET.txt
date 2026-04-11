@@ -1,0 +1,299 @@
+================================================================================
+  BACKPOCKET OS - TESTING CHEATSHEET
+================================================================================
+
+QUICK START (Terminal 1 - Server)
+--------------------------------------------------------------------------------
+cd /home/lade/Hackathons/.git/backpocket-mvp
+python3 -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+
+DIAGNOSTIC CHECK (Terminal 2)
+--------------------------------------------------------------------------------
+python3 scripts/diagnostic_check.py
+# Expected: 4/4 checks passed ✓
+
+BASIC API TESTS (Terminal 2)
+================================================================================
+
+1. HEALTH CHECK (0.1 sec)
+  curl http://127.0.0.1:8000/health
+  Expected: {"status": "ok", ...}
+
+2. GET PENDING APPROVALS (0.5 sec)
+  curl -s http://127.0.0.1:8000/api/pending | jq .
+  Expected: Array of 5+ approval objects
+
+  Shortcut - Just count:
+  curl -s http://127.0.0.1:8000/api/pending | jq 'length'
+  Expected: 5
+
+  Shortcut - Just senders:
+  curl -s http://127.0.0.1:8000/api/pending | jq '.[].sender'
+
+3. APPROVE AN EMAIL (0.2 sec)
+  curl -X POST http://127.0.0.1:8000/api/approve \
+    -H "Content-Type: application/json" \
+    -d '{"ref_id": "DEMO-00001"}'
+  Expected: {"status": "approved", ...}
+
+  Then verify count dropped:
+  curl -s http://127.0.0.1:8000/api/pending | jq 'length'
+  Expected: 4 (was 5)
+
+4. SAVE DRAFT (0.3 sec)
+  curl -X POST http://127.0.0.1:8000/api/save-draft \
+    -H "Content-Type: application/json" \
+    -d '{"ref_id": "DEMO-00002", "draft_body": "Hi, thanks for reaching out!"}'
+  Expected: {"status": "saved", ...}
+
+5. GET DRAFTS (0.5 sec)
+  curl -s http://127.0.0.1:8000/api/drafts | jq .
+  Expected: Array of draft objects
+
+6. GET SPECIFIC DRAFT (0.2 sec)
+  curl -s http://127.0.0.1:8000/api/draft/DEMO-00001 | jq .
+  Expected: Single draft object with draft_body
+
+7. DOCUMENT UPLOAD (1 sec)
+  echo "Test invoice" > test.txt
+  curl -X POST http://127.0.0.1:8000/api/documents/upload \
+    -F "file=@test.txt" \
+    -F "document_type=invoice"
+  Expected: {"document_id": "...", "status": "uploaded"}
+
+8. LIST DOCUMENTS (0.2 sec)
+  curl -s http://127.0.0.1:8000/api/documents | jq .
+  Expected: Array of document objects
+
+9. TWIN CHAT (2-5 sec - uses Gemini)
+  curl -X POST http://127.0.0.1:8000/api/twin-chat \
+    -H "Content-Type: application/json" \
+    -d '{
+      "message": "How many urgent emails do I have?",
+      "conversation_id": "test"
+    }'
+  Expected: AI response about pending approvals
+
+10. MOBILE API - PENDING (0.5 sec)
+    curl -s -H "X-API-Key: demo" http://127.0.0.1:8000/api/mobile/pending | jq .
+    Expected: Simplified array with tier_label, preview, age_hours
+
+GMAIL INTEGRATION TESTS
+================================================================================
+
+1. SETUP GMAIL CREDENTIALS (one-time, 5 min)
+   - Go to: https://console.cloud.google.com
+   - Create OAuth 2.0 credential (Desktop app)
+   - Download JSON file
+   - Save as: gmail_credentials.json (in project root)
+   - Update .env: GOOGLE_APPLICATION_CREDENTIALS=gmail_credentials.json
+   - Restart server
+
+2. TRIGGER OAUTH (first run after setup)
+   curl http://127.0.0.1:8000/api/pending
+   → Browser opens → Click "Allow"
+   → token.json created automatically
+
+3. SEARCH GMAIL (once auth complete)
+   curl -X POST http://127.0.0.1:8000/api/search-gmail \
+     -H "Content-Type: application/json" \
+     -d '{"q": "from:your-email@domain.com"}'
+   Expected: Array of Gmail messages
+
+DATABASE QUERIES
+================================================================================
+
+View pending approvals in database:
+  python3 << 'EOF'
+  import sqlite3
+  db = sqlite3.connect('backpocket.db')
+  cursor = db.cursor()
+  cursor.execute("SELECT ref_id, sender, status FROM pending_approvals LIMIT 5")
+  for row in cursor.fetchall():
+      print(f"{row[0]}: {row[1]} - {row[2]}")
+  db.close()
+  EOF
+
+Count pending approvals:
+  python3 << 'EOF'
+  import sqlite3
+  db = sqlite3.connect('backpocket.db')
+  cursor = db.cursor()
+  cursor.execute("SELECT COUNT(*) FROM pending_approvals WHERE status = 'pending'")
+  print(f"Pending: {cursor.fetchone()[0]}")
+  db.close()
+  EOF
+
+TROUBLESHOOTING
+================================================================================
+
+Port 8000 already in use:
+  lsof -i :8000
+  kill -9 <PID>
+  OR: Use different port
+  python3 -m uvicorn main:app --host 127.0.0.1 --port 8001
+
+Database locked:
+  pkill -f uvicorn
+  pkill -f "python3.*main"
+  # Restart server
+
+Check if dependencies installed:
+  python3 -c "import fastapi; import google.auth; print('OK')"
+
+See server logs:
+  # Check the uvicorn output terminal (Terminal 1)
+  # Look for INFO, WARNING, or ERROR messages
+
+Test import without starting server:
+  python3 -c "import main; print('Import successful')"
+
+PERFORMANCE BENCHMARKS
+================================================================================
+
+Target response times:
+
+✓ /health                      < 0.1 sec
+✓ /api/pending                 < 0.5 sec  (5 items)
+✓ /api/approve                 < 0.2 sec
+✓ /api/save-draft              < 0.3 sec
+✓ /api/drafts                  < 0.5 sec
+✓ /api/draft/{ref_id}          < 0.2 sec
+✓ /api/documents/upload        < 2 sec
+✓ /api/documents               < 0.5 sec
+✓ /api/documents/analyze       < 30 sec (Moondream vision AI)
+✓ /api/twin-chat               2-5 sec   (Gemini API call)
+✓ /api/mobile/pending          < 0.5 sec
+
+USEFUL ONE-LINERS
+================================================================================
+
+Reset all pending approvals to demo state:
+  python3 scripts/demo_seed.py
+
+Check server is running:
+  curl http://127.0.0.1:8000/health
+
+Get count of approved vs pending:
+  python3 << 'EOF'
+  import sqlite3
+  db = sqlite3.connect('backpocket.db')
+  c = db.cursor()
+  c.execute("SELECT status, COUNT(*) FROM pending_approvals GROUP BY status")
+  for status, count in c.fetchall():
+      print(f"{status}: {count}")
+  db.close()
+  EOF
+
+Watch pending count in real-time:
+  watch -n 1 'curl -s http://127.0.0.1:8000/api/pending | jq length'
+
+Test all endpoints in sequence:
+  for endpoint in health api/pending api/drafts api/documents; do
+    echo "Testing /$endpoint..."
+    curl -s http://127.0.0.1:8000/$endpoint | jq . | head -5
+  done
+
+DATABASE OPERATIONS
+================================================================================
+
+Reset to demo data:
+  python3 scripts/demo_seed.py
+
+View all tables:
+  python3 << 'EOF'
+  import sqlite3
+  db = sqlite3.connect('backpocket.db')
+  c = db.cursor()
+  c.execute("SELECT name FROM sqlite_master WHERE type='table'")
+  for table in c.fetchall():
+      print(f"  {table[0]}")
+  db.close()
+  EOF
+
+Quick stats on database:
+  python3 << 'EOF'
+  import sqlite3
+  db = sqlite3.connect('backpocket.db')
+  c = db.cursor()
+  tables = ['pending_approvals', 'documents', 'chat_conversations', 'instructions']
+  for table in tables:
+      c.execute(f"SELECT COUNT(*) FROM {table}")
+      print(f"{table}: {c.fetchone()[0]} rows")
+  db.close()
+  EOF
+
+COMMON TESTING WORKFLOWS
+================================================================================
+
+Workflow 1: Test Complete Approval Cycle (2 min)
+  1. curl -s http://127.0.0.1:8000/api/pending | jq 'length'
+     → Check initial count (5)
+  2. curl -X POST http://127.0.0.1:8000/api/approve -H "Content-Type: application/json" \
+       -d '{"ref_id": "DEMO-00001"}'
+     → Approve one item
+  3. curl -s http://127.0.0.1:8000/api/pending | jq 'length'
+     → Verify count decreased (4)
+
+Workflow 2: Test Draft Editing (3 min)
+  1. curl -s http://127.0.0.1:8000/api/draft/DEMO-00002 | jq .draft_body
+     → See original draft
+  2. curl -X POST http://127.0.0.1:8000/api/save-draft \
+       -H "Content-Type: application/json" \
+       -d '{"ref_id": "DEMO-00002", "draft_body": "Updated response text"}'
+     → Save new draft
+  3. curl -s http://127.0.0.1:8000/api/draft/DEMO-00002 | jq .draft_body
+     → Verify updated
+
+Workflow 3: Test Document Processing (5 min)
+  1. echo "Invoice from Supplier" > test_invoice.txt
+     → Create test document
+  2. curl -X POST http://127.0.0.1:8000/api/documents/upload \
+       -F "file=@test_invoice.txt" -F "document_type=invoice"
+     → Upload document
+  3. curl -s http://127.0.0.1:8000/api/documents | jq '.[-1]'
+     → See uploaded document
+  4. curl -X POST http://127.0.0.1:8000/api/documents/analyze/<doc_id>
+     → Start analysis (Moondream)
+  5. (wait 30 sec) curl -s http://127.0.0.1:8000/api/documents/<doc_id> | jq .analysis
+     → Check results
+
+TESTING WITH DEMO MODE
+================================================================================
+
+Demo mode is already ENABLED in .env (DEMO_MODE=1)
+
+Benefits:
+  - No real Gmail sends
+  - No real WhatsApp sends
+  - Safe for testing live functionality
+  - Uses mock responses
+
+To DISABLE demo mode (use real APIs):
+  Edit .env: DEMO_MODE=0
+  Restart server
+
+ENVIRONMENT & CONFIG
+================================================================================
+
+Current configuration:
+  - DEMO_MODE: 1 (enabled - safe testing)
+  - GEMINI_API_KEY: Configured ✓
+  - OLLAMA_BASE_URL: http://localhost:11434 ✓
+  - GOOGLE_APPLICATION_CREDENTIALS: credentials.json (placeholder)
+  - BP_API_KEY: Empty (dev mode - no auth required)
+
+Check .env:
+  cat .env | grep -v "^#" | grep -v "^$"
+
+Edit .env:
+  nano .env
+  # Or use your preferred editor
+
+================================================================================
+  For more details, see:
+  - QUICK_TEST.md (2 minute guide)
+  - TEST_PIPELINES.md (comprehensive)
+  - API_REFERENCE.md (all endpoints)
+  - TESTING_REPORT.md (status report)
+================================================================================

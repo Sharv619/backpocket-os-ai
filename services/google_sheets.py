@@ -61,8 +61,8 @@ def ensure_sheets_exist():
         spreadsheet = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
         existing_sheets = [s.get('properties', {}).get('title') for s in spreadsheet.get('sheets', [])]
         
-        # Standard Schemas (Aligned with Cherry's Diagram)
-        # ---- Cherry's System Map (v2.2) ----
+        # Standard Schemas (Aligned with Steve's Diagram)
+        # ---- Steve's System Map (v2.2) ----
         REQUIRED_SHEETS = {
             "Clients_Master": ["First Name", "Last Name", "Primary Email", "Client Status", "Accountant/Auditor", "Mobile", "Birthdate", "Background Info", "Date Registered"],
             "Leads_Capture": ["First Name", "Last Name", "Primary Email", "Status", "Subject", "Snippet", "Actionable Items", "Date", "Decision"],
@@ -390,9 +390,9 @@ def sync_instructions_to_sheets(instructions):
                 inst.get('instructions', ''),
                 inst.get('created_at', ''),
                 inst.get('updated_at', now),
-                '',  # Notes - for Cherry to add context
+                '',  # Notes - for Steve to add context
                 'Active',  # Status - Active/Inactive
-                'Twin'  # Last_Updated_By - Twin/Cherry
+                'Twin'  # Last_Updated_By - Twin/Steve
             ])
         
         if not new_values:

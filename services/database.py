@@ -102,7 +102,47 @@ def init_db():
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-        
+
+    # 6. Instructions table (previously created on first write — moved here)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS instructions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            instruction_text TEXT NOT NULL,
+            category TEXT DEFAULT 'general',
+            target TEXT DEFAULT '',
+            target_type TEXT DEFAULT '',
+            description TEXT DEFAULT '',
+            is_critical INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'active',
+            is_active INTEGER DEFAULT 1,
+            is_test_mode INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # 7. Instruction revisions table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS instruction_revisions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            instruction_id INTEGER,
+            action TEXT,
+            changes_json TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # 8. Instruction categories table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS instruction_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category_name TEXT UNIQUE,
+            description TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    conn.commit()
     conn.close()
     logger.info("SQLITE MEMORY INITIALIZED")
 
@@ -136,6 +176,7 @@ def save_pending_approval(ref_id, data):
     
     conn = sqlite3.connect(DB_PATH, timeout=20)
     cursor = conn.cursor()
+    
     
     # Check for duplicates by message_id OR by sender+subject (same email sent twice)
     if msg_id:
@@ -222,13 +263,14 @@ def get_stale_approvals(hours=4):
     conn = sqlite3.connect(DB_PATH, timeout=20)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    # We nudge if it's > 4 hours old AND (never nudged OR last nudge was > 4 hours ago)
-    cursor.execute(f"""
-        SELECT * FROM pending_approvals 
-        WHERE status = 'pending' 
-        AND created_at <= datetime('now', '-{hours} hours')
-        AND (last_nudge_at IS NULL OR last_nudge_at <= datetime('now', '-{hours} hours'))
-    """)
+    # We nudge if it's > X hours old AND (never nudged OR last nudge was > X hours ago)
+    interval = f"-{int(hours)} hours"
+    cursor.execute("""
+        SELECT * FROM pending_approvals
+        WHERE status = 'pending'
+        AND created_at <= datetime('now', ?)
+        AND (last_nudge_at IS NULL OR last_nudge_at <= datetime('now', ?))
+    """, (interval, interval))
     rows = cursor.fetchall()
     conn.close()
     return [dict(r) for r in rows]
@@ -422,22 +464,6 @@ def save_instruction(instruction_text, category="general", is_active=True, targe
     conn = sqlite3.connect(DB_PATH, timeout=20)
     cursor = conn.cursor()
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS instructions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            instruction_text TEXT NOT NULL,
-            category TEXT DEFAULT 'general',
-            target TEXT DEFAULT '',
-            target_type TEXT DEFAULT '',
-            description TEXT DEFAULT '',
-            is_critical INTEGER DEFAULT 0,
-            status TEXT DEFAULT 'active',
-            is_active INTEGER DEFAULT 1,
-            is_test_mode INTEGER DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    cursor.execute('''
         INSERT INTO instructions (instruction_text, category, is_active, target, target_type, is_critical, description)
         VALUES (?, ?, ?, ?, ?, ?, ?)
     ''', (instruction_text, category, 1 if is_active else 0, target, target_type, 1 if is_critical else 0, description))
@@ -551,15 +577,6 @@ def save_revision(instruction_id, changes, action="update"):
     conn = sqlite3.connect(DB_PATH, timeout=20)
     cursor = conn.cursor()
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS instruction_revisions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            instruction_id INTEGER,
-            action TEXT,
-            changes_json TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    cursor.execute('''
         INSERT INTO instruction_revisions (instruction_id, action, changes_json)
         VALUES (?, ?, ?)
     ''', (instruction_id, action, json.dumps(changes)))
@@ -593,14 +610,6 @@ def save_category(category_name, description=""):
     """Save a new category."""
     conn = sqlite3.connect(DB_PATH, timeout=20)
     cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS instruction_categories (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            category_name TEXT UNIQUE,
-            description TEXT DEFAULT '',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
     cursor.execute('''
         INSERT OR IGNORE INTO instruction_categories (category_name, description)
         VALUES (?, ?)

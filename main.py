@@ -23,7 +23,7 @@ logging.basicConfig(
     encoding="utf-8",
 )
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, UploadFile, File
 from dotenv import load_dotenv
 import os
 import asyncio
@@ -104,12 +104,14 @@ logger.info("BACKPOCKET TWIN VERSION 2.2 STARTED")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        o for o in [
+        o
+        for o in [
             "http://localhost:8000",
             "http://127.0.0.1:8000",
             "http://localhost:3000",
             os.getenv("FRONTEND_ORIGIN", ""),
-        ] if o
+        ]
+        if o
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -119,16 +121,18 @@ app.add_middleware(
 # ── API KEY MIDDLEWARE ────────────────────────────────────────────────────────
 _BP_API_KEY = os.getenv("BP_API_KEY", "")
 
+
 class APIKeyMiddleware(BaseHTTPMiddleware):
     """Require X-API-Key header on all /api/* routes.
     Skipped when BP_API_KEY is not configured (dev mode).
     """
+
     async def dispatch(self, request: StarletteRequest, call_next):
         if not _BP_API_KEY:
-            return await call_next(request)   # dev mode: no key set → open
+            return await call_next(request)  # dev mode: no key set → open
         path = request.url.path
         if not path.startswith("/api/"):
-            return await call_next(request)   # non-API routes are always open
+            return await call_next(request)  # non-API routes are always open
         key = request.headers.get("x-api-key", "")
         if key != _BP_API_KEY:
             return StarletteResponse(
@@ -137,6 +141,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
                 media_type="application/json",
             )
         return await call_next(request)
+
 
 app.add_middleware(APIKeyMiddleware)
 
@@ -594,21 +599,21 @@ PROCESSING LAYERS:
 4. Run through AI for final tier decision
 """
 
-                prompt = f"""You are Cherry's Twin - her AI assistant. She's chatting with you conversationally.
+                prompt = f"""You are Steve's Twin - her AI assistant. She's chatting with you conversationally.
 
 ABOUT YOU:
-- You are Cherry's Digital Twin, running on BackPocket OS
-- You help Cherry with email management, client communication, and business tasks
+- You are Steve's Digital Twin, running on BackPocket OS
+- You help Steve with email management, client communication, and business tasks
 - You can discuss emails, drafts, pending approvals, and system status
-- You CAN offer choices to Cherry - use this format: "[CHOICES: Option 1 | Option 2 | Option 3]"
-- When Cherry agrees to something, acknowledge and offer to implement it: "Shall I implement this now?"
+- You CAN offer choices to Steve - use this format: "[CHOICES: Option 1 | Option 2 | Option 3]"
+- When Steve agrees to something, acknowledge and offer to implement it: "Shall I implement this now?"
 - You CAN take actions when explicitly asked - use the execute_action function
 
 {session_context}
 {recent_convo}
 
 WHAT YOU KNOW:
-- You have access to Cherry's pending approvals list
+- You have access to Steve's pending approvals list
 - You have access to her action history
 - You have access to sender-specific instructions
 - You know about her email drafts when she's working on them
@@ -632,7 +637,7 @@ FORMATTING RULES:
 {draft_context}
 {sender_instructions}
 
-Cherry says: "{message}"
+Steve says: "{message}"
 
 Respond conversationally as the Twin. Be helpful, practical, and concise. If she wants to improve a draft, help her. If she wants research, provide insights. If she agrees to something, ask if she wants you to implement it."""
 
@@ -674,6 +679,63 @@ Respond conversationally as the Twin. Be helpful, practical, and concise. If she
 
         logger.error(f"Twin chat error: {e}\n{traceback.format_exc()}")
         return {"response": f"Error: {str(e)[:100]}", "error": str(e)}
+
+
+# ── Specialized Twins (Agentic RAG) ──────────────────────────────────────────
+
+
+@app.get("/api/twins")
+async def get_twins():
+    """List the three specialized AI twins."""
+    from services.twin_engine import list_twins
+
+    return {"twins": list_twins()}
+
+
+@app.post("/api/twins/chat")
+async def twins_chat(request: Request):
+    """Chat with a specialized twin (Accountant/Auditor/Admin) using ChromaDB RAG."""
+    try:
+        data = await request.json()
+        message = data.get("message", "")
+        twin_type = data.get("twin_type", "accountant")
+        conversation_id = data.get("conversation_id")
+
+        if not message:
+            return {"error": "message is required"}, 400
+
+        from services.twin_engine import twin_chat
+
+        result = await twin_chat(twin_type, message, conversation_id)
+        return result
+    except Exception as e:
+        logger.error(f"Twins chat error: {e}", exc_info=True)
+        return {"response": f"Error: {str(e)[:100]}", "error": str(e)}
+
+
+@app.post("/api/twins/ingest")
+async def twins_ingest(request: Request):
+    """Ingest a text chunk into a twin's ChromaDB knowledge base."""
+    try:
+        data = await request.json()
+        twin_type = data.get("twin_type", "accountant")
+        doc_id = data.get("doc_id", str(__import__("uuid").uuid4()))
+        text = data.get("text", "")
+        metadata = data.get("metadata", {})
+
+        if not text:
+            return {"error": "text is required"}, 400
+
+        from services.twin_engine import ingest_document
+
+        ok = ingest_document(twin_type, doc_id, text, metadata)
+        return {
+            "status": "ingested" if ok else "chromadb_unavailable",
+            "doc_id": doc_id,
+        }
+    except Exception as e:
+        logger.error(f"Twins ingest error: {e}", exc_info=True)
+        return {"error": str(e)}
 
 
 @app.get("/api/conversations")
@@ -1298,13 +1360,19 @@ async def whatsapp_webhook(request: Request):
         if _webhook_secret:
             import hmac as _hmac
             import hashlib as _hashlib
+
             received_sig = request.headers.get("x-hub-signature-256", "")
-            expected_sig = "sha256=" + _hmac.new(
-                _webhook_secret.encode(), raw_body, _hashlib.sha256
-            ).hexdigest()
+            expected_sig = (
+                "sha256="
+                + _hmac.new(
+                    _webhook_secret.encode(), raw_body, _hashlib.sha256
+                ).hexdigest()
+            )
             if not _hmac.compare_digest(received_sig, expected_sig):
                 logger.warning("❌ Webhook HMAC mismatch — request rejected")
-                return JSONResponse(status_code=403, content={"detail": "Invalid signature"})
+                return JSONResponse(
+                    status_code=403, content={"detail": "Invalid signature"}
+                )
         # ─────────────────────────────────────────────────────────────────
 
         if raw_body:
@@ -1956,6 +2024,186 @@ def read_root():
     return FileResponse("static/index.html")
 
 
+@app.get("/welcome")
+def welcome_page():
+    """5am warehouse landing page — high-impact, Tailwind CSS, no external deps."""
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BackPocket OS — Your Business in Your Back Pocket</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&display=swap');
+    * { font-family: 'Inter', sans-serif; }
+    body {
+      background: linear-gradient(135deg, #0a0a0a 0%, #1a1008 30%, #2d1a00 60%, #1a0d00 100%);
+      min-height: 100vh;
+    }
+    .glow-amber { text-shadow: 0 0 40px rgba(251,191,36,0.4), 0 0 80px rgba(251,191,36,0.15); }
+    .glow-orange { box-shadow: 0 0 30px rgba(251,146,60,0.3), inset 0 1px 0 rgba(255,255,255,0.1); }
+    .glass {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      backdrop-filter: blur(12px);
+    }
+    .pill-urgent { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; }
+    .pill-high   { background: rgba(251,146,60,0.15); border: 1px solid rgba(251,146,60,0.3); color: #fdba74; }
+    .pill-medium { background: rgba(234,179,8,0.15);  border: 1px solid rgba(234,179,8,0.3);  color: #fde047; }
+    .hero-line { animation: fadeUp 0.8s ease both; }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .delay-1 { animation-delay: 0.1s; }
+    .delay-2 { animation-delay: 0.25s; }
+    .delay-3 { animation-delay: 0.4s; }
+    .delay-4 { animation-delay: 0.55s; }
+    .delay-5 { animation-delay: 0.7s; }
+    .cta-btn {
+      background: linear-gradient(135deg, #f97316, #ea580c);
+      transition: all 0.2s;
+    }
+    .cta-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(249,115,22,0.4); }
+    .outline-btn {
+      border: 1px solid rgba(251,191,36,0.4);
+      color: #fbbf24;
+      transition: all 0.2s;
+    }
+    .outline-btn:hover { background: rgba(251,191,36,0.1); border-color: rgba(251,191,36,0.7); }
+  </style>
+</head>
+<body class="text-white overflow-x-hidden">
+
+  <!-- NAV -->
+  <nav class="fixed top-0 w-full z-50 glass border-b border-white/5">
+    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-orange-600 flex items-center justify-center text-black font-black text-sm">BP</div>
+        <span class="font-bold text-white tracking-tight">BackPocket OS</span>
+      </div>
+      <div class="flex gap-3">
+        <a href="/static/index.html" class="outline-btn px-4 py-2 rounded-lg text-sm font-medium">Dashboard</a>
+        <a href="/docs" class="cta-btn px-4 py-2 rounded-lg text-sm font-semibold text-white">API Docs</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="min-h-screen flex items-center justify-center px-6 pt-24 pb-16">
+    <div class="max-w-4xl w-full text-center">
+      <!-- Badge -->
+      <div class="hero-line delay-1 inline-flex items-center gap-2 glass rounded-full px-4 py-2 text-xs text-amber-300 font-medium mb-8">
+        <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
+        AI-Powered Email Triage · Built for Sole Traders
+      </div>
+
+      <!-- Headline -->
+      <h1 class="hero-line delay-2 glow-amber text-5xl md:text-7xl font-black tracking-tight leading-none mb-6">
+        Your business,<br/>
+        <span class="text-amber-400">in your back pocket.</span>
+      </h1>
+
+      <!-- Sub -->
+      <p class="hero-line delay-3 text-lg md:text-xl text-white/60 max-w-2xl mx-auto mb-10 leading-relaxed">
+        BackPocket OS is your AI twin that reads emails, drafts replies, and lets you approve
+        everything in one tap — while you're on the job.
+      </p>
+
+      <!-- CTA Row -->
+      <div class="hero-line delay-4 flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
+        <a href="/static/index.html" class="cta-btn px-8 py-4 rounded-xl font-bold text-lg text-white w-full sm:w-auto">
+          Open Dashboard &rarr;
+        </a>
+        <a href="/api/pending" class="outline-btn px-8 py-4 rounded-xl font-semibold text-lg w-full sm:w-auto">
+          View Pending Inbox
+        </a>
+      </div>
+
+      <!-- Live Stats Pills -->
+      <div class="hero-line delay-5 flex flex-wrap items-center justify-center gap-3 text-sm">
+        <span class="pill-urgent px-3 py-1 rounded-full font-semibold">TIER 1 · Existing Clients</span>
+        <span class="pill-high px-3 py-1 rounded-full font-semibold">TIER 2 · Govt / ATO / ASIC</span>
+        <span class="pill-medium px-3 py-1 rounded-full font-semibold">TIER 3 · Suppliers</span>
+        <span class="glass px-3 py-1 rounded-full text-white/50">TIER 4 · Portal Digests</span>
+        <span class="glass px-3 py-1 rounded-full text-white/30">TIER 5 · Spam &rarr; Trash</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURE CARDS -->
+  <section class="py-20 px-6">
+    <div class="max-w-6xl mx-auto">
+      <h2 class="text-3xl font-bold text-center text-white/80 mb-12">What BackPocket does for you</h2>
+      <div class="grid md:grid-cols-3 gap-6">
+
+        <div class="glass rounded-2xl p-6 glow-orange">
+          <div class="text-3xl mb-4">📬</div>
+          <h3 class="text-lg font-bold text-amber-300 mb-2">5-Tier Email Triage</h3>
+          <p class="text-white/60 text-sm leading-relaxed">
+            Every email is sorted in milliseconds — clients stay in your inbox, spam goes straight to trash. Zero missed messages.
+          </p>
+        </div>
+
+        <div class="glass rounded-2xl p-6">
+          <div class="text-3xl mb-4">✍️</div>
+          <h3 class="text-lg font-bold text-amber-300 mb-2">AI Draft Replies</h3>
+          <p class="text-white/60 text-sm leading-relaxed">
+            Gemini drafts every reply in Steve's voice — short, warm, professional. You review in seconds, approve in one tap.
+          </p>
+        </div>
+
+        <div class="glass rounded-2xl p-6">
+          <div class="text-3xl mb-4">📱</div>
+          <h3 class="text-lg font-bold text-amber-300 mb-2">WhatsApp + Mobile</h3>
+          <p class="text-white/60 text-sm leading-relaxed">
+            Get nudged on WhatsApp when something urgent arrives. Approve from the Flutter mobile app without opening a laptop.
+          </p>
+        </div>
+
+        <div class="glass rounded-2xl p-6">
+          <div class="text-3xl mb-4">🧠</div>
+          <h3 class="text-lg font-bold text-amber-300 mb-2">Twin AI Memory</h3>
+          <p class="text-white/60 text-sm leading-relaxed">
+            The twin learns from every correction — getting smarter about your clients, your tone, and your rules over time.
+          </p>
+        </div>
+
+        <div class="glass rounded-2xl p-6">
+          <div class="text-3xl mb-4">🧾</div>
+          <h3 class="text-lg font-bold text-amber-300 mb-2">ATO Invoice Generator</h3>
+          <p class="text-white/60 text-sm leading-relaxed">
+            Generate ATO-compliant tax invoices with GST in seconds — voice input, PDF output, ready to send.
+          </p>
+        </div>
+
+        <div class="glass rounded-2xl p-6">
+          <div class="text-3xl mb-4">📊</div>
+          <h3 class="text-lg font-bold text-amber-300 mb-2">Google Sheets Sync</h3>
+          <p class="text-white/60 text-sm leading-relaxed">
+            Client master list, expense logs, portal updates — all synced live to your Sheets without lifting a finger.
+          </p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="border-t border-white/5 py-10 text-center text-white/30 text-sm">
+    <p>BackPocket OS &copy; 2026 &middot; Built for Australian sole traders &middot;
+      <a href="/static/index.html" class="text-amber-400/60 hover:text-amber-400 transition">Open App</a>
+    </p>
+  </footer>
+
+</body>
+</html>"""
+    from fastapi.responses import HTMLResponse
+
+    return HTMLResponse(content=html, status_code=200)
+
+
 @app.get("/test-sheets")
 async def check_sheets():
     """Endpoint to check the Google Sheets integration status."""
@@ -2014,7 +2262,6 @@ async def get_system_status():
     }
 
 
-@app.get("/morning-pulse")
 async def trigger_pulse():
     """Manually trigger the morning pulse report."""
     loop = asyncio.get_running_loop()
@@ -2022,8 +2269,44 @@ async def trigger_pulse():
     return {"message": "Morning pulse sent successfully!"}
 
 
-@app.get("/test-triage")
-async def test_triage(subject: str, snippet: str):
+[
+    {"status": "success", "stages": "stages"},
+    {"status": "error", "message": "str(e)"},
+    {"status": "success", "current_stage": "1", "stage_title": "current_stage["},
+    "e",
+    {"status": "error", "message": "str(e)"},
+    'app.get("/test-triage',
+    "test_triage(subject",
+    "snippet",
+    "str)",
+]
+
+
+@app.get("/api/workflow/stages")
+async def get_workflow_stages():
+    """Return all workflow stages for the tradie job pipeline."""
+    try:
+        from services.database import get_workflow_stages
+
+        stages = get_workflow_stages()
+        return {"status": "success", "stages": stages}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/workflow/current")
+async def get_current_workflow_stage():
+    """Return the current stage in the workflow (simulated for demo)."""
+    try:
+        # For demo, we'll simulate being at stage 1
+        return {
+            "status": "success",
+            "current_stage": "1",
+            "stage_title": "Client Inquiry / Call for Quote",
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
     """Manually test the AI Triage on provided text."""
     loop = asyncio.get_running_loop()
     email_content = {"subject": subject, "snippet": snippet}
@@ -2113,7 +2396,9 @@ async def api_approve(request: ApproveRequest):
 
     # DEMO_MODE: skip real send — safe for live demos
     if os.getenv("DEMO_MODE", "0") == "1":
-        db.log_action(ref_id, "approved_demo", info.get("tier", ""), "demo mode — no real send")
+        db.log_action(
+            ref_id, "approved_demo", info.get("tier", ""), "demo mode — no real send"
+        )
         return {
             "status": "demo",
             "message": f"DEMO MODE: draft for {email_addr} approved (not sent). Set DEMO_MODE=0 for real sends.",
@@ -2639,25 +2924,25 @@ async def api_invoice_generate(request: Request):
     from datetime import datetime, timedelta
 
     try:
-        data        = await request.json()
+        data = await request.json()
         client_name = data.get("client_name", "Client")
         client_email = data.get("client_email", "")
-        items       = data.get("items", [])
-        notes       = data.get("notes", "")
+        items = data.get("items", [])
+        notes = data.get("notes", "")
 
         if not items:
             return JSONResponse({"error": "No line items provided"}, status_code=400)
 
-        today   = datetime.now()
-        due     = today + timedelta(days=14)
+        today = datetime.now()
+        due = today + timedelta(days=14)
         inv_num = next_invoice_number()
 
         invoice_data = {
             "invoice_number": inv_num,
-            "date":     today.strftime("%Y-%m-%d"),
+            "date": today.strftime("%Y-%m-%d"),
             "due_date": due.strftime("%Y-%m-%d"),
             "line_items": items,
-            "notes":    notes,
+            "notes": notes,
         }
         client_data = {"name": client_name, "email": client_email}
 
@@ -2945,7 +3230,7 @@ async def background_scheduler():
 
 
 async def process_triaged_email(email, triage, loop):
-    """Handles the logic after an email has been triaged, following Cherry's Handwritten Map."""
+    """Handles the logic after an email has been triaged, following Steve's Handwritten Map."""
     from services.google_sheets import log_activity, check_client_identity
     from services.gmail import get_historical_context, archive_message
     from services.imap import archive_message_imap
@@ -3129,7 +3414,7 @@ EMAIL:
                 except Exception as e:
                     logger.error(f"Error auto-onboarding client: {e}")
 
-        # 🛡️ STAY IN INBOX per Cherry's Map
+        # 🛡️ STAY IN INBOX per Steve's Map
         logger.info(f"🛡️ TIER {tier} SHIELD: {clean_email} stays in Inbox.")
 
         # Only Tier 1 gets a draft - Tier 2 just logs
@@ -3239,7 +3524,7 @@ EMAIL:
             # Normal portal updates handling
             if is_portal and "digest" in email["subject"].lower():
                 if has_activity:
-                    logger.info("PORTAL ACTIVITY: Notifying Cherry.")
+                    logger.info("PORTAL ACTIVITY: Notifying Steve.")
                     await loop.run_in_executor(
                         None,
                         send_whatsapp_message,
@@ -3366,15 +3651,17 @@ async def mobile_pending():
                 age_hours = round((now - created).total_seconds() / 3600, 1)
             except Exception:
                 age_hours = 0
-            items.append({
-                "ref_id": r["ref_id"],
-                "sender": r["sender"],
-                "subject": r["subject"],
-                "tier": int(r["tier"]) if r["tier"] else 3,
-                "tier_label": _TIER_LABELS.get(str(r["tier"]), "MEDIUM"),
-                "preview": (r["draft_body"] or "")[:120],
-                "age_hours": age_hours,
-            })
+            items.append(
+                {
+                    "ref_id": r["ref_id"],
+                    "sender": r["sender"],
+                    "subject": r["subject"],
+                    "tier": int(r["tier"]) if r["tier"] else 3,
+                    "tier_label": _TIER_LABELS.get(str(r["tier"]), "MEDIUM"),
+                    "preview": (r["draft_body"] or "")[:120],
+                    "age_hours": age_hours,
+                }
+            )
         return {"count": len(items), "items": items}
     except Exception as e:
         logger.error(f"mobile_pending error: {e}")
@@ -3399,22 +3686,110 @@ async def mobile_approve(request: MobileApproveRequest):
     tier = info.get("tier", "3")
 
     if os.getenv("DEMO_MODE", "0") == "1":
-        db.log_action(ref_id, "approved_demo", tier, request.note or "mobile approve (demo)")
+        db.log_action(
+            ref_id, "approved_demo", tier, request.note or "mobile approve (demo)"
+        )
         return {
             "status": "demo",
             "ref_id": ref_id,
             "message": f"DEMO MODE: would have sent draft to {sender}",
         }
 
-    # Real mode: delegate to the existing approve logic
+    # Real mode: mirror the desktop /api/approve logic exactly
+    email_addr = sender.strip()
+    draft = info.get("draft_body", "")
+    delivered_to = info.get("delivered_to", "")
     loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(None, lambda: None)  # placeholder — real send via api_approve
-    db.log_action(ref_id, "approved_mobile", tier, request.note or "mobile approve")
-    return {
-        "status": "approved",
-        "ref_id": ref_id,
-        "message": f"Draft sent to {sender} (Re: {subject})",
-    }
+
+    if not email_addr or "@" not in email_addr:
+        return {"status": "error", "message": f"Invalid recipient: '{email_addr}'"}
+
+    # Clean up "Re: Re:" duplication
+    clean_subject = subject
+    if clean_subject.lower().startswith("re: re:"):
+        clean_subject = clean_subject[6:].strip()
+    elif clean_subject.lower().startswith("re:"):
+        clean_subject = clean_subject[4:].strip()
+
+    # AUTO-MATCH TOKEN based on delivered_to account
+    if "|" in delivered_to:
+        actual_alias, token_source = delivered_to.split("|", 1)
+    elif delivered_to:
+        actual_alias = delivered_to
+        if "yourwebaccountant" in delivered_to.lower():
+            token_source = "token_ywa.json"
+        elif "bigbossaccountants" in delivered_to.lower():
+            token_source = "token_imap_admin.json"
+        elif "bigbossgroup" in delivered_to.lower():
+            token_source = "token.json"
+        else:
+            token_source = "token.json"
+    else:
+        actual_alias, token_source = None, "token.json"
+
+    try:
+        if token_source.startswith("token_imap_"):
+            from services.imap import send_email_smtp
+
+            result = await loop.run_in_executor(
+                None,
+                send_email_smtp,
+                token_source,
+                email_addr,
+                f"Re: {clean_subject}",
+                draft,
+            )
+        else:
+            result = await loop.run_in_executor(
+                None,
+                send_email,
+                email_addr,
+                f"Re: {clean_subject}",
+                draft,
+                actual_alias,
+                token_source,
+            )
+
+        if result.get("status") == "success":
+            db.log_action(
+                ref_id, "approved_mobile", tier, request.note or "mobile approve"
+            )
+            db.save_correction(
+                ref_id,
+                "approve",
+                draft,
+                draft,
+                "Approved via mobile",
+                sender=email_addr,
+                subject=clean_subject,
+            )
+            db.delete_pending_approval(ref_id)
+
+            # WhatsApp notification
+            try:
+                from services.whapi import send_whatsapp_message
+
+                founder_phone = os.getenv("FOUNDER_PHONE") or ""
+                if founder_phone:
+                    await loop.run_in_executor(
+                        None,
+                        send_whatsapp_message,
+                        founder_phone,
+                        f"✅ *EMAIL SENT (Mobile)*\n\nTo: {email_addr}\nSubject: {clean_subject}\n\nRef: {ref_id}",
+                    )
+            except Exception:
+                pass
+
+            return {
+                "status": "approved",
+                "ref_id": ref_id,
+                "message": f"Draft sent to {email_addr} (Re: {clean_subject})",
+            }
+        else:
+            return {"status": "error", "message": result.get("message", "Send failed")}
+    except Exception as e:
+        logger.error(f"mobile_approve send error: {e}")
+        return {"status": "error", "message": str(e)}
 
 
 class MobileChatRequest(BaseModel):
@@ -3431,7 +3806,10 @@ async def mobile_chat(request: MobileChatRequest):
 
         client = get_gemini_client()
         if not client:
-            return {"response": "AI not available — check GEMINI_API_KEY.", "conversation_id": ""}
+            return {
+                "response": "AI not available — check GEMINI_API_KEY.",
+                "conversation_id": "",
+            }
 
         context = ""
         try:
@@ -3440,12 +3818,13 @@ async def mobile_chat(request: MobileChatRequest):
             pass
 
         system_prompt = (
-            "You are BackPocket Twin, an AI assistant for Cherry, an Australian accountant "
+            "You are BackPocket Twin, an AI assistant for Steve, an Australian accountant "
             "who manages emails for sole traders and tradies. Be concise and helpful.\n\n"
             f"{context}"
         )
 
         from google.genai import types as genai_types
+
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=request.message,
@@ -3467,27 +3846,39 @@ async def mobile_chat(request: MobileChatRequest):
 
 
 @app.post("/api/documents/upload")
-async def upload_document(request: Request):
-    """Upload a document (image/file)."""
+async def upload_document(file: UploadFile = File(...), category: str = "other"):
+    """Upload a document (image/file) using FastAPI's UploadFile for proper filename extraction."""
     try:
-        from services.document_vision import save_document
+        import uuid
+        import os
+        from services.document_vision import save_document, UPLOAD_DIR
 
-        content_type = request.headers.get("content-type", "")
-        body = await request.body()
-        filename = "document.jpg"
+        filename = file.filename or "document.jpg"
 
-        if "filename=" in content_type:
-            import re
+        # Extract just the file bytes from the UploadFile
+        # Read as bytes and handle potential form data wrapper
+        content = await file.read()
 
-            match = re.search(r'filename="([^"]+)"', content_type)
-            if match:
-                filename = match.group(1)
+        # If content starts with multipart boundary, extract binary part
+        if content.startswith(b"------"):
+            # Find binary section between headers and next boundary
+            header_end = content.find(b"\r\n\r\n")
+            if header_end > 0:
+                # Find end boundary
+                next_boundary = content.find(b"\r\n------", header_end)
+                if next_boundary > 0:
+                    content = content[header_end + 4 : next_boundary]
 
-        doc_id = save_document(body, filename, category="other")
+        # Ensure we have valid image data
+        if len(content) < 100:
+            return {"status": "error", "message": "File too small or invalid"}
+
+        doc_id = save_document(content, filename, category=category)
 
         return {
             "status": "success",
             "document_id": doc_id,
+            "filename": filename,
             "message": "Document uploaded",
         }
 
@@ -3550,6 +3941,189 @@ async def delete_document(doc_id: int):
         return {"status": "error", "message": str(e)}
 
 
+# ============================================================================
+# MARKETING / GROWTH API — GBP Posts, Review Requests, SEO Insights
+# ============================================================================
+
+
+class GBPPostRequest(BaseModel):
+    job_description: str
+    suburb: str
+
+
+@app.post("/api/marketing/gbp-post")
+async def create_gbp_post(request: GBPPostRequest):
+    """Draft a 2-sentence Google Business Profile post from a job description + suburb.
+    Uses Gemini to write it in Steve's voice, logs to marketing_activity table.
+    """
+    try:
+        from services.gemini import get_openrouter_response, get_gemini_client
+        from google.genai import types as genai_types
+
+        prompt = (
+            f"Write a 2-sentence Google Business Profile post for a tradie business "
+            f"in {request.suburb}, Australia. "
+            f"The job was: {request.job_description}. "
+            f"Tone: friendly, local, professional. Mention the suburb. "
+            f"End with a call-to-action like 'Call us for a free quote!' "
+            f"Return ONLY the post text, no quotes or labels."
+        )
+
+        post_text = None
+
+        # Try OpenRouter free model first
+        post_text = get_openrouter_response(
+            prompt,
+            model="google/gemma-3-27b-it:free",
+            sys_prompt="You are a local tradie marketing assistant. Write punchy, local GBP posts.",
+        )
+
+        # Fallback to Gemini native
+        if not post_text:
+            client = get_gemini_client()
+            if client:
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash", contents=prompt
+                )
+                post_text = (
+                    response.text.strip() if response and response.text else None
+                )
+
+        if not post_text:
+            post_text = (
+                f"Just completed a job in {request.suburb}! "
+                f"{request.job_description} — done right, on time. "
+                f"Call us for a free quote!"
+            )
+
+        # Log to DB
+        conn = __import__("sqlite3").connect("backpocket.db")
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO marketing_activity
+               (activity_type, job_description, suburb, generated_post, status)
+               VALUES (?, ?, ?, ?, ?)""",
+            ("gbp_post", request.job_description, request.suburb, post_text, "draft"),
+        )
+        activity_id = cur.lastrowid
+        conn.commit()
+        conn.close()
+
+        return {
+            "status": "success",
+            "activity_id": activity_id,
+            "post": post_text,
+            "suburb": request.suburb,
+            "note": "Post drafted and saved. Mark as 'posted' when live on GBP.",
+        }
+    except Exception as e:
+        logger.error(f"GBP post error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/marketing/activity")
+async def get_marketing_activity(limit: int = 20):
+    """Get recent marketing activity (GBP posts, review requests)."""
+    try:
+        conn = __import__("sqlite3").connect("backpocket.db")
+        conn.row_factory = __import__("sqlite3").Row
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM marketing_activity ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return {"count": len(rows), "activity": rows}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/marketing/insights")
+async def get_marketing_insights():
+    """Return simulated local SEO insights for the demo."""
+    return {
+        "status": "success",
+        "insights": {
+            "local_search_impressions": {
+                "value": "+22%",
+                "label": "Local Search Impressions",
+                "trend": "up",
+            },
+            "maps_visibility": {
+                "value": "High",
+                "label": "Google Maps Visibility",
+                "area": "Campbelltown / Macarthur",
+            },
+            "pending_review_requests": {"value": 3, "label": "Pending Review Requests"},
+            "gbp_posts_this_month": {"value": 0, "label": "GBP Posts This Month"},
+            "note": "Impressions data is simulated for demo. Connect Google Search Console for live data.",
+        },
+    }
+
+
+# ── Voice / ElevenLabs TTS ───────────────────────────────────────────────────
+class TTSRequest(BaseModel):
+    text: str
+    voice: str = "male"  # "male" or "female"
+
+
+@app.post("/api/voice/tts")
+async def text_to_speech(request: TTSRequest):
+    """Generate speech from text using ElevenLabs (if API key configured)."""
+    api_key = os.getenv("ELEVENLABS_API_KEY", "")
+
+    if not api_key or api_key == "your_elevenlabs_api_key_here":
+        # Fallback: return error so frontend uses Web Speech API
+        return {"status": "error", "message": "ElevenLabs API key not configured"}
+
+    # Select voice ID based on gender preference
+    voice_map = {
+        "male": "pNInz6obpgDQGcFmaJgB",  # Adam
+        "female": "21m00Tcm4TlvDq8ikWAM",  # Rachel
+    }
+    voice_id = voice_map.get(request.voice, voice_map["male"])
+
+    try:
+        import requests
+
+        response = requests.post(
+            f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
+            headers={
+                "Accept": "audio/mpeg",
+                "Content-Type": "application/json",
+                "xi-api-key": api_key,
+            },
+            json={
+                "text": request.text,
+                "model_id": "eleven_monolingual_v1",
+                "voice_settings": {
+                    "stability": 0.5,
+                    "similarity_boost": 0.75,
+                },
+            },
+            timeout=30,
+        )
+
+        if response.status_code != 200:
+            return {
+                "status": "error",
+                "message": f"ElevenLabs error: {response.status_code}",
+            }
+
+        # Return the audio as a response with proper headers
+        from fastapi.responses import Response
+
+        return Response(
+            content=response.content,
+            media_type="audio/mpeg",
+            headers={"Content-Disposition": "inline"},
+        )
+    except Exception as e:
+        logger.error(f"TTS error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
 if __name__ == "__main__":
     import uvicorn
 
@@ -3560,4 +4134,4 @@ if __name__ == "__main__":
         reload=False,
         use_colors=False,
         log_level="warning",
-    )
+    

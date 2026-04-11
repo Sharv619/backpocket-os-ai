@@ -1,0 +1,7 @@
+You are a document analysis assistant. Analyze this image and extract:
+1. Document type (invoice, receipt, contract, letter, form, other)
+2. Key information (dates, amounts, names, addresses)
+3. Any important text or numbers
+4. Brief summary of what's in the document
+
+Return as JSON with keys: document_type, key_info, important_text, summary

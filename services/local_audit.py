@@ -1,70 +1,99 @@
 import os
+import re
 import requests
 import logging
 import json
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+# Free, 65k context, strong reasoning — no Ollama required
+AUDIT_MODEL = os.getenv(
+    "OPENROUTER_AUDIT_MODEL", "meta-llama/llama-3.3-70b-instruct:free"
+)
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+
 def run_self_audit():
-    """Reads all project files and feeds them to Ollama for a 'Twin Audit'."""
-    ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/api/generate")
-    model = os.getenv("OLLAMA_MODEL", "deepseek-r1:1.5b")
-    
-    # 1. READ CORE SYSTEM FILES
+    """Reads core project files and sends them to OpenRouter for a Twin Audit.
+    Replaces the previous Ollama/deepseek implementation.
+    """
+    api_key = os.getenv("OPENROUTER_API_KEY", "")
+    if not api_key:
+        return "Self-audit unavailable: OPENROUTER_API_KEY not set."
+
+    # Read core files (cap each at 2000 chars to stay within context)
     files_to_audit = [
         "main.py",
         "services/gemini.py",
         "services/google_sheets.py",
         "services/gmail.py",
-        "services/whapi.py"
+        "services/whapi.py",
     ]
-    
-    codebase_summary = ""
-    for f in files_to_audit:
-        if os.path.exists(f):
-            with open(f, "r", encoding="utf-8") as file:
-                codebase_summary += f"\n\n--- FILE: {f} ---\n{file.read()[:2000]}..." # Limit for Ollama context
 
-    prompt = f"""
-    You are the 'BackPocket Digital Twin Auditor'.
-    
-    SYSTEM DIRECTORY AUDIT:
-    {codebase_summary}
-    
-    CHALLENGE: 
-    Cherry wants her Twin to be smarter, faster, and zero-cost.
-    Based on the code above:
-    1. Identify any potential bugs or 'stuck' points.
-    2. Suggest one improvement to the dashboard to make it more mobile-friendly.
-    3. How can we make the triage logic 'Cherry-Identity' compliant?
-    
-    Think like a world-class CTO for a small business.
-    Return your report in a warm, helpful tone.
-    """
-    
+    codebase_summary = ""
+    for path in files_to_audit:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as fh:
+                snippet = fh.read()[:2000]
+            codebase_summary += f"\n\n--- FILE: {path} ---\n{snippet}...(truncated)"
+
+    prompt = (
+        "You are the BackPocket Digital Twin Auditor — a world-class CTO advisor "
+        "for a small Australian accounting and trades business.\n\n"
+        "SYSTEM CODE SNAPSHOT:\n"
+        f"{codebase_summary}\n\n"
+        "YOUR AUDIT TASKS:\n"
+        "1. Identify any potential bugs or stuck points in the code.\n"
+        "2. Suggest one improvement to make the dashboard more mobile-friendly.\n"
+        "3. How can the email triage logic be made more 'Steve-Identity' compliant "
+        "(i.e. better reflecting Steve's personal client relationships and tone)?\n\n"
+        "Be direct, warm, and practical. Keep each point concise."
+    )
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "HTTP-Referer": "https://backpocket.os",
+        "X-Title": "BackPocket OS",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": AUDIT_MODEL,
+        "messages": [
+            {"role": "system", "content": "You are a helpful CTO auditor. Be concise."},
+            {"role": "user", "content": prompt},
+        ],
+        "max_tokens": 1200,
+    }
+
     try:
-        payload = {
-            "model": model,
-            "prompt": prompt,
-            "stream": False
-        }
-        
-        logger.info(f"💾 LOCAL AUDIT: Generating self-report via Ollama ({model})...")
-        response = requests.post(ollama_url, json=payload, timeout=60)
+        logger.info(f"AUDIT: Requesting self-report via OpenRouter ({AUDIT_MODEL})...")
+        response = requests.post(
+            OPENROUTER_BASE_URL, headers=headers, json=payload, timeout=60
+        )
         response.raise_for_status()
-        
+
         data = response.json()
-        raw_text = data.get("response", "")
-        
-        # Clean <think> tags if DeepSeek
-        import re
-        clean_text = re.sub(r'<think>.*?</think>', '', raw_text, flags=re.DOTALL).strip()
-        
-        # Save results to docs for permanent reference
-        with open("docs/LATEST_LOCAL_AUDIT.md", "w", encoding="utf-8") as f:
-            f.write(f"# 🕵️ LOCAL OLLAMA AUDIT REPORT\nDate: {json.dumps(str(os.times()))}\n\n{clean_text}")
-            
+        raw_text = data["choices"][0]["message"]["content"]
+
+        # Strip any residual <think> tags (some models include them)
+        clean_text = re.sub(
+            r"<think>.*?</think>", "", raw_text, flags=re.DOTALL
+        ).strip()
+
+        # Persist to docs/
+        os.makedirs("docs", exist_ok=True)
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+        with open("docs/LATEST_LOCAL_AUDIT.md", "w", encoding="utf-8") as fh:
+            fh.write(
+                f"# BackPocket Twin Audit Report\n"
+                f"**Date:** {timestamp}  |  **Model:** {AUDIT_MODEL}\n\n"
+                f"{clean_text}"
+            )
+
+        logger.info("AUDIT: Complete — saved to docs/LATEST_LOCAL_AUDIT.md")
         return clean_text
+
     except Exception as e:
-        logger.error(f"❌ LOCAL AUDIT FAILED: {e}")
+        logger.error(f"AUDIT FAILED: {e}")
         return f"Self-audit failed: {str(e)}"
