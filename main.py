@@ -4124,13 +4124,73 @@ async def text_to_speech(request: TTSRequest):
         return {"status": "error", "message": str(e)}
 
 
+# ===== BLOG / STARTUP STORY GENERATION =====
+
+
+@app.post("/api/blog/startup-story")
+async def generate_startup_story(data: dict):
+    """Generate a startup story in wine-commercial narrative style."""
+    try:
+        from services.agentic_rag import NarrativeBlogGenerator
+
+        generator = NarrativeBlogGenerator()
+        company_name = data.get("company_name", "")
+        theme = data.get("theme", "entrepreneurship")
+
+        result = generator.generate_blog_post(
+            title=f"The {company_name} Story" if company_name else "Our Journey",
+            theme=theme,
+            company_name=company_name,
+        )
+
+        if result.get("status") == "error":
+            return {"error": result.get("message", "Generation failed")}
+
+        return {
+            "title": result.get("title", "Untitled"),
+            "content": result.get("content", ""),
+            "company": company_name,
+            "style": result.get("style", "wine_commercial_narrative"),
+            "created_at": result.get("created_at", datetime.now().isoformat()),
+        }
+    except Exception as e:
+        logger.error(f"Error generating startup story: {e}")
+        return {"error": str(e)}
+
+
+# ===== DRIVE TO RAG SYNC =====
+
+
+@app.post("/api/drive/sync-to-rag")
+async def sync_drive_to_rag(data: dict):
+    """Sync files from Google Drive folder to RAG knowledge base."""
+    try:
+        from services.drive_integration import get_drive_integration
+
+        drive = get_drive_integration()
+        folder_id = data.get("folder_id", "")
+        twin_type = data.get("twin_type", "admin")
+
+        if not folder_id:
+            return {"status": "error", "message": "folder_id is required"}
+
+        result = drive.sync_folder_to_rag(folder_id, twin_type)
+
+        return {"status": "success", "data": result}
+    except Exception as e:
+        logger.error(f"Error syncing Drive to RAG: {e}")
+        return {"status": "error", "message": str(e)}
+
+
 # ===== CONSTRUCTION / TRADIE MANAGEMENT =====
+
 
 @app.post("/api/construction/leads")
 async def create_lead(data: dict):
     """Create a new lead from email extraction"""
     try:
         from services.construction import get_construction_manager
+
         manager = get_construction_manager()
 
         result = manager.create_lead(
@@ -4139,7 +4199,7 @@ async def create_lead(data: dict):
             job_type=data.get("job_type"),
             location=data.get("location"),
             urgency=data.get("urgency", "medium"),
-            budget=data.get("estimated_budget")
+            budget=data.get("estimated_budget"),
         )
 
         return {"status": "success", "data": result}
@@ -4147,11 +4207,13 @@ async def create_lead(data: dict):
         logger.error(f"Error creating lead: {e}")
         return {"status": "error", "message": str(e)}
 
+
 @app.get("/api/construction/leads")
 async def get_leads(status: str = None):
     """Get all leads, optionally filtered by status"""
     try:
         from services.construction import get_construction_manager
+
         manager = get_construction_manager()
 
         leads = manager.get_leads(status=status)
@@ -4160,11 +4222,13 @@ async def get_leads(status: str = None):
         logger.error(f"Error fetching leads: {e}")
         return {"status": "error", "message": str(e)}
 
+
 @app.get("/api/construction/leads/{lead_id}")
 async def get_lead(lead_id: int):
     """Get single lead details"""
     try:
         from services.construction import get_construction_manager
+
         manager = get_construction_manager()
 
         lead = manager.get_lead(lead_id)
@@ -4176,11 +4240,13 @@ async def get_lead(lead_id: int):
         logger.error(f"Error fetching lead: {e}")
         return {"status": "error", "message": str(e)}
 
+
 @app.patch("/api/construction/leads/{lead_id}")
 async def update_lead_status(lead_id: int, data: dict):
     """Update lead status"""
     try:
         from services.construction import get_construction_manager
+
         manager = get_construction_manager()
 
         result = manager.update_lead_status(lead_id, data.get("status"))
@@ -4189,11 +4255,13 @@ async def update_lead_status(lead_id: int, data: dict):
         logger.error(f"Error updating lead: {e}")
         return {"status": "error", "message": str(e)}
 
+
 @app.post("/api/construction/quotes")
 async def create_quote(data: dict):
     """Create a quote for a lead"""
     try:
         from services.construction import get_construction_manager
+
         manager = get_construction_manager()
 
         result = manager.create_quote(
@@ -4202,7 +4270,7 @@ async def create_quote(data: dict):
             job_type=data.get("job_type"),
             materials_cost=float(data.get("materials_cost", 0)),
             labor_cost=float(data.get("labor_cost", 0)),
-            markup_percent=float(data.get("markup_percent", 20))
+            markup_percent=float(data.get("markup_percent", 20)),
         )
 
         return {"status": "success", "data": result}
@@ -4210,11 +4278,13 @@ async def create_quote(data: dict):
         logger.error(f"Error creating quote: {e}")
         return {"status": "error", "message": str(e)}
 
+
 @app.get("/api/construction/quotes")
 async def get_quotes(status: str = None):
     """Get all quotes, optionally filtered by status"""
     try:
         from services.construction import get_construction_manager
+
         manager = get_construction_manager()
 
         quotes = manager.get_quotes(status=status)
@@ -4223,11 +4293,13 @@ async def get_quotes(status: str = None):
         logger.error(f"Error fetching quotes: {e}")
         return {"status": "error", "message": str(e)}
 
+
 @app.get("/api/construction/quotes/{quote_id}")
 async def get_quote(quote_id: int):
     """Get single quote details"""
     try:
         from services.construction import get_construction_manager
+
         manager = get_construction_manager()
 
         quote = manager.get_quote(quote_id)
@@ -4239,11 +4311,13 @@ async def get_quote(quote_id: int):
         logger.error(f"Error fetching quote: {e}")
         return {"status": "error", "message": str(e)}
 
+
 @app.patch("/api/construction/quotes/{quote_id}")
 async def update_quote_status(quote_id: int, data: dict):
     """Update quote status"""
     try:
         from services.construction import get_construction_manager
+
         manager = get_construction_manager()
 
         result = manager.update_quote_status(quote_id, data.get("status"))
@@ -4252,11 +4326,13 @@ async def update_quote_status(quote_id: int, data: dict):
         logger.error(f"Error updating quote: {e}")
         return {"status": "error", "message": str(e)}
 
+
 @app.get("/api/construction/pipeline")
 async def get_pipeline():
     """Get quote pipeline summary"""
     try:
         from services.construction import get_construction_manager
+
         manager = get_construction_manager()
 
         summary = manager.get_pipeline_summary()
@@ -4265,17 +4341,19 @@ async def get_pipeline():
         logger.error(f"Error fetching pipeline: {e}")
         return {"status": "error", "message": str(e)}
 
+
 @app.post("/api/construction/payments")
 async def record_payment(data: dict):
     """Record a payment received"""
     try:
         from services.construction import get_construction_manager
+
         manager = get_construction_manager()
 
         result = manager.record_payment(
             quote_id=data.get("quote_id"),
             amount=float(data.get("amount")),
-            client_name=data.get("client_name")
+            client_name=data.get("client_name"),
         )
 
         return {"status": "success", "data": result}
@@ -4283,11 +4361,13 @@ async def record_payment(data: dict):
         logger.error(f"Error recording payment: {e}")
         return {"status": "error", "message": str(e)}
 
+
 @app.get("/api/construction/payments")
 async def get_payments(quote_id: int = None):
     """Get all payments"""
     try:
         from services.construction import get_construction_manager
+
         manager = get_construction_manager()
 
         payments = manager.get_payments(quote_id=quote_id)
@@ -4295,6 +4375,7 @@ async def get_payments(quote_id: int = None):
     except Exception as e:
         logger.error(f"Error fetching payments: {e}")
         return {"status": "error", "message": str(e)}
+
 
 @app.post("/api/construction/leads/extract")
 async def extract_lead_from_email(data: dict):
@@ -4335,23 +4416,28 @@ Return ONLY the JSON object, no other text or markdown."""
             "https://openrouter.ai/api/v1/chat/completions",
             headers={
                 "Authorization": f"Bearer {api_key}",
-                "HTTP-Referer": "backpocket.ai"
+                "HTTP-Referer": "backpocket.ai",
             },
             json={
                 "model": "openrouter/auto",
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.3,
-                "max_tokens": 300
+                "max_tokens": 300,
             },
-            timeout=10
+            timeout=10,
         )
 
         if response.status_code == 200:
             result = response.json()
-            ai_response = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+            ai_response = (
+                result.get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "")
+                .strip()
+            )
 
             # Extract JSON from response (handle markdown code blocks)
-            json_match = re.search(r'\{.*\}', ai_response, re.DOTALL)
+            json_match = re.search(r"\{.*\}", ai_response, re.DOTALL)
             if json_match:
                 json_str = json_match.group(0)
             else:
@@ -4362,6 +4448,7 @@ Return ONLY the JSON object, no other text or markdown."""
 
             # Create lead in database
             from services.construction import get_construction_manager
+
             manager = get_construction_manager()
 
             lead_result = manager.create_lead(
@@ -4370,21 +4457,27 @@ Return ONLY the JSON object, no other text or markdown."""
                 job_type=extracted.get("job_type", "General"),
                 location=extracted.get("location", ""),
                 urgency=extracted.get("urgency", "medium").lower(),
-                budget=extracted.get("estimated_budget")
+                budget=extracted.get("estimated_budget"),
             )
 
             return {
                 "status": "success",
                 "lead_id": lead_result.get("lead_id"),
-                "extracted_data": extracted
+                "extracted_data": extracted,
             }
         else:
-            logger.error(f"OpenRouter API error: {response.status_code} - {response.text}")
-            return {"status": "error", "message": f"AI extraction failed: {response.status_code}"}
+            logger.error(
+                f"OpenRouter API error: {response.status_code} - {response.text}"
+            )
+            return {
+                "status": "error",
+                "message": f"AI extraction failed: {response.status_code}",
+            }
 
     except Exception as e:
         logger.error(f"Error extracting lead: {e}")
         return {"status": "error", "message": str(e)}
+
 
 @app.post("/api/construction/quotes/{quote_id}/tradie-followup")
 async def generate_tradie_followup(quote_id: int):
@@ -4395,6 +4488,7 @@ async def generate_tradie_followup(quote_id: int):
 
         # Get quote details
         from services.construction import get_construction_manager
+
         manager = get_construction_manager()
         quote = manager.get_quote(quote_id)
 
@@ -4405,8 +4499,8 @@ async def generate_tradie_followup(quote_id: int):
         prompt = f"""You are an AI Digital Twin for a professional contractor in Western Sydney.
 Your tone is professional, reliable, and 'no-nonsense', but friendly.
 
-Task: Draft a follow-up message for a quote sent to {quote['client_name']}
-regarding a {quote['job_type']} job.
+Task: Draft a follow-up message for a quote sent to {quote["client_name"]}
+regarding a {quote["job_type"]} job.
 
 Constraints:
 - Keep it under 60 words
@@ -4424,20 +4518,22 @@ Generate ONLY the message text, nothing else."""
             "https://openrouter.ai/api/v1/chat/completions",
             headers={
                 "Authorization": f"Bearer {api_key}",
-                "HTTP-Referer": "backpocket.ai"
+                "HTTP-Referer": "backpocket.ai",
             },
             json={
                 "model": "openrouter/auto",
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.7,
-                "max_tokens": 150
+                "max_tokens": 150,
             },
-            timeout=10
+            timeout=10,
         )
 
         if response.status_code == 200:
             result = response.json()
-            message = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+            message = (
+                result.get("choices", [{}])[0].get("message", {}).get("content", "")
+            )
             return {"status": "success", "message": message}
         else:
             return {"status": "error", "message": "Failed to generate message"}
