@@ -1958,6 +1958,74 @@
       border-top: 1px solid rgba(255, 255, 255, 0.3);
     }
     
+    /* ===== CONSTRUCTION / TRADIE STYLES ===== */
+    .stat-card {
+      background: linear-gradient(135deg, #1a1f3a 0%, #2d1b4e 100%);
+      padding: 15px;
+      border-radius: 8px;
+      text-align: center;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .stat-value {
+      font-size: 28px;
+      font-weight: bold;
+      color: #00ff88;
+      margin-bottom: 5px;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: #aaa;
+      text-transform: uppercase;
+    }
+
+    .lead-card, .quote-card, .payment-item {
+      background: rgba(255,255,255,0.05);
+      padding: 12px;
+      margin: 10px 0;
+      border-radius: 6px;
+      border-left: 3px solid #00ff88;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .lead-card:hover, .quote-card:hover {
+      background: rgba(255,255,255,0.1);
+      transform: translateX(5px);
+    }
+
+    .lead-client { font-weight: bold; color: #fff; }
+    .lead-job { color: #00ff88; font-size: 12px; }
+    .lead-status { color: #aaa; font-size: 11px; }
+
+    .quote-amount { color: #00ff88; font-weight: bold; }
+    .quote-status {
+      padding: 3px 8px;
+      border-radius: 3px;
+      font-size: 11px;
+      display: inline-block;
+      margin-top: 5px;
+    }
+
+    .status-draft { background: rgba(255,200,0,0.2); color: #ffc800; }
+    .status-sent { background: rgba(100,200,255,0.2); color: #64c8ff; }
+    .status-accepted { background: rgba(0,255,136,0.2); color: #00ff88; }
+    .status-declined { background: rgba(255,100,100,0.2); color: #ff6464; }
+
+    .btn-small {
+      background: rgba(0,255,136,0.2);
+      border: 1px solid #00ff88;
+      color: #00ff88;
+      padding: 5px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .btn-small:hover {
+      background: rgba(0,255,136,0.3);
+    }
   </style>
 </head>
 <body>
@@ -2209,6 +2277,11 @@
             <div class="chat-history-empty">No open chats</div>
           </div>
         </div>
+
+        <!-- Construction/Tradie Nav Items -->
+        <div class="nav-item" onclick="toggleSection('construction-leads-section')">📩 LEADS</div>
+        <div class="nav-item" onclick="toggleSection('construction-pipeline-section')">💰 QUOTES</div>
+        <div class="nav-item" onclick="toggleSection('construction-payments-section')">💳 PAYMENTS</div>
 
         <div class="magnifier-section">
           <button class="magnifier-btn" onclick="toggleMagnifier()">
@@ -2701,6 +2774,50 @@
       </div>
       </div> <!-- End .panels-container -->
     </div> <!-- End .content-wrapper -->
+
+    <!-- ===== CONSTRUCTION / TRADIE SECTIONS ===== -->
+    <section id="construction-leads-section" class="section">
+      <div class="section-header">
+        <h2>📩 Leads</h2>
+        <button onclick="refreshLeads()" class="btn-small">↻ Refresh</button>
+      </div>
+      <div id="leads-container"></div>
+    </section>
+
+    <section id="construction-pipeline-section" class="section">
+      <div class="section-header">
+        <h2>💰 Quote Pipeline</h2>
+        <button onclick="refreshPipeline()" class="btn-small">↻ Refresh</button>
+      </div>
+      <div id="pipeline-summary" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px;">
+        <div class="stat-card">
+          <div class="stat-value" id="total-quotes">0</div>
+          <div class="stat-label">Total Quotes</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="pending-quotes">0</div>
+          <div class="stat-label">Pending</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="accepted-quotes">0</div>
+          <div class="stat-label">Accepted</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="revenue-pipeline">$0</div>
+          <div class="stat-label">Revenue</div>
+        </div>
+      </div>
+      <div id="quotes-container"></div>
+    </section>
+
+    <section id="construction-payments-section" class="section">
+      <div class="section-header">
+        <h2>💳 Payments</h2>
+        <button onclick="refreshPayments()" class="btn-small">↻ Refresh</button>
+      </div>
+      <div id="payments-container"></div>
+    </section>
+
   </main>
 </div>
 
@@ -4595,6 +4712,117 @@ async function generateStartupStory() {
     outputDiv.innerHTML = `<div style="color: #DC2626;">Error: ${err.message}</div>`;
   }
 }
+
+  // ===== CONSTRUCTION / TRADIE FUNCTIONS =====
+
+  async function loadLeads() {
+    const res = await fetch('/api/construction/leads');
+    const data = await res.json();
+
+    let html = '';
+    if (data.leads && data.leads.length > 0) {
+      data.leads.forEach(lead => {
+        html += `
+          <div class="lead-card">
+            <div class="lead-client">${lead.client_name}</div>
+            <div class="lead-job">${lead.job_type} • ${lead.location}</div>
+            <div class="lead-status">
+              Status: ${lead.status.toUpperCase()} | Urgency: ${lead.urgency} | Budget: $${lead.estimated_budget || 0}
+            </div>
+          </div>
+        `;
+      });
+    } else {
+      html = '<p style="color:#aaa;">No leads yet</p>';
+    }
+
+    const container = document.getElementById('leads-container');
+    if (container) container.innerHTML = html;
+  }
+
+  async function loadPipeline() {
+    const res = await fetch('/api/construction/pipeline');
+    const data = await res.json();
+    const pipeline = data.data;
+
+    document.getElementById('total-quotes').textContent = pipeline.total_quotes;
+    document.getElementById('pending-quotes').textContent = pipeline.pending_quotes;
+    document.getElementById('accepted-quotes').textContent = pipeline.accepted_quotes;
+    document.getElementById('revenue-pipeline').textContent =
+      '$' + pipeline.revenue_pipeline.toLocaleString('en-US', {maximumFractionDigits: 0});
+
+    const qRes = await fetch('/api/construction/quotes');
+    const qData = await qRes.json();
+
+    let html = '';
+    if (qData.quotes && qData.quotes.length > 0) {
+      qData.quotes.forEach(quote => {
+        const statusClass = `status-${quote.status}`;
+        html += `
+          <div class="quote-card">
+            <div style="display: flex; justify-content: space-between; align-items: start;">
+              <div>
+                <div style="font-weight: bold; color: #fff;">${quote.client_name}</div>
+                <div style="font-size: 12px; color: #aaa;">${quote.job_type}</div>
+              </div>
+              <div style="text-align: right;">
+                <div class="quote-amount">$${quote.total_amount.toLocaleString()}</div>
+                <div class="quote-status ${statusClass}">${quote.status.toUpperCase()}</div>
+              </div>
+            </div>
+          </div>
+        `;
+      });
+    } else {
+      html = '<p style="color:#aaa;">No quotes yet</p>';
+    }
+
+    const container = document.getElementById('quotes-container');
+    if (container) container.innerHTML = html;
+  }
+
+  async function loadPayments() {
+    const res = await fetch('/api/construction/payments');
+    const data = await res.json();
+
+    let html = '';
+    if (data.payments && data.payments.length > 0) {
+      data.payments.forEach(payment => {
+        html += `
+          <div class="payment-item">
+            <div style="display: flex; justify-content: space-between;">
+              <div>
+                <div style="font-weight: bold; color: #fff;">${payment.client_name}</div>
+                <div style="font-size: 12px; color: #aaa;">Quote #${payment.quote_id}</div>
+              </div>
+              <div style="text-align: right; color: #00ff88; font-weight: bold;">
+                $${payment.amount.toLocaleString()}
+              </div>
+            </div>
+            <div style="font-size: 11px; color: #888; margin-top: 5px;">
+              Status: ${payment.status}
+            </div>
+          </div>
+        `;
+      });
+    } else {
+      html = '<p style="color:#aaa;">No payments recorded</p>';
+    }
+
+    const container = document.getElementById('payments-container');
+    if (container) container.innerHTML = html;
+  }
+
+  function refreshLeads() { loadLeads(); }
+  function refreshPipeline() { loadPipeline(); }
+  function refreshPayments() { loadPayments(); }
+
+  // Load construction data on page load
+  document.addEventListener('DOMContentLoaded', function() {
+    loadLeads();
+    loadPipeline();
+    loadPayments();
+  });
 </script>
 
 </body>
