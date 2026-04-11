@@ -3,11 +3,17 @@ import base64
 import logging
 import sqlite3
 import uuid
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
 DB_PATH = "backpocket.db"
 UPLOAD_DIR = "uploads"
+
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "moondream")
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -113,7 +119,7 @@ def analyze_document(doc_id):
 
         import requests
 
-        ollama_url = "http://localhost:11434/api/chat"
+        ollama_url = f"{OLLAMA_BASE_URL}/api/chat"
 
         prompt = """You are a document analysis assistant. Analyze this image and extract:
 1. Document type (invoice, receipt, contract, letter, form, other)
@@ -124,12 +130,12 @@ def analyze_document(doc_id):
 Return as JSON with keys: document_type, key_info, important_text, summary"""
 
         payload = {
-            "model": "moondream",
+            "model": OLLAMA_MODEL,
             "messages": [{"role": "user", "content": prompt, "images": [image_data]}],
             "stream": False,
         }
 
-        response = requests.post(ollama_url, json=payload, timeout=90)
+        response = requests.post(ollama_url, json=payload, timeout=180)
 
         logger.info(f"Ollama response status: {response.status_code}")
         logger.info(f"Ollama response body: {response.text[:500]}")
