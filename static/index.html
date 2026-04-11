@@ -15,9 +15,25 @@
       --brown: #1A1613;
       --shadow-soft: 0 4px 20px -2px rgba(26, 22, 19, 0.05);
       --shadow-soft-lg: 0 10px 30px -5px rgba(26, 22, 19, 0.08);
-      --font-base: 1rem;
+      --font_base: 1rem;
       --font-sm: 0.875rem;
       --font-xs: 0.75rem;
+      
+      /* NEW: Tier Tag Colors */
+      --tag-blue: #E3EDFA;
+      --tag-blue-text: #2563EB;
+      --tag-green: #E3F5E8;
+      --tag-green-text: #16A34A;
+      --tag-amber: #FEF3C7;
+      --tag-amber-text: #D97706;
+      --tag-red: #FEE2E2;
+      --tag-red-text: #DC2626;
+      --tag-purple: #F3E8FF;
+      --tag-purple-text: #7C3AED;
+      
+      /* NEW: AI Accent */
+      --ai-bg: #F0F4FF;
+      --ai-border: #C7D6F5;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1548,11 +1564,64 @@
       margin-bottom: 8px;
     }
 
-    .tier-1 .tier-num { background: #fee2e2; color: #ef4444; }
-    .tier-2 .tier-num { background: #fef3c7; color: #d97706; }
-    .tier-3 .tier-num { background: #dcfce7; color: #16a34a; }
+    .tier-1 .tier-num { background: var(--tag-red); color: var(--tag-red-text); }
+    .tier-2 .tier-num { background: var(--tag-amber); color: var(--tag-amber-text); }
+    .tier-3 .tier-num { background: var(--tag-green); color: var(--tag-green-text); }
     .tier-4 .tier-num { background: #f3f4f6; color: #4b5563; }
     .tier-5 .tier-num { background: #f1f5f9; color: #64748b; }
+
+    /* NEW: AI Briefing Card */
+    .ai-briefing {
+      background: var(--ai-bg);
+      border: 1px solid var(--ai-border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .ai-briefing .ai-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--tag-blue);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .ai-briefing .ai-icon i { color: var(--tag-blue-text); }
+
+    /* NEW: Tier Tags for Emails */
+    .tier-tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+    .tier-tag.high { background: var(--tag-red); color: var(--tag-red-text); }
+    .tier-tag.medium { background: var(--tag-amber); color: var(--tag-amber-text); }
+    .tier-tag.low { background: var(--tag-green); color: var(--tag-green-text); }
+    .tier-tag.info { background: var(--tag-blue); color: var(--tag-blue-text); }
+    .tier-tag.urgent { background: var(--tag-red); color: var(--tag-red-text); }
+
+    /* NEW: AI Suggestion Chip */
+    .ai-suggestion {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 10px;
+      background: var(--ai-bg);
+      border-radius: 6px;
+      margin-top: 8px;
+      font-size: 11px;
+      color: var(--tag-blue-text);
+      font-weight: 600;
+    }
+    .ai-suggestion i { }
 
     .tier-title {
       font-size: 12px;
@@ -1952,9 +2021,9 @@
         <span class="nav-chevron">▸</span>
       </div>
       <div class="nav-subitems" id="docs-sub">
-        <div class="nav-subitem">Upload</div>
-        <div class="nav-subitem">Invoices</div>
-        <div class="nav-subitem">Client Forms</div>
+        <div class="nav-subitem" onclick="toggleSection('documents-upload')">📤 Upload</div>
+        <div class="nav-subitem" onclick="toggleSection('documents-list')">📋 All Documents</div>
+        <div class="nav-subitem" onclick="toggleSection('documents-invoices')">🧾 Invoices</div>
       </div>
 
       <div class="nav-item" onclick="toggleNav(this, 'agents-sub')">
@@ -2663,6 +2732,144 @@ function renderAllLists() {
   renderList('tasks', pendingTasks);
 }
 
+// ===== DOCUMENTS PAGE =====
+let allDocuments = [];
+
+function showDocumentsPage(page) {
+  const container = document.getElementById('docs-list');
+  container.innerHTML = '';
+  container.classList.add('show');
+  
+  if (page === 'documents-upload') {
+    container.innerHTML = `
+      <div style="padding: 20px;">
+        <h3 style="margin-bottom: 16px;">📤 Upload Document</h3>
+        <div style="border: 2px dashed var(--border); border-radius: 12px; padding: 40px; text-align: center; margin-bottom: 20px;">
+          <input type="file" id="doc-file-input" accept="image/*,.pdf" style="display: none;" onchange="handleFileSelect(event)">
+          <div onclick="document.getElementById('doc-file-input').click()" style="cursor: pointer;">
+            <div style="font-size: 48px; margin-bottom: 12px;">📁</div>
+            <div style="font-weight: 600; margin-bottom: 8px;">Click to upload or drag & drop</div>
+            <div style="font-size: 12px; color: var(--text-muted);">Images (JPG, PNG) • PDF</div>
+          </div>
+        </div>
+        <div id="upload-preview" style="display: none; margin-bottom: 16px; padding: 12px; background: var(--surface-alt); border-radius: 8px;">
+          <div id="upload-filename" style="font-weight: 600; margin-bottom: 8px;"></div>
+          <button onclick="uploadDocument()" style="background: var(--terracotta); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; width: 100%;">Analyze with AI 🤖</button>
+        </div>
+      </div>
+    `;
+  } else if (page === 'documents-list') {
+    loadAllDocuments(container);
+  } else if (page === 'documents-invoices') {
+    loadAllDocuments(container, 'invoice');
+  }
+}
+
+let selectedFile = null;
+
+function handleFileSelect(e) {
+  const file = e.target.files[0];
+  if (file) {
+    selectedFile = file;
+    document.getElementById('upload-filename').textContent = file.name;
+    document.getElementById('upload-preview').style.display = 'block';
+  }
+}
+
+function uploadDocument() {
+  if (!selectedFile) return;
+  
+  const formData = new FormData();
+  formData.append('file', selectedFile);
+  
+  fetch('/api/documents/upload', {
+    method: 'POST',
+    body: formData
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.status === 'success') {
+      // Auto-analyze
+      fetch(`/api/documents/analyze/${data.document_id}`, { method: 'POST' })
+      .then(r => r.json())
+      .then(() => {
+        alert('Document uploaded and analyzed! 📄');
+        showDocumentsPage('documents-list');
+      });
+    } else {
+      alert('Error: ' + data.message);
+    }
+  });
+  
+  selectedFile = null;
+  document.getElementById('upload-preview').style.display = 'none';
+}
+
+function loadAllDocuments(container, category = null) {
+  fetch('/api/documents')
+    .then(r => r.json())
+    .then(data => {
+      allDocuments = data.documents || [];
+      if (category) {
+        allDocuments = allDocuments.filter(d => d.category === category);
+      }
+      
+      if (allDocuments.length === 0) {
+        container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted);">No documents yet. Upload one!</div>';
+        return;
+      }
+      
+      container.innerHTML = allDocuments.map(doc => `
+        <div class="expanded-item" onclick="viewDocument(${doc.id})">
+          <div class="expanded-item-left">
+            <div class="expanded-checkbox">📄</div>
+            <span class="expanded-title">${doc.original_name || doc.filename}</span>
+          </div>
+          <span class="expanded-time">${doc.status === 'analyzed' ? '✅ Analyzed' : '⏳ Pending'}</span>
+        </div>
+      `).join('');
+    });
+}
+
+function viewDocument(docId) {
+  fetch(`/api/documents/${docId}`)
+    .then(r => r.json())
+    .then(doc => {
+      const container = document.getElementById('docs-list');
+      container.innerHTML = `
+        <div style="padding: 20px;">
+          <button onclick="showDocumentsPage('documents-list')" style="margin-bottom: 16px; padding: 8px 16px; background: var(--surface-alt); border: 1px solid var(--border); border-radius: 6px; cursor: pointer;">← Back</button>
+          <h3 style="margin-bottom: 16px;">📄 ${doc.original_name || 'Document'}</h3>
+          <div style="background: var(--surface-alt); padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Status: ${doc.status}</div>
+            <div style="font-size: 12px; color: var(--text-muted);">Uploaded: ${doc.created_at}</div>
+          </div>
+          ${doc.ai_analysis ? `
+            <div style="background: #F0F4FF; padding: 16px; border-radius: 8px; border: 1px solid #C7D6F5;">
+              <h4 style="margin-bottom: 12px;">🤖 AI Analysis</h4>
+              <pre style="white-space: pre-wrap; font-size: 13px; line-height: 1.6;">${doc.ai_analysis}</pre>
+            </div>
+          ` : `
+            <button onclick="analyzeDocument(${doc.id})" style="background: var(--terracotta); color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; width: 100%;">Analyze with AI 🤖</button>
+          `}
+        </div>
+      `;
+    });
+}
+
+function analyzeDocument(docId) {
+  fetch(`/api/documents/analyze/${docId}`, { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      if (data.status === 'success') {
+        alert('Analysis complete! 📄');
+        viewDocument(docId);
+      } else {
+        alert('Error: ' + data.message);
+      }
+    });
+}
+
 function renderList(type, items) {
   const list = document.getElementById(`${type}-list`);
   const filtered = items.filter(i => !approvedItems.has(i.id));
@@ -3290,6 +3497,12 @@ function toggleSection(section) {
     'marketing-rules': { el: document.getElementById('marketing-rules-section'), loader: () => loadCategoryInstructions('marketing-rules-list', 'Marketing') },
     'client-rules': { el: document.getElementById('client-rules-section'), loader: () => loadCategoryInstructions('client-rules-list', 'Email - Sender') },
   };
+  
+  // Handle documents page
+  if (section === 'documents-upload' || section === 'documents-list' || section === 'documents-invoices') {
+    showDocumentsPage(section);
+    return;
+  }
   
   // Toggle expanded lists (email, docs, marketing, tasks)
   lists.forEach(id => {
