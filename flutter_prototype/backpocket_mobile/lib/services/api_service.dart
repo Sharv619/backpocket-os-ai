@@ -2,6 +2,16 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 
+// ── Exception Handling ──────────────────────────────────────────────────────
+class ApiException implements Exception {
+  final String message;
+  final int? statusCode;
+  ApiException(this.message, {this.statusCode});
+
+  @override
+  String toString() => message;
+}
+
 class ApiService {
   final String baseUrl;
   final String apiKey;
@@ -12,6 +22,25 @@ class ApiService {
     'Content-Type': 'application/json',
     if (apiKey.isNotEmpty) 'X-API-Key': apiKey,
   };
+
+  // ── Response Handler ────────────────────────────────────────────────────────
+  Future<Map<String, dynamic>> _handleResponse(http.Response response) async {
+    if (response.statusCode != 200) {
+      try {
+        final error = jsonDecode(response.body);
+        throw ApiException(
+          error['message'] ?? 'API Error',
+          statusCode: response.statusCode,
+        );
+      } catch (e) {
+        throw ApiException(
+          'Failed with status ${response.statusCode}',
+          statusCode: response.statusCode,
+        );
+      }
+    }
+    return jsonDecode(response.body) ?? {};
+  }
 
   // ── Status & Workflow ───────────────────────────────────────────────────
   Future<Map<String, dynamic>> getStatus() async {
@@ -170,5 +199,192 @@ class ApiService {
       // Fall back to web speech
     }
     return null;
+  }
+
+  // ── Construction (Leads, Quotes, Payments) ──────────────────────────────────
+  Future<List<dynamic>> getConstructionLeads() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/construction/leads'),
+      headers: _headers,
+    );
+    final data = await _handleResponse(res);
+    return data['leads'] ?? [];
+  }
+
+  Future<Map<String, dynamic>> createLead({
+    required String clientName,
+    required String email,
+    required String jobType,
+    required String location,
+    required String urgency,
+    required int estimatedBudget,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/construction/leads'),
+      headers: _headers,
+      body: jsonEncode({
+        'client_name': clientName,
+        'email': email,
+        'job_type': jobType,
+        'location': location,
+        'urgency': urgency,
+        'estimated_budget': estimatedBudget,
+      }),
+    );
+    return await _handleResponse(res);
+  }
+
+  Future<Map<String, dynamic>> getLead(int id) async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/construction/leads/$id'),
+      headers: _headers,
+    );
+    return await _handleResponse(res);
+  }
+
+  Future<Map<String, dynamic>> updateLeadStatus(
+    int id,
+    String status,
+  ) async {
+    final res = await http.patch(
+      Uri.parse('$baseUrl/api/construction/leads/$id'),
+      headers: _headers,
+      body: jsonEncode({'status': status}),
+    );
+    return await _handleResponse(res);
+  }
+
+  Future<List<dynamic>> getConstructionQuotes() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/construction/quotes'),
+      headers: _headers,
+    );
+    final data = await _handleResponse(res);
+    return data['quotes'] ?? [];
+  }
+
+  Future<Map<String, dynamic>> createQuote({
+    required int leadId,
+    required double materialsCost,
+    required double laborHours,
+    required int markupPercent,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/construction/quotes'),
+      headers: _headers,
+      body: jsonEncode({
+        'lead_id': leadId,
+        'materials_cost': materialsCost,
+        'labor_hours': laborHours,
+        'markup_percent': markupPercent,
+      }),
+    );
+    return await _handleResponse(res);
+  }
+
+  Future<Map<String, dynamic>> getQuote(int id) async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/construction/quotes/$id'),
+      headers: _headers,
+    );
+    return await _handleResponse(res);
+  }
+
+  Future<Map<String, dynamic>> updateQuoteStatus(
+    int id,
+    String status,
+  ) async {
+    final res = await http.patch(
+      Uri.parse('$baseUrl/api/construction/quotes/$id'),
+      headers: _headers,
+      body: jsonEncode({'status': status}),
+    );
+    return await _handleResponse(res);
+  }
+
+  Future<Map<String, dynamic>> getConstructionPipeline() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/construction/pipeline'),
+      headers: _headers,
+    );
+    return await _handleResponse(res);
+  }
+
+  Future<List<dynamic>> getConstructionPayments() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/construction/payments'),
+      headers: _headers,
+    );
+    final data = await _handleResponse(res);
+    return data['payments'] ?? [];
+  }
+
+  Future<Map<String, dynamic>> recordPayment({
+    required int quoteId,
+    required double amount,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/construction/payments'),
+      headers: _headers,
+      body: jsonEncode({
+        'quote_id': quoteId,
+        'amount': amount,
+      }),
+    );
+    return await _handleResponse(res);
+  }
+
+  // ── Conversations ──────────────────────────────────────────────────────────
+  Future<List<dynamic>> getConversations() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/conversations'),
+      headers: _headers,
+    );
+    final data = await _handleResponse(res);
+    return data['conversations'] ?? [];
+  }
+
+  Future<Map<String, dynamic>> getConversation(String id) async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/conversations/$id'),
+      headers: _headers,
+    );
+    return await _handleResponse(res);
+  }
+
+  Future<Map<String, dynamic>> deleteConversation(String id) async {
+    final res = await http.delete(
+      Uri.parse('$baseUrl/api/conversations/$id'),
+      headers: _headers,
+    );
+    return await _handleResponse(res);
+  }
+
+  // ── Draft Editing ──────────────────────────────────────────────────────────
+  Future<Map<String, dynamic>> reviseDraft(
+    String refId,
+    String instructions,
+  ) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/revise'),
+      headers: _headers,
+      body: jsonEncode({
+        'ref_id': refId,
+        'instructions': instructions,
+      }),
+    );
+    return await _handleResponse(res);
+  }
+
+  Future<Map<String, dynamic>> saveDraft(
+    String refId,
+    String newText,
+  ) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/draft/$refId'),
+      headers: _headers,
+      body: jsonEncode({'body': newText}),
+    );
+    return await _handleResponse(res);
   }
 }

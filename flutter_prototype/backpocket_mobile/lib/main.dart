@@ -11,6 +11,7 @@ import 'screens/dashboard_screen.dart';
 import 'screens/documents_screen.dart';
 import 'screens/marketing_screen.dart';
 import 'screens/instructions_screen.dart';
+import 'screens/construction_screen.dart';
 import 'screens/settings_screen.dart';
 
 // ─── TwinController for chat state ───────────────────────────────────────────────
@@ -227,6 +228,8 @@ class _AppShellState extends State<AppShell> {
       {'icon': Icons.description_outlined, 'label': 'Documents', 'tab': 3},
       {'icon': Icons.campaign_outlined, 'label': 'Marketing', 'tab': 4},
       {'icon': Icons.rule_outlined, 'label': 'Instructions', 'tab': 5},
+      {'icon': Icons.build_outlined, 'label': 'Construction', 'tab': 6},
+      {'icon': Icons.settings_outlined, 'label': 'Settings', 'tab': 7},
     ];
     final chatHistory = twinController.messages
         .where((m) => m['role'] == 'user')
@@ -357,6 +360,7 @@ class _AppShellState extends State<AppShell> {
       DocumentsScreen(serverUrl: _serverUrl, apiKey: _apiKey),
       MarketingScreen(serverUrl: _serverUrl, apiKey: _apiKey),
       InstructionsScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+      ConstructionScreen(serverUrl: _serverUrl, apiKey: _apiKey),
       SettingsScreen(
         serverUrl: _serverUrl,
         apiKey: _apiKey,
@@ -459,6 +463,11 @@ class _AppShellState extends State<AppShell> {
               icon: Icon(Icons.rule_outlined),
               activeIcon: Icon(Icons.rule),
               label: 'Rules',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.build_outlined),
+              activeIcon: Icon(Icons.build),
+              label: 'Building',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.settings_outlined),
