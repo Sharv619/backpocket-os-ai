@@ -802,8 +802,8 @@ def draft_response(email_content, tier, historical_context="", client_info=None)
     )
     logger.info(f"📊 Email entropy: {entropy} (Tier {tier})")
 
-    if not _should_use_full_ai(email_content, tier) and entropy < 3.0:
-        # Simple template for low-complexity emails
+    if not _should_use_full_ai(email_content, tier) and entropy < 3.0 and tier != 1:
+        # Simple template for low-complexity emails (but NOT for Tier 1 important clients)
         logger.info("💰 Using template (low entropy, saves API cost)")
         subject = email_content.get("subject", "")
         return f"Thanks for reaching out. I'll review this and get back to you shortly."
