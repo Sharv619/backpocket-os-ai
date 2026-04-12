@@ -72,6 +72,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ruff: noqa: E402
+import services.database as db
+
+# Initialize the database BEFORE importing any service that depends on it.
+# services/database.py seeds default categories at import time, so all tables
+# must exist before that module (or anything that triggers it) is loaded.
+db.init_db()
+
 from services.google_sheets import (
     test_sheets_connection,
     log_activity,
@@ -87,7 +94,6 @@ from services.gemini import (
 )
 from services.whapi import send_notification
 from services.self_check import run_self_check, send_morning_pulse
-import services.database as db
 from services.local_audit import run_self_audit
 
 from fastapi.staticfiles import StaticFiles

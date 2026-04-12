@@ -649,8 +649,8 @@ def seed_default_categories():
     for name, desc in default_categories:
         save_category(name, desc)
 
-seed_default_categories()
 init_db()
+seed_default_categories()
 
 # Import and init session/memory tables
 try:
