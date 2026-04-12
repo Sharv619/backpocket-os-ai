@@ -82,7 +82,7 @@ class _ConstructionScreenState extends State<ConstructionScreen>
     switch (status.toLowerCase()) {
       case 'accepted':
       case 'paid':
-        return AppColors.success;
+        return AppColors.green;
       case 'sent':
       case 'pending':
         return AppColors.amber;
@@ -174,14 +174,14 @@ class _ConstructionScreenState extends State<ConstructionScreen>
                     _PipelineCounter(
                       label: 'Accepted',
                       count: _pipeline?['accepted'] ?? 0,
-                      color: AppColors.success,
+                      color: AppColors.green,
                     ),
                     Column(
                       children: [
                         Text(
                           '\$${_pipeline?['revenue_pipeline'] ?? 0}',
                           style: const TextStyle(
-                            color: AppColors.success,
+                            color: AppColors.green,
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                           ),
