@@ -22,6 +22,20 @@ __pycache__/
 venv/
 env/
 
+# Node
+node_modules/
+package-lock.json
+
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+pubspec.lock
+*.iml
+
+# Uploads
+uploads/
+
 # Logs and Binaries
 *.log
 archives/
