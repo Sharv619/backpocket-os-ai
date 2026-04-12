@@ -3931,6 +3931,15 @@ function toggleSection(section) {
     'blog-library': { el: document.getElementById('blog-library-section'), loader: loadBlogLibrary },
     'drive-folder': { el: document.getElementById('drive-folder-section'), loader: loadDriveFolder },
     'drive-sync': { el: document.getElementById('drive-sync-section'), loader: () => {} },
+    // Construction sections
+    'construction-leads-section': { el: document.getElementById('construction-leads-section'), loader: loadLeads },
+    'construction-pipeline-section': { el: document.getElementById('construction-pipeline-section'), loader: () => { loadLeads(); loadQuotes(); } },
+    'construction-payments-section': { el: document.getElementById('construction-payments-section'), loader: loadPayments },
+    // Workflow sections
+    'email': { el: document.getElementById('email'), loader: loadEmail },
+    'docs': { el: document.getElementById('docs'), loader: loadDocs },
+    'marketing': { el: document.getElementById('marketing'), loader: loadMarketing },
+    'tasks': { el: document.getElementById('tasks'), loader: loadTasks },
   };
 
   // Handle documents page
