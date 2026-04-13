@@ -1,7 +1,8 @@
 # Environment Variables
+.
 .env
 .opencode.json
-
+.env.local
 # Database
 *.db
 
@@ -44,3 +45,4 @@ video_output/
 *.exe
 *.zip
 nul
+docs/reviews/ai-handbook-90day-review.ics
