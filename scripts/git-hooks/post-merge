@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Auto-capture every merge into main as a signed row in knowledge_notes.
+# Install via: npm run setup-hooks
+
+set -euo pipefail
+
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+[[ "$BRANCH" != "main" ]] && exit 0  # only capture merges into main
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+DB="$REPO_ROOT/backpocket.db"
+[[ ! -f "$DB" ]] && { echo "[post-merge] no DB at $DB, skipping"; exit 0; }
+
+SHA=$(git rev-parse HEAD)
+AUTHOR_NAME=$(git log -1 --format='%an' HEAD)
+AUTHOR_EMAIL=$(git log -1 --format='%ae' HEAD)
+SUBJECT=$(git log -1 --format='%s' HEAD)
+BODY=$(git log -1 --format='%b' HEAD)
+MERGED_BRANCH=$(echo "$SUBJECT" | grep -oE "from [^ ]+" | sed 's/from //' || echo "unknown")
+FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | head -40 | tr '\n' ',' | sed 's/,$//')
+
+case "$MERGED_BRANCH" in
+  marketing/*)  CATEGORY="marketing" ;;
+  law/*|legal/*) CATEGORY="law" ;;
+  research/*)   CATEGORY="research" ;;
+  *)            CATEGORY="engineering" ;;
+esac
+
+FULL_BODY="$BODY"$'\n\nFiles changed: '"$FILES"
+
+sqlite3 "$DB" <<SQL
+INSERT INTO knowledge_notes (category, title, body, tags, author_name, author_email, branch, commit_sha, source)
+VALUES (
+  '$CATEGORY',
+  $(printf "'%s'" "$(echo "$SUBJECT" | sed "s/'/''/g")"),
+  $(printf "'%s'" "$(echo "$FULL_BODY" | sed "s/'/''/g")"),
+  'auto-merge',
+  $(printf "'%s'" "$(echo "$AUTHOR_NAME" | sed "s/'/''/g")"),
+  '$AUTHOR_EMAIL',
+  '$MERGED_BRANCH',
+  '$SHA',
+  'auto_merge'
+);
+SQL
+
+echo "[post-merge] captured merge $SHA by $AUTHOR_EMAIL into knowledge bank ($CATEGORY)"

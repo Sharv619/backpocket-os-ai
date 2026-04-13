@@ -1,36 +1,24 @@
 {
   "mcpServers": {
-    "gmail": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-gmail"],
-      "disabled": false,
-      "env": {
-        "GMAIL_CLIENT_ID": "${GMAIL_CLIENT_ID}",
-        "GMAIL_CLIENT_SECRET": "${GMAIL_CLIENT_SECRET}"
-      }
-    },
-    "google-drive": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-google-drive"],
+    "backpocket-leads": {
+      "command": "node",
+      "args": ["./mcp_servers/leads.mjs"],
       "disabled": false
     },
-    "google-maps": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-google-maps"],
-      "disabled": false,
-      "env": {
-        "GOOGLE_MAPS_API_KEY": "${GOOGLE_MAPS_API_KEY}"
-      }
-    },
-    "backpocket-local": {
+    "backpocket-quotes": {
       "command": "node",
-      "args": ["./src/mcp-wrapper/server.js"],
-      "disabled": false,
-      "env": {
-        "LOCAL_DB_PATH": "./backpocket.db",
-        "CHROMADB_PATH": "./chromadb",
-        "NODE_ENV": "production"
-      }
+      "args": ["./mcp_servers/quotes.mjs"],
+      "disabled": false
+    },
+    "backpocket-pipeline": {
+      "command": "node",
+      "args": ["./mcp_servers/pipeline.mjs"],
+      "disabled": false
+    },
+    "backpocket-knowledge": {
+      "command": "node",
+      "args": ["./mcp_servers/knowledge.mjs"],
+      "disabled": false
     }
   }
 }

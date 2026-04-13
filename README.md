@@ -35,6 +35,33 @@ Welcome to the BackPocket OS documentation hub. This folder contains comprehensi
 
 ---
 
+## 👥 Team Setup (new contributors — marketing, law, research, engineering)
+
+One-time setup, takes ~2 minutes:
+
+```bash
+git clone https://github.com/Sharv619/backpocket-mvp.git
+cd backpocket-mvp
+npm run setup
+```
+
+That installs MCP dependencies, creates the shared knowledge-bank table, and wires up the git hook that auto-logs every merge into `main` for audit (signed with your git author + commit SHA).
+
+Then open OpenCode in the repo. Four MCP servers load automatically from `.mcp.json`:
+
+| Server | Tools | Use for |
+|--------|-------|---------|
+| `backpocket-leads` | search / get / create leads | Lead intake work |
+| `backpocket-quotes` | create quote, templates, overdue list | Quoting + follow-ups |
+| `backpocket-pipeline` | pipeline summary, record payment | Ops / reporting |
+| `backpocket-knowledge` | save / search / list notes | **Shared team knowledge bank** |
+
+**Rule of thumb:** anything worth referencing later — marketing copy, legal notes, research findings — drop it via the `save_note` tool in the knowledge bank, **or** just merge it into `main` and the post-merge hook captures it for you. Every entry is signed with your git identity so audits are trivial.
+
+Full restructure rationale: [`docs/MCP_RESTRUCTURE_PLAN.md`](./docs/MCP_RESTRUCTURE_PLAN.md).
+
+---
+
 ## 🚀 Getting Started
 
 ### 1. **Prerequisites**
