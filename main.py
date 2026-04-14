@@ -118,6 +118,8 @@ app.add_middleware(
             "http://127.0.0.1:3000",
             "http://localhost:40243",  # Flutter dev server
             "http://127.0.0.1:40243",  # Flutter dev server
+            "http://localhost:8080",  # Flutter web build preview
+            "http://127.0.0.1:8080",  # Flutter web build preview
             os.getenv("FRONTEND_ORIGIN", ""),
         ]
         if o
@@ -194,7 +196,10 @@ for _dir in ["static", "logs", "docs"]:
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 from routes.admin import router as admin_router
+from routes.voice import router as voice_router
+
 app.include_router(admin_router)
+app.include_router(voice_router)
 
 
 @app.get("/dashboard")
@@ -4205,10 +4210,19 @@ async def create_lead(data: dict):
         from services.construction import get_construction_manager
 
         # Validate required fields
-        required_fields = ["client_name", "email", "job_type", "location", "estimated_budget"]
+        required_fields = [
+            "client_name",
+            "email",
+            "job_type",
+            "location",
+            "estimated_budget",
+        ]
         missing = [f for f in required_fields if not data.get(f)]
         if missing:
-            return {"status": "error", "message": f"Missing required fields: {', '.join(missing)}"}
+            return {
+                "status": "error",
+                "message": f"Missing required fields: {', '.join(missing)}",
+            }
 
         manager = get_construction_manager()
 
@@ -4285,7 +4299,10 @@ async def create_quote(data: dict):
         required_fields = ["lead_id"]
         missing = [f for f in required_fields if data.get(f) is None]
         if missing:
-            return {"status": "error", "message": f"Missing required fields: {', '.join(missing)}"}
+            return {
+                "status": "error",
+                "message": f"Missing required fields: {', '.join(missing)}",
+            }
 
         manager = get_construction_manager()
 
@@ -4375,7 +4392,10 @@ async def record_payment(data: dict):
 
         # Validate required fields
         if not data.get("quote_id") or not data.get("amount"):
-            return {"status": "error", "message": "Missing required fields: quote_id and amount"}
+            return {
+                "status": "error",
+                "message": "Missing required fields: quote_id and amount",
+            }
 
         manager = get_construction_manager()
 
