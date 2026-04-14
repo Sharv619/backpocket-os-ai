@@ -4,9 +4,12 @@ import logging
 import sqlite3
 import uuid
 import requests
+import ollama
 from dotenv import load_dotenv
 
 load_dotenv()
+
+OLLAMA_VISION_MODEL = "moondream"
 
 logger = logging.getLogger(__name__)
 
@@ -14,16 +17,14 @@ DB_PATH = "backpocket.db"
 UPLOAD_DIR = "uploads"
 
 # ── OpenRouter vision config ──────────────────────────────────────────────────
-# Tried in order until one succeeds. All free-tier, all support image input.
-#   1. gemma-3-27b  — best quality, 131k ctx, free (may rate-limit)
-#   2. gemma-3-12b  — lighter, 32k ctx, free
-#   3. nemotron-12b — NVIDIA, 128k ctx, free (image+video), good fallback
+# Vision models tried in order until one succeeds.
+#   1. gemini-2.5-flash-image — best free vision, fast
 VISION_MODEL_PRIMARY = os.getenv(
-    "OPENROUTER_VISION_MODEL", "openrouter/auto"
+    "OPENROUTER_VISION_MODEL", "google/gemini-2.5-flash-image"
 )
 VISION_MODELS = [
     VISION_MODEL_PRIMARY,
-    "openrouter/auto",
+    "google/gemini-2.5-flash-image",
 ]
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -151,7 +152,7 @@ def _call_openrouter_vision(image_b64: str, prompt: str, model: str) -> str:
                 ],
             }
         ],
-        "max_tokens": 1500,
+        "max_tokens": 512,
     }
 
     response = requests.post(
@@ -207,23 +208,39 @@ def analyze_document(doc_id, custom_prompt: str | None = None):
     ai_response = None
     used_model = None
 
-    # Try models in order until one succeeds
-    for model in VISION_MODELS:
-        try:
-            logger.info(f"Vision analysis: trying {model} for doc {doc_id}")
-            ai_response = _call_openrouter_vision(image_b64, prompt, model)
-            used_model = model
-            logger.info(
-                f"Vision analysis success with {model} ({len(ai_response)} chars)"
-            )
-            break
-        except Exception as e:
-            logger.warning(f"Vision model {model} failed: {e}. Trying next...")
+    # Try Ollama vision first (local, fast, free)
+    try:
+        logger.info(f"Vision analysis: trying {OLLAMA_VISION_MODEL} for doc {doc_id}")
+        response = ollama.chat(
+            model=OLLAMA_VISION_MODEL,
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                    "images": [image_b64],
+                }
+            ],
+        )
+        ai_response = response["message"]["content"]
+        used_model = f"ollama/{OLLAMA_VISION_MODEL}"
+        logger.info(
+            f"Vision analysis success with {OLLAMA_VISION_MODEL} ({len(ai_response)} chars)"
+        )
+    except Exception as e:
+        logger.warning(f"Ollama vision failed: {e}. Trying OpenRouter fallback...")
+        # Fallback to OpenRouter if Ollama fails
+        for model in VISION_MODELS:
+            try:
+                ai_response = _call_openrouter_vision(image_b64, prompt, model)
+                used_model = f"openrouter/{model}"
+                break
+            except Exception as e2:
+                logger.warning(f"OpenRouter vision {model} failed: {e2}")
 
     if not ai_response:
         return {
             "status": "error",
-            "message": "All vision models failed. Check OPENROUTER_API_KEY.",
+            "message": "All vision models failed.",
         }
 
     # Persist analysis to DB

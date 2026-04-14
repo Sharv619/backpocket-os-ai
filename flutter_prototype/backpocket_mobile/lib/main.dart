@@ -5,7 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
 import 'theme.dart';
+import 'screens/inbox_screen.dart';
 import 'screens/vision_chat_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/documents_screen.dart';
@@ -79,18 +81,69 @@ void main() {
   runApp(const BackPocketApp());
 }
 
-class BackPocketApp extends StatelessWidget {
+class BackPocketApp extends StatefulWidget {
   const BackPocketApp({super.key});
+
+  @override
+  State<BackPocketApp> createState() => _BackPocketAppState();
+}
+
+class _BackPocketAppState extends State<BackPocketApp> {
+  late final GoRouter _router;
+
+  @override
+  void initState() {
+    super.initState();
+    _router = GoRouter(
+      initialLocation: '/',
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (context, state) => AppShell(initialTab: 0),
+        ),
+        GoRoute(
+          path: '/inbox',
+          builder: (context, state) => AppShell(initialTab: 1),
+        ),
+        GoRoute(
+          path: '/chat',
+          builder: (context, state) => AppShell(initialTab: 2),
+        ),
+        GoRoute(
+          path: '/docs',
+          builder: (context, state) => AppShell(initialTab: 3),
+        ),
+        GoRoute(
+          path: '/marketing',
+          builder: (context, state) => AppShell(initialTab: 4),
+        ),
+        GoRoute(
+          path: '/instructions',
+          builder: (context, state) => AppShell(initialTab: 5),
+        ),
+        GoRoute(
+          path: '/construction',
+          builder: (context, state) => AppShell(initialTab: 6),
+        ),
+        GoRoute(
+          path: '/settings',
+          builder: (context, state) => AppShell(initialTab: 7),
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
       create: (_) => TwinController(),
-      child: MaterialApp(
+      child: MaterialApp.router(
         title: 'BackPocket OS',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
-        home: const AppShell(),
+        builder: (context, child) =>
+            AppBackground(child: child ?? const SizedBox()),
+        routerConfig: _router,
       ),
     );
   }
@@ -98,14 +151,16 @@ class BackPocketApp extends StatelessWidget {
 
 // ─── App Shell (bottom nav + settings) ───────────────────────────────────────
 class AppShell extends StatefulWidget {
-  const AppShell({super.key});
+  final int initialTab;
+
+  const AppShell({super.key, this.initialTab = 0});
 
   @override
   State<AppShell> createState() => _AppShellState();
 }
 
 class _AppShellState extends State<AppShell> {
-  int _tab = 0;
+  late int _tab;
   String _serverUrl = 'http://127.0.0.1:8000';
   String _apiKey = '';
   bool _magnifierMode = false;
@@ -113,6 +168,7 @@ class _AppShellState extends State<AppShell> {
   @override
   void initState() {
     super.initState();
+    _tab = widget.initialTab;
     _loadPrefs();
   }
 
@@ -224,7 +280,7 @@ class _AppShellState extends State<AppShell> {
     final navItems = [
       {'icon': Icons.dashboard_outlined, 'label': 'Home', 'tab': 0},
       {'icon': Icons.inbox_outlined, 'label': 'Inbox', 'tab': 1},
-      {'icon': Icons.psychology_outlined, 'label': 'Twin Chat', 'tab': 2},
+      {'icon': Icons.psychology_outlined, 'label': 'Pip Chat', 'tab': 2},
       {'icon': Icons.description_outlined, 'label': 'Documents', 'tab': 3},
       {'icon': Icons.campaign_outlined, 'label': 'Marketing', 'tab': 4},
       {'icon': Icons.rule_outlined, 'label': 'Instructions', 'tab': 5},
@@ -361,7 +417,7 @@ class _AppShellState extends State<AppShell> {
       MarketingScreen(serverUrl: _serverUrl, apiKey: _apiKey),
       InstructionsScreen(serverUrl: _serverUrl, apiKey: _apiKey),
       ConstructionScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-      SettingsScreen(
+    SettingsScreen(
         serverUrl: _serverUrl,
         apiKey: _apiKey,
         onSettingsChanged: (url, key) {
@@ -420,63 +476,7 @@ class _AppShellState extends State<AppShell> {
               child: const Icon(Icons.camera_alt_rounded),
             )
           : null,
-      bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          color: kSurface,
-          border: Border(top: BorderSide(color: kBorder)),
-        ),
-        child: BottomNavigationBar(
-          currentIndex: _tab,
-          onTap: (i) => setState(() => _tab = i),
-          backgroundColor: Colors.transparent,
-          selectedItemColor: kAmber,
-          unselectedItemColor: kTextMuted,
-          type: BottomNavigationBarType.fixed,
-          elevation: 0,
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.dashboard_outlined),
-              activeIcon: Icon(Icons.dashboard),
-              label: 'Home',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.inbox_outlined),
-              activeIcon: Icon(Icons.inbox),
-              label: 'Inbox',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.psychology_outlined),
-              activeIcon: Icon(Icons.psychology),
-              label: 'Twin',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.description_outlined),
-              activeIcon: Icon(Icons.description),
-              label: 'Docs',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.campaign_outlined),
-              activeIcon: Icon(Icons.campaign),
-              label: 'Marketing',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.rule_outlined),
-              activeIcon: Icon(Icons.rule),
-              label: 'Rules',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.build_outlined),
-              activeIcon: Icon(Icons.build),
-              label: 'Building',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.settings_outlined),
-              activeIcon: Icon(Icons.settings),
-              label: 'Settings',
-            ),
-          ],
-        ),
-      ),
+
     );
   }
 }
@@ -1471,7 +1471,7 @@ class _TwinChatScreenState extends State<TwinChatScreen> {
                   ),
                   SizedBox(width: 8),
                   Text(
-                    'Twin is thinking...',
+                    'Pip is thinking...',
                     style: TextStyle(color: kTextDim, fontSize: 12),
                   ),
                 ],
@@ -1492,7 +1492,7 @@ class _TwinChatScreenState extends State<TwinChatScreen> {
                     maxLines: null,
                     onSubmitted: (_) => _send(),
                     decoration: InputDecoration(
-                      hintText: 'Ask your twin anything...',
+                      hintText: 'Ask Pip anything...',
                       hintStyle: const TextStyle(color: kTextMuted),
                       filled: true,
                       fillColor: kCard,

@@ -6,7 +6,7 @@ import json
 import requests
 import math
 import re
-import google.generativeai as genai
+from google import genai  # google-genai (new SDK) — exposes genai.Client
 from dotenv import load_dotenv
 from datetime import datetime
 

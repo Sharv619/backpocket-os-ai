@@ -111,7 +111,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Your Twin has prepared $pendingCount items for your review.',
+                    'Pip has prepared $pendingCount items for your review.',
                     style: const TextStyle(
                       color: AppColors.textDim,
                       fontSize: 14,

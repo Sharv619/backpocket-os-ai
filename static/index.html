@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>BackPocket OS — My Twin</title>
+  <title>BackPocket OS — Pip</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -2149,7 +2149,7 @@
       <div class="nav-subitems" id="instructions-sub">
         <div class="nav-subitem" onclick="toggleSection('email-rules')">Email Rules</div>
         <div class="nav-subitem" onclick="toggleSection('sops')">SOPs</div>
-        <div class="nav-subitem" onclick="toggleSection('twin-instructions')">Twin Instructions</div>
+        <div class="nav-subitem" onclick="toggleSection('twin-instructions')">Pip Instructions</div>
         <div class="nav-subitem" onclick="toggleSection('sender-rules')">Sender Rules</div>
         <div class="nav-subitem" onclick="toggleSection('document-rules')">Document Rules</div>
         <div class="nav-subitem" onclick="toggleSection('marketing-rules')">Marketing Rules</div>
@@ -2190,7 +2190,7 @@
       </div>
       <div class="nav-subitems" id="rag-sub">
         <div class="nav-subitem" onclick="toggleSection('agentic-rag')">📊 Email Analysis</div>
-        <div class="nav-subitem" onclick="toggleSection('agentic-twins')">🤖 Twin Intelligence</div>
+        <div class="nav-subitem" onclick="toggleSection('agentic-twins')">🤖 Pip Intelligence</div>
       </div>
 
       <!-- NEW: BLOG & STORIES -->
@@ -2252,12 +2252,12 @@
               <path d="M4 21C4 16.5817 7.58172 13 12 13C16.4183 13 20 16.5817 20 21" opacity="0.5"/>
             </svg>
           </span>
-          <span class="nav-item-label" style="opacity: 1; font-size: 12px;">Twin Chat</span>
+          <span class="nav-item-label" style="opacity: 1; font-size: 12px;">Pip Chat</span>
           <span class="nav-chevron">▸</span>
         </div>
         <div class="nav-subitems" id="twin-chat-sub">
           <div class="chat-history-list" id="twin-chat-list">
-            <div class="chat-history-empty">No twin chats</div>
+            <div class="chat-history-empty">No Pip chats</div>
           </div>
         </div>
 
@@ -2326,7 +2326,7 @@
       <!-- WELCOME -->
       <section class="welcome-section">
         <h1 class="welcome-title" id="greeting">Good morning.</h1>
-        <p class="welcome-subtitle" id="total-count-row">Your Twin has prepared <span id="total-count">0 items</span> for your review.</p>
+        <p class="welcome-subtitle" id="total-count-row">Pip has prepared <span id="total-count">0 items</span> for your review.</p>
       </section>
 
       <!-- STATS ROW -->
@@ -2438,11 +2438,11 @@
       <!-- Twin Instructions SECTION -->
       <div class="instructions-section" id="twin-instructions-section" style="display: none;">
         <div class="instructions-header">
-          <h2>Twin Instructions</h2>
+          <h2>Pip Instructions</h2>
           <button class="instructions-close" onclick="toggleSection('twin-instructions')">×</button>
         </div>
         <div class="instructions-list" id="twin-instructions-list">
-          <div class="sops-loading">Loading Twin Instructions...</div>
+          <div class="sops-loading">Loading Pip Instructions...</div>
         </div>
       </div>
 
@@ -2526,11 +2526,11 @@
       <!-- NEW: AGENTIC TWINS SECTION -->
       <div class="instructions-section" id="agentic-twins-section" style="display: none;">
         <div class="instructions-header">
-          <h2>🤖 Twin Agents</h2>
+          <h2>🤖 Pip Agents</h2>
           <button class="instructions-close" onclick="toggleSection('agentic-twins')">×</button>
         </div>
         <div id="twins-container" style="padding: 20px;">
-          <div class="sops-loading">Loading Twins...</div>
+          <div class="sops-loading">Loading Pip agents...</div>
         </div>
       </div>
 
@@ -2638,13 +2638,13 @@
               <textarea id="edit-instruction-text" rows="8"></textarea>
             </div>
             <div class="instruction-edit-preview">
-              <label>Preview (how Twin sees it):</label>
+              <label>Preview (how Pip sees it):</label>
               <div id="edit-preview" class="instruction-preview-box"></div>
             </div>
           </div>
           <div class="instruction-modal-footer">
             <button class="instruction-modal-btn cancel" onclick="closeInstructionModal()">Cancel</button>
-            <button class="instruction-modal-btn discuss" onclick="discussInstruction()">Discuss with Twin</button>
+            <button class="instruction-modal-btn discuss" onclick="discussInstruction()">Discuss with Pip</button>
             <button class="instruction-modal-btn save" onclick="saveInstructionEdit()">Save Changes</button>
           </div>
         </div>
@@ -2660,7 +2660,7 @@
             </svg>
           </div>
           <div class="chat-text">
-            <div class="chat-title">Ask My Twin</div>
+            <div class="chat-title">Ask Pip</div>
             <div class="chat-subtitle">Chat, ask questions, or give instructions</div>
           </div>
           <div class="chat-status">
@@ -2680,7 +2680,7 @@
                   <path d="M19 2L19.75 4.25L22 5L19.75 5.75L19 8L18.25 5.75L16 5L18.25 4.25L19 2Z" opacity="0.8"/>
                 </svg>
               </span>
-              <span class="chat-header-title">My Twin</span>
+              <span class="chat-header-title">Pip</span>
               <span class="chat-header-status">
                 <div class="chat-status-dot"></div>
                 Online
@@ -3351,7 +3351,7 @@ function loadEmailRules() {
                 <path d="M4 21C4 16.5817 7.58172 13 12 13C16.4183 13 20 16.5817 20 21" fill="currentColor" opacity="0.5"/>
                 <path d="M19 2L19.75 4.25L22 5L19.75 5.75L19 8L18.25 5.75L16 5L18.25 4.25L19 2Z" fill="currentColor" opacity="0.8"/>
               </svg>
-              Discuss with Twin
+              Discuss with Pip
             </button>
             <button class="email-rules-btn edit" onclick="requestEmailRuleChange()">
               <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
@@ -3407,7 +3407,7 @@ function loadEmailRules() {
           
           <div class="email-rules-note">
             <strong>Note:</strong> Email triage rules are system-critical and stored in code for security. 
-            To modify, discuss with Twin or request a change below. Changes will be reviewed and applied safely.
+            To modify, discuss with Pip or request a change below. Changes will be reviewed and applied safely.
           </div>
         </div>
       `;

@@ -318,7 +318,7 @@ class _VisionChatScreenState extends State<VisionChatScreen>
 
   Future<void> _askTwin() async {
     setState(() => _chatSending = true);
-    _messages.add(const _Message('user', '🧠 Ask Twin about this document'));
+    _messages.add(const _Message('user', '🧠 Ask Pip about this document'));
     _scrollToBottom();
 
     try {
@@ -339,10 +339,10 @@ class _VisionChatScreenState extends State<VisionChatScreen>
           .timeout(const Duration(seconds: 30));
 
       final data = jsonDecode(res.body) as Map<String, dynamic>;
-      final reply = data['response'] as String? ?? 'No response from Twin.';
+      final reply = data['response'] as String? ?? 'No response from Pip.';
       setState(() => _messages.add(_Message('assistant', reply)));
     } catch (e) {
-      setState(() => _messages.add(_Message('assistant', 'Twin error: $e')));
+      setState(() => _messages.add(_Message('assistant', 'Pip error: $e')));
     } finally {
       setState(() => _chatSending = false);
       _scrollToBottom();
@@ -727,7 +727,7 @@ class _VisionChatScreenState extends State<VisionChatScreen>
                 ),
                 SizedBox(width: 8),
                 Text(
-                  'Twin is thinking...',
+                  'Pip is thinking...',
                   style: TextStyle(color: _kDim, fontSize: 12),
                 ),
               ],
@@ -761,7 +761,7 @@ class _VisionChatScreenState extends State<VisionChatScreen>
           ),
           const SizedBox(width: 8),
           _ActionChip(
-            label: '🧠 Ask Twin',
+            label: '🧠 Ask Pip',
             onTap: _chatSending ? null : _askTwin,
           ),
         ],
