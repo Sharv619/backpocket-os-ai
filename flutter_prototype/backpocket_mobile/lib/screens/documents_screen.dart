@@ -60,83 +60,121 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
 
   Future<void> _uploadAndAnalyze() async {
     final picker = ImagePicker();
-    final xfile = await picker.pickImage(source: ImageSource.gallery);
+
+    // Show option to choose camera or gallery
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Select Source',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 20),
+            ListTile(
+              leading: const Icon(Icons.camera_alt, color: kAmber),
+              title: const Text('Camera'),
+              onTap: () => Navigator.pop(context, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: kAmber),
+              title: const Text('Gallery'),
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (source == null) return;
+
+    final xfile = await picker.pickImage(source: source, imageQuality: 85);
     if (xfile == null) return;
 
     setState(() => _analyzing = true);
 
     try {
       final headers = {
+        'Content-Type': 'application/json',
         if (widget.apiKey.isNotEmpty) 'X-API-Key': widget.apiKey,
       };
 
+      // Read file with error handling
       final bytes = await xfile.readAsBytes();
       final fileName = xfile.name;
 
-      // Try multipart first (works on mobile), fall back to base64 (web)
-      try {
-        final uri = Uri.parse('${widget.serverUrl}/api/documents/upload');
-        final request = http.MultipartRequest('POST', uri);
-        request.files.add(
-          http.MultipartFile.fromBytes('file', bytes, filename: fileName),
-        );
-        final streamed = await request.send();
-        final body = await streamed.stream.bytesToString();
-        var uploadResult = jsonDecode(body);
+      debugPrint('Uploading: $fileName (${bytes.length} bytes)');
 
-        if (uploadResult['status'] != 'success') {
-          throw Exception(uploadResult['message'] ?? 'Upload failed');
-        }
-        var docId = uploadResult['document_id'];
+      // Try base64 approach - more reliable across platforms
+      final base64File = base64Encode(bytes);
 
-        // Analyze
-        final analyzeRes = await http.post(
-          Uri.parse('${widget.serverUrl}/api/documents/analyze/$docId'),
-          headers: {'Content-Type': 'application/json', ...headers},
-        );
-        final analysis = jsonDecode(analyzeRes.body);
+      // Upload with retry logic (3 attempts)
+      var uploadResult;
+      var lastError;
 
-        setState(() => _analyzing = false);
+      for (var attempt = 1; attempt <= 3; attempt++) {
+        try {
+          debugPrint('Upload attempt $attempt...');
 
-        if (analysis['status'] == 'success') {
-          _showSnack('Document analyzed!', isError: false);
-          _loadDocuments();
-        } else {
-          _showSnack('Analysis failed: ${analysis['message']}', isError: true);
-        }
-      } catch (multipartError) {
-        // Fall back to base64 for web/unsupported platforms
-        final base64File = base64Encode(bytes);
-        final uploadRes = await http.post(
-          Uri.parse('${widget.serverUrl}/api/documents/upload'),
-          headers: {'Content-Type': 'application/json', ...headers},
-          body: jsonEncode({'file': base64File, 'filename': fileName}),
-        );
-        final uploadResult = jsonDecode(uploadRes.body);
+          final uploadRes = await http
+              .post(
+                Uri.parse('${widget.serverUrl}/api/documents/upload'),
+                headers: {'Content-Type': 'application/json', ...headers},
+                body: jsonEncode({'file': base64File, 'filename': fileName}),
+              )
+              .timeout(const Duration(seconds: 60));
 
-        if (uploadResult['status'] != 'success') {
-          throw Exception(uploadResult['message'] ?? 'Upload failed');
-        }
+          if (uploadRes.statusCode == 200) {
+            uploadResult = jsonDecode(uploadRes.body);
+            debugPrint('Upload success: $uploadResult');
+            break;
+          } else {
+            lastError = 'HTTP ${uploadRes.statusCode}: ${uploadRes.body}';
+            debugPrint('Upload failed: $lastError');
+          }
+        } catch (e) {
+          lastError = e.toString();
+          debugPrint('Upload error (attempt $attempt): $lastError');
 
-        final docId = uploadResult['document_id'];
-        final analyzeRes = await http.post(
-          Uri.parse('${widget.serverUrl}/api/documents/analyze/$docId'),
-          headers: {'Content-Type': 'application/json', ...headers},
-        );
-        final analysis = jsonDecode(analyzeRes.body);
-
-        setState(() => _analyzing = false);
-
-        if (analysis['status'] == 'success') {
-          _showSnack('Document analyzed!', isError: false);
-          _loadDocuments();
-        } else {
-          _showSnack('Analysis failed: ${analysis['message']}', isError: true);
+          // Wait before retry (exponential backoff)
+          if (attempt < 3) {
+            await Future.delayed(Duration(milliseconds: 500 * attempt));
+          }
         }
       }
-    } catch (e) {
+
+      if (uploadResult == null || uploadResult['status'] != 'success') {
+        throw Exception(lastError ?? 'Upload failed after 3 attempts');
+      }
+
+      var docId = uploadResult['document_id'];
+      debugPrint('Document uploaded, ID: $docId');
+
+      // Now analyze the document
+      final analyzeRes = await http
+          .post(
+            Uri.parse('${widget.serverUrl}/api/documents/analyze/$docId'),
+            headers: {'Content-Type': 'application/json', ...headers},
+          )
+          .timeout(const Duration(seconds: 120)); // Analysis can take longer
+
+      final analysis = jsonDecode(analyzeRes.body);
+
       setState(() => _analyzing = false);
-      _showSnack('Error: $e', isError: true);
+
+      if (analysis['status'] == 'success') {
+        _showSnack('Document analyzed successfully!', isError: false);
+        _loadDocuments();
+      } else {
+        _showSnack('Analysis: ${analysis['message']}', isError: true);
+      }
+    } catch (e) {
+      debugPrint('Full error: $e');
+      setState(() => _analyzing = false);
+      _showSnack('Upload failed: $e', isError: true);
     }
   }
 
