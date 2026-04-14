@@ -193,6 +193,9 @@ for _dir in ["static", "logs", "docs"]:
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+from routes.admin import router as admin_router
+app.include_router(admin_router)
+
 
 @app.get("/dashboard")
 async def get_dashboard():

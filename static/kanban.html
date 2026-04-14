@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BackPocket — Team Kanban</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #181b22; --panel-2: #1f2430; --line: #2a2f3a;
+    --ink: #e8ecf1; --mute: #8a93a6; --accent: #5cc8ff; --ok: #6ee7a8; --warn: #f5c16c;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; background: var(--bg); color: var(--ink); }
+  header { padding: 18px 24px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: 0.2px; }
+  header .sub { color: var(--mute); font-size: 12px; }
+  main { padding: 20px 24px; }
+  .pulse { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 20px; }
+  .pulse .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .pulse .label { color: var(--mute); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .pulse .val { font-size: 22px; margin-top: 6px; font-weight: 600; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+  .col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; min-height: 240px; }
+  .col h2 { font-size: 13px; margin: 4px 4px 10px; color: var(--mute); text-transform: uppercase; letter-spacing: 0.6px; display: flex; justify-content: space-between; }
+  .col h2 .n { background: var(--panel-2); color: var(--ink); padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+  .card-item { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+  .card-item .t { font-weight: 500; }
+  .card-item .meta { color: var(--mute); font-size: 11px; margin-top: 4px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .tag { background: #232937; color: var(--accent); padding: 1px 7px; border-radius: 6px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; }
+  .tag.marketing { color: #ff9ec7; } .tag.law { color: #f5c16c; } .tag.research { color: #a8ff9e; } .tag.engineering { color: var(--accent); } .tag.other { color: var(--mute); }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+  .panel h3 { margin: 0 0 10px; font-size: 13px; color: var(--mute); text-transform: uppercase; letter-spacing: 0.6px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table th, table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  table th { color: var(--mute); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; }
+  .medal { font-size: 16px; }
+  .empty { color: var(--mute); text-align: center; padding: 30px 0; font-size: 12px; }
+  .refresh { background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 12px; }
+  .refresh:hover { border-color: var(--accent); }
+  code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-size: 11px; color: var(--mute); }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>🧭 BackPocket Team Kanban</h1>
+    <div class="sub">Auto-populated from the knowledge bank + git-signed merges. Read-only.</div>
+  </div>
+  <button class="refresh" onclick="load()">↻ Refresh</button>
+</header>
+
+<main>
+  <section class="pulse" id="pulse"></section>
+
+  <section class="grid">
+    <div class="col"><h2>In Progress <span class="n" id="n-ip">0</span></h2><div id="col-ip"></div></div>
+    <div class="col"><h2>Merged This Week <span class="n" id="n-mw">0</span></h2><div id="col-mw"></div></div>
+    <div class="col"><h2>Audited <span class="n" id="n-au">0</span></h2><div id="col-au"></div></div>
+  </section>
+
+  <section class="row2">
+    <div class="panel">
+      <h3>🏆 Leaderboard — Notes This Week</h3>
+      <table id="leaderboard"><thead><tr><th></th><th>Contributor</th><th>Notes</th></tr></thead><tbody></tbody></table>
+    </div>
+    <div class="panel">
+      <h3>🏷️ By Category</h3>
+      <table id="categories"><thead><tr><th>Category</th><th>Count</th></tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+</main>
+
+<script>
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtDate = (s) => s ? new Date(s.replace(' ', 'T') + 'Z').toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : '';
+const medal = (i) => ['🥇','🥈','🥉'][i] || `${i+1}.`;
+
+function renderCard(n) {
+  const cat = (n.category || 'other').toLowerCase();
+  const sha = n.commit_sha ? `<code>${esc(n.commit_sha.slice(0,7))}</code>` : '';
+  return `<div class="card-item">
+    <div class="t">${esc(n.title)}</div>
+    <div class="meta">
+      <span class="tag ${cat}">${esc(n.category || 'other')}</span>
+      ${n.branch ? `<span>⎇ ${esc(n.branch)}</span>` : ''}
+      <span>${esc(n.author_name || n.author_email || '—')}</span>
+      ${sha}
+      <span>${fmtDate(n.created_at)}</span>
+    </div>
+  </div>`;
+}
+
+function renderCol(id, items, counterId) {
+  const el = document.getElementById(id);
+  document.getElementById(counterId).textContent = items.length;
+  el.innerHTML = items.length ? items.map(renderCard).join('') : '<div class="empty">Nothing here yet</div>';
+}
+
+async function load() {
+  try {
+    const r = await fetch('/admin/api/kanban');
+    const d = await r.json();
+
+    const p = d.pulse || {};
+    document.getElementById('pulse').innerHTML = [
+      ['Open leads', p.open_leads ?? 0],
+      ['Total quotes', p.total_quotes ?? 0],
+      ['Sent quotes', p.sent ?? 0],
+      ['Accepted quotes', p.accepted ?? 0],
+      ['Revenue pipeline', '$' + Number(p.revenue_pipeline ?? 0).toLocaleString()],
+    ].map(([l, v]) => `<div class="card"><div class="label">${l}</div><div class="val">${v}</div></div>`).join('');
+
+    renderCol('col-ip', d.columns.in_progress || [], 'n-ip');
+    renderCol('col-mw', d.columns.merged_this_week || [], 'n-mw');
+    renderCol('col-au', d.columns.audited || [], 'n-au');
+
+    const lb = document.querySelector('#leaderboard tbody');
+    lb.innerHTML = (d.leaderboard || []).length
+      ? d.leaderboard.map((r, i) => `<tr><td class="medal">${medal(i)}</td><td>${esc(r.author)}</td><td>${r.notes_this_week}</td></tr>`).join('')
+      : '<tr><td colspan="3" class="empty">No activity yet this week</td></tr>';
+
+    const cats = document.querySelector('#categories tbody');
+    cats.innerHTML = (d.categories || []).length
+      ? d.categories.map((r) => `<tr><td><span class="tag ${esc((r.category||'other').toLowerCase())}">${esc(r.category)}</span></td><td>${r.n}</td></tr>`).join('')
+      : '<tr><td colspan="2" class="empty">No notes saved yet</td></tr>';
+  } catch (e) {
+    document.getElementById('pulse').innerHTML = `<div class="card" style="grid-column: span 5; color: var(--warn);">Failed to load: ${esc(e.message)}</div>`;
+  }
+}
+
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>

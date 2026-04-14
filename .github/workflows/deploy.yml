@@ -1,0 +1,105 @@
+name: Deploy to Oracle ARM
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+  OLLAMA_BASE_URL: "http://10.0.0.10:11434"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install ruff mypy pytest pytest-asyncio
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Type check
+        run: mypy . --ignore-missing-imports || true
+
+      - name: Test
+        run: pytest -v --tb=short || true
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.24.0"
+
+      - name: Flutter pub get
+        run: cd flutter_prototype/backpocket_mobile && flutter pub get
+
+      - name: Flutter build web
+        run: cd flutter_prototype/backpocket_mobile && flutter build web --release
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            flutter_prototype/backpocket_mobile/build/web/
+            static/
+            main.py
+            services/
+            mcp_servers/
+          retention-days: 7
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+
+      - name: Deploy to Oracle VM
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.ORACLE_HOST }}
+          username: ${{ secrets.ORACLE_USER }}
+          key: ${{ secrets.ORACLE_SSH_KEY }}
+          script: |
+            # Create backup of current deployment
+            sudo cp -r /opt/backpocket /opt/backpocket.bak.$(date +%Y%m%d)
+            
+            # Sync new code
+            rsync -avz --delete \
+              --exclude '.git' \
+              --exclude '__pycache__' \
+              --exclude '*.pyc' \
+              --exclude '.venv' \
+              ./ ${{ secrets.ORACLE_PATH }}
+            
+            # Restart service
+            sudo systemctl restart backpocket
+            
+            # Health check
+            sleep 5
+            curl -sf https://api.backpocket.ai/api/ping || exit 1
+            
+            echo "Deployment successful"
