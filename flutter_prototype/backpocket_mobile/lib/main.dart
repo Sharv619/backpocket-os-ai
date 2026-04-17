@@ -61,16 +61,6 @@ const Color kGreen = Color(0xFF22C55E);
 const Color kTextDim = Color(0x99FFFFFF);
 const Color kTextMuted = Color(0x44FFFFFF);
 
-// ─── Tier config ─────────────────────────────────────────────────────────────
-const _tierLabels = {1: 'URGENT', 2: 'HIGH', 3: 'MEDIUM', 4: 'LOW', 5: 'SPAM'};
-const _tierColors = {
-  1: kRed,
-  2: kOrange,
-  3: kAmber,
-  4: Color(0xFF6B7280),
-  5: Color(0xFF374151),
-};
-
 // ─── Entry point ─────────────────────────────────────────────────────────────
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -184,100 +174,6 @@ class _AppShellState extends State<AppShell> {
       _apiKey = prefs.getString('api_key') ?? '';
       _voiceService = VoiceCommandService(baseUrl: _serverUrl, apiKey: _apiKey);
     });
-  }
-
-  Future<void> _savePrefs(String url, String key) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('server_url', url);
-    await prefs.setString('api_key', key);
-    setState(() {
-      _serverUrl = url;
-      _apiKey = key;
-    });
-  }
-
-  void _showSettings() {
-    final urlCtrl = TextEditingController(text: _serverUrl);
-    final keyCtrl = TextEditingController(text: _apiKey);
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: kSurface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-          left: 24,
-          right: 24,
-          top: 24,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Settings',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: kAmber,
-              ),
-            ),
-            const SizedBox(height: 20),
-            _settingsField(urlCtrl, 'Server URL', 'http://192.168.1.147:8000'),
-            const SizedBox(height: 12),
-            _settingsField(keyCtrl, 'API Key (optional)', 'BP_API_KEY value'),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: kOrange,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                onPressed: () {
-                  _savePrefs(urlCtrl.text.trim(), keyCtrl.text.trim());
-                  Navigator.pop(context);
-                },
-                child: const Text(
-                  'Save',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _settingsField(TextEditingController ctrl, String label, String hint) {
-    return TextField(
-      controller: ctrl,
-      style: const TextStyle(color: Colors.white),
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        labelStyle: const TextStyle(color: kTextDim),
-        hintStyle: const TextStyle(color: kTextMuted),
-        filled: true,
-        fillColor: kCard,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: kBorder),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: kBorder),
-        ),
-      ),
-    );
   }
 
   // ─── Animated Sidebar ─────────────────────────────────────────────────────────
