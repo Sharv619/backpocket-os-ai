@@ -172,7 +172,7 @@ class ApiService {
     String category,
   ) async {
     final res = await http.post(
-      Uri.parse('$baseUrl/api/instruction'),
+      Uri.parse('$baseUrl/api/instructions'),
       headers: _headers,
       body: jsonEncode({
         'instruction_text': text,
@@ -266,16 +266,20 @@ class ApiService {
   Future<Map<String, dynamic>> createQuote({
     required int leadId,
     required double materialsCost,
-    required double laborHours,
-    required int markupPercent,
+    required double laborCost,
+    required double markupPercent,
+    String clientName = '',
+    String jobType = '',
   }) async {
     final res = await http.post(
       Uri.parse('$baseUrl/api/construction/quotes'),
       headers: _headers,
       body: jsonEncode({
         'lead_id': leadId,
+        'client_name': clientName,
+        'job_type': jobType,
         'materials_cost': materialsCost,
-        'labor_hours': laborHours,
+        'labor_cost': laborCost,
         'markup_percent': markupPercent,
       }),
     );
@@ -307,7 +311,10 @@ class ApiService {
       Uri.parse('$baseUrl/api/construction/pipeline'),
       headers: _headers,
     );
-    return await _handleResponse(res);
+    final body = await _handleResponse(res);
+    final data = body['data'];
+    if (data is Map<String, dynamic>) return data;
+    return body;
   }
 
   Future<List<dynamic>> getConstructionPayments() async {
@@ -384,6 +391,62 @@ class ApiService {
       Uri.parse('$baseUrl/api/draft/$refId'),
       headers: _headers,
       body: jsonEncode({'body': newText}),
+    );
+    return await _handleResponse(res);
+  }
+
+  // ── Voice Commands ────────────────────────────────────────────────────────
+  Future<Map<String, dynamic>> sendVoiceCommand({
+    required String transcript,
+    required String screenContext,
+    String? sessionId,
+    int? selectedItemId,
+    int? tabIndex,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/voice/command'),
+      headers: _headers,
+      body: jsonEncode({
+        'transcript': transcript,
+        'screen_context': screenContext,
+        'session_id': sessionId,
+        'metadata': {
+          'selected_item_id': selectedItemId,
+          'tab_index': tabIndex,
+        },
+      }),
+    );
+    return await _handleResponse(res);
+  }
+
+  Future<Map<String, dynamic>> confirmVoiceAction({
+    required String sessionId,
+    required String response,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/voice/confirm'),
+      headers: _headers,
+      body: jsonEncode({
+        'session_id': sessionId,
+        'response': response,
+      }),
+    );
+    return await _handleResponse(res);
+  }
+
+  Future<List<dynamic>> getVoiceIntents(String screen) async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/voice/intents?screen=$screen'),
+      headers: _headers,
+    );
+    final data = await _handleResponse(res);
+    return data['intents'] ?? [];
+  }
+
+  Future<Map<String, dynamic>> createVoiceSession() async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/voice/session'),
+      headers: _headers,
     );
     return await _handleResponse(res);
   }
