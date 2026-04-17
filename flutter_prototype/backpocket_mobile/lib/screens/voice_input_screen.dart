@@ -1,59 +1,20 @@
-import 'dart:io';
+import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 
 import '../theme.dart';
-
-// Stub for audio recording - using text input fallback for now
-// TODO: Fix record package version mismatch - using stub implementation
-class AudioRecorder {
-  bool _hasPermission = false;
-  bool _isRecording = false;
-
-  Future<bool> hasPermission() async => _hasPermission;
-
-  Future<void> start(Object config, String path) async {
-    _isRecording = true;
-    _hasPermission = true;
-  }
-
-  Future<String?> stop() async {
-    _isRecording = false;
-    return '/tmp/voice_stub.m4a';
-  }
-
-  Future<bool> isRecording() async => _isRecording;
-
-  void dispose() {}
-}
-
-class RecordConfig {
-  final int encoder;
-  final int sampleRate;
-  final int bitRate;
-
-  RecordConfig({
-    this.encoder = 0,
-    this.sampleRate = 16000,
-    this.bitRate = 128000,
-  });
-}
-
-class AudioEncoder {
-  static const int aacLc = 0;
-}
+import '../services/voice_command_service.dart';
+import '../models/voice_command_response.dart';
 
 class VoiceInputScreen extends StatefulWidget {
   final String serverUrl;
   final String apiKey;
+  final String screenContext;
 
   const VoiceInputScreen({
     super.key,
     required this.serverUrl,
     required this.apiKey,
+    this.screenContext = 'dashboard',
   });
 
   @override
@@ -62,14 +23,14 @@ class VoiceInputScreen extends StatefulWidget {
 
 class _VoiceInputScreenState extends State<VoiceInputScreen>
     with SingleTickerProviderStateMixin {
-  final AudioRecorder _recorder = AudioRecorder();
   late AnimationController _waveController;
+  late VoiceCommandService _voiceService;
+  final TextEditingController _textController = TextEditingController();
 
   bool _isRecording = false;
-  bool _isProcessing = false;
-  String? _error;
-  String? _transcript;
-  List<double> _waveform = [];
+  bool _showTextInput = false;
+  VoiceCommandResponse? _response;
+  final List<_ConversationEntry> _conversation = [];
 
   @override
   void initState() {
@@ -78,160 +39,68 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat();
+    _voiceService = VoiceCommandService(
+      baseUrl: widget.serverUrl,
+      apiKey: widget.apiKey,
+    );
+    _voiceService.setScreenContext(widget.screenContext);
   }
 
   @override
   void dispose() {
     _waveController.dispose();
-    _recorder.dispose();
+    _textController.dispose();
     super.dispose();
   }
 
-  Future<void> _startRecording() async {
-    // For now, show a text input dialog as fallback since audio recording is broken
-    // TODO: Fix record package and re-enable voice recording
-    final text = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Voice Input'),
-        content: const Text(
-          'Voice recording is temporarily unavailable. Type your request:',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
+  Future<void> _handleTextSubmit(String text) async {
+    if (text.isEmpty) return;
 
-    if (text != null && text.isNotEmpty) {
-      setState(() {
-        _transcript = text;
-        _isProcessing = true;
-      });
-      // Use text-to-quote endpoint instead of voice
-      await _processTextToQuote(text);
-    }
-  }
-
-  Future<void> _processTextToQuote(String text) async {
-    try {
-      final response = await http.post(
-        Uri.parse('${widget.serverUrl}/api/voice/quote-from-transcript'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'transcript': text}),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        setState(() {
-          _transcript = text;
-          _isProcessing = false;
-        });
-      } else {
-        setState(() {
-          _error = 'Failed to process: ${response.statusCode}';
-          _isProcessing = false;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _error = 'Error: $e';
-        _isProcessing = false;
-      });
-    }
-  }
-
-  Future<void> _stopRecording() async {
-    final path = await _recorder.stop();
     setState(() {
-      _isRecording = false;
-      _isProcessing = true;
+      _conversation.add(_ConversationEntry(text: text, isUser: true));
+    });
+    _textController.clear();
+
+    final response = await _voiceService.sendTranscript(text);
+    if (response != null && mounted) {
+      setState(() {
+        _response = response;
+        if (response.speechResponse.isNotEmpty) {
+          _conversation.add(_ConversationEntry(
+            text: response.speechResponse,
+            isUser: false,
+          ));
+        }
+      });
+    }
+  }
+
+  Future<void> _handleConfirm(String answer) async {
+    setState(() {
+      _conversation.add(_ConversationEntry(text: answer, isUser: true));
     });
 
-    if (path != null) {
-      await _processAudio(path);
+    final response = await _voiceService.sendConfirmation(answer);
+    if (response != null && mounted) {
+      setState(() {
+        _response = response;
+        if (response.speechResponse.isNotEmpty) {
+          _conversation.add(_ConversationEntry(
+            text: response.speechResponse,
+            isUser: false,
+          ));
+        }
+      });
     }
   }
 
-  Future<void> _processAudio(String filePath) async {
-    try {
-      final file = File(filePath);
-      final bytes = await file.readAsBytes();
-
-      final uri = Uri.parse('${widget.serverUrl}/api/voice/transcribe');
-      final request = http.MultipartRequest('POST', uri)
-        ..files.add(
-          http.MultipartFile.fromBytes('audio', bytes, filename: 'voice.m4a'),
-        )
-        ..headers['X-API-Key'] = widget.apiKey;
-
-      final streamed = await request.send();
-      final response = await http.Response.fromStream(streamed);
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        setState(() {
-          _transcript = data['transcript'];
-        });
-
-        if (_transcript != null && _transcript!.isNotEmpty) {
-          await _generateQuote(_transcript!);
-        }
-      } else {
-        setState(() {
-          _error = 'Transcription failed: ${response.statusCode}';
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _error = 'Error processing audio: $e';
-      });
-    } finally {
-      setState(() {
-        _isProcessing = false;
-      });
-      if (filePath.isNotEmpty) {
-        File(filePath).delete();
-      }
-    }
-  }
-
-  Future<void> _generateQuote(String transcript) async {
-    try {
-      final uri = Uri.parse(
-        '${widget.serverUrl}/api/voice/quote-from-transcript',
-      );
-      final response = await http.post(
-        uri,
-        headers: {
-          'Content-Type': 'application/json',
-          if (widget.apiKey.isNotEmpty) 'X-API-Key': widget.apiKey,
-        },
-        body: jsonEncode({'transcript': transcript}),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (mounted && data['quote_draft'] != null) {
-          Navigator.pushReplacementNamed(
-            context,
-            '/quote-review',
-            arguments: data['quote_draft'],
-          );
-        }
-      } else {
-        setState(() {
-          _error = 'Quote generation failed';
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _error = 'Error generating quote: $e';
-      });
-    }
+  Future<void> _startRecording() async {
+    setState(() => _isRecording = true);
+    // Text fallback since audio recording requires platform-specific setup
+    setState(() {
+      _isRecording = false;
+      _showTextInput = true;
+    });
   }
 
   @override
@@ -246,130 +115,238 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
-          'Voice-to-Quote',
+          'Voice Command',
           style: TextStyle(color: AppColors.cream, fontWeight: FontWeight.bold),
         ),
-      ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            children: [
-              const Spacer(),
-              _buildVisualizer(),
-              const SizedBox(height: 48),
-              _buildPrompt(),
-              const Spacer(),
-              _buildRecordButton(),
-              const SizedBox(height: 24),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildVisualizer() {
-    return Container(
-      height: 120,
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Center(
-        child: AnimatedBuilder(
-          animation: _waveController,
-          builder: (context, child) {
-            return CustomPaint(
-              size: const Size(double.infinity, 120),
-              painter: _WaveformPainter(
-                progress: _waveController.value,
-                isRecording: _isRecording,
-                color: _isRecording ? AppColors.orange : AppColors.amber,
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPrompt() {
-    return Column(
-      children: [
-        Text(
-          _isRecording
-              ? 'Listening...'
-              : _transcript ?? 'Tell me about the job',
-          style: const TextStyle(
-            color: AppColors.cream,
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-          ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Describe the work needed and I\'ll create a quote',
-          style: TextStyle(color: AppColors.textMuted, fontSize: 14),
-          textAlign: TextAlign.center,
-        ),
-        if (_error != null) ...[
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.red.withAlpha(26),
-              borderRadius: BorderRadius.circular(8),
+        actions: [
+          IconButton(
+            icon: Icon(
+              _showTextInput ? Icons.mic_rounded : Icons.keyboard_rounded,
+              color: AppColors.textDim,
             ),
-            child: Text(
-              _error!,
-              style: const TextStyle(color: AppColors.red, fontSize: 12),
-              textAlign: TextAlign.center,
-            ),
+            onPressed: () => setState(() => _showTextInput = !_showTextInput),
           ),
         ],
-      ],
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(child: _buildConversation()),
+            if (_response?.needsConfirmation == true) _buildConfirmBar(),
+            if (_response?.followUpPrompt != null &&
+                _response?.needsConfirmation != true)
+              _buildFollowUpHint(),
+            if (!_isRecording) _buildInputArea(),
+            if (_isRecording) _buildRecordingArea(),
+          ],
+        ),
+      ),
     );
   }
 
-  Widget _buildRecordButton() {
-    return GestureDetector(
-      onTap: _isRecording ? _stopRecording : _startRecording,
-      child: Container(
-        width: 80,
-        height: 80,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: _isRecording ? AppColors.red : AppColors.orange,
-          boxShadow: [
-            BoxShadow(
-              color: (_isRecording ? AppColors.red : AppColors.orange)
-                  .withAlpha(77),
-              blurRadius: 20,
-              spreadRadius: 5,
+  Widget _buildConversation() {
+    if (_conversation.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.mic_rounded, color: AppColors.amber.withAlpha(77), size: 64),
+            const SizedBox(height: 16),
+            const Text(
+              'Say something or type a command',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '"Show me my leads"\n"Create a quote for the Penrith job"\n"What\'s my pipeline?"',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+              textAlign: TextAlign.center,
             ),
           ],
         ),
-        child: Center(
-          child: _isProcessing
-              ? const SizedBox(
-                  width: 32,
-                  height: 32,
-                  child: CircularProgressIndicator(
-                    color: AppColors.cream,
-                    strokeWidth: 3,
-                  ),
-                )
-              : Icon(
-                  _isRecording ? Icons.stop : Icons.mic,
-                  color: AppColors.cream,
-                  size: 36,
-                ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      itemCount: _conversation.length,
+      itemBuilder: (context, index) {
+        final entry = _conversation[index];
+        return _buildBubble(entry.text, isUser: entry.isUser);
+      },
+    );
+  }
+
+  Widget _buildBubble(String text, {required bool isUser}) {
+    return Align(
+      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isUser ? AppColors.orange.withAlpha(38) : AppColors.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isUser
+                ? AppColors.orange.withAlpha(51)
+                : AppColors.border,
+          ),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            color: isUser ? AppColors.cream : Colors.white,
+            fontSize: 14,
+            height: 1.4,
+          ),
         ),
       ),
     );
   }
+
+  Widget _buildConfirmBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      color: AppColors.card,
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: () => _handleConfirm('cancel'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.textDim,
+                side: const BorderSide(color: AppColors.border),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: const Text('Cancel'),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: ElevatedButton(
+              onPressed: () => _handleConfirm('yes'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.orange,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: const Text('Confirm', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFollowUpHint() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: AppColors.surface,
+      child: Row(
+        children: [
+          const Icon(Icons.arrow_forward_ios, color: AppColors.amber, size: 12),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _response!.followUpPrompt!,
+              style: const TextStyle(color: AppColors.amber, fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInputArea() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: const BoxDecoration(
+        color: AppColors.card,
+        border: Border(top: BorderSide(color: AppColors.border)),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.mic_rounded, color: AppColors.orange),
+            onPressed: _startRecording,
+          ),
+          Expanded(
+            child: TextField(
+              controller: _textController,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: _response?.followUpPrompt ?? 'Type a voice command...',
+                hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 14),
+                filled: true,
+                fillColor: AppColors.surface,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              ),
+              onSubmitted: _handleTextSubmit,
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            icon: const Icon(Icons.send_rounded, color: AppColors.orange),
+            onPressed: () => _handleTextSubmit(_textController.text),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecordingArea() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      color: AppColors.card,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedBuilder(
+            animation: _waveController,
+            builder: (context, _) {
+              return CustomPaint(
+                size: const Size(double.infinity, 60),
+                painter: _WaveformPainter(
+                  progress: _waveController.value,
+                  isRecording: true,
+                  color: AppColors.orange,
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+          const Text('Listening...', style: TextStyle(color: AppColors.orange, fontSize: 16)),
+          const SizedBox(height: 16),
+          GestureDetector(
+            onTap: () => setState(() => _isRecording = false),
+            child: Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.red,
+                boxShadow: [
+                  BoxShadow(color: AppColors.red.withAlpha(77), blurRadius: 16, spreadRadius: 4),
+                ],
+              ),
+              child: const Icon(Icons.stop, color: Colors.white, size: 28),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConversationEntry {
+  final String text;
+  final bool isUser;
+  _ConversationEntry({required this.text, required this.isUser});
 }
 
 class _WaveformPainter extends CustomPainter {
@@ -390,31 +367,21 @@ class _WaveformPainter extends CustomPainter {
       ..strokeWidth = 3
       ..strokeCap = StrokeCap.round;
 
-    final center = size.width / 2;
-    final frequency = isRecording ? 5.0 : 1.0;
-
+    final centerX = size.width / 2;
     for (var i = 0; i < 20; i++) {
-      final x = center + (i - 10) * 8;
-      final offset = (i * 0.1 + progress) * 3.14159 * 2;
-      final alpha = (0.3 + (i % 3) * 0.2);
-      paint.color = color.withAlpha((alpha * 255).toInt());
-
-      final height = isRecording
-          ? (size.height / 2) * 0.6 * (0.5 + 0.5 * (offset % 1) * frequency)
-          : 10.0;
-
+      final x = centerX + (i - 10) * 8;
+      final phase = (i * 0.3 + progress * 2 * pi);
+      paint.color = color.withAlpha((150 + 100 * sin(phase)).toInt().clamp(100, 255));
+      final h = isRecording ? size.height * 0.4 * sin(phase).abs() + 4 : 8.0;
       canvas.drawLine(
-        Offset(x, size.height / 2 - height),
-        Offset(x, size.height / 2 + height),
+        Offset(x, size.height / 2 - h),
+        Offset(x, size.height / 2 + h),
         paint,
       );
     }
   }
 
   @override
-  bool shouldRepaint(covariant _WaveformPainter oldDelegate) {
-    return progress != oldDelegate.progress ||
-        isRecording != oldDelegate.isRecording ||
-        color != oldDelegate.color;
-  }
+  bool shouldRepaint(covariant _WaveformPainter old) =>
+      progress != old.progress || isRecording != old.isRecording;
 }
