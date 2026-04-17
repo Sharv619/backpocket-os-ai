@@ -107,23 +107,16 @@ app = FastAPI(title="BackPocket Twin API")
 logger.info("BACKPOCKET TWIN VERSION 2.2 STARTED")
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
+_LAN_ORIGINS = [
+    f"http://{h}:{p}"
+    for h in ["localhost", "127.0.0.1", "192.168.1.147"]
+    for p in [3000, 8000, 8080, 40243]
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        o
-        for o in [
-            "http://localhost:8000",
-            "http://127.0.0.1:8000",
-            "http://localhost:3000",
-            "http://127.0.0.1:3000",
-            "http://localhost:40243",  # Flutter dev server
-            "http://127.0.0.1:40243",  # Flutter dev server
-            "http://localhost:8080",  # Flutter web build preview
-            "http://127.0.0.1:8080",  # Flutter web build preview
-            os.getenv("FRONTEND_ORIGIN", ""),
-        ]
-        if o
-    ],
+    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+):\d+$",
+    allow_origins=[o for o in _LAN_ORIGINS + [os.getenv("FRONTEND_ORIGIN", "")] if o],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -197,9 +190,23 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 from routes.admin import router as admin_router
 from routes.voice import router as voice_router
+from routes.construction import router as construction_router
+from routes.mobile import router as mobile_router
+from routes.documents import router as documents_router
+from routes.voice_commands import router as voice_commands_router
+
+import routes.voice_handlers_dashboard
+import routes.voice_handlers_inbox
+import routes.voice_handlers_construction
+import routes.voice_handlers_misc
+import routes.voice_handlers_cross
 
 app.include_router(admin_router)
 app.include_router(voice_router)
+app.include_router(construction_router)
+app.include_router(mobile_router)
+app.include_router(documents_router)
+app.include_router(voice_commands_router)
 
 
 @app.get("/dashboard")
@@ -2303,9 +2310,16 @@ async def trigger_pulse():
 async def get_workflow_stages():
     """Return all workflow stages for the tradie job pipeline."""
     try:
-        from services.database import get_workflow_stages
-
-        stages = get_workflow_stages()
+        import sqlite3
+        conn = sqlite3.connect(db.DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT stage_number, title, description, triggers, next_steps, branch_type "
+            "FROM workflow_stages ORDER BY stage_number"
+        )
+        stages = [dict(r) for r in cur.fetchall()]
+        conn.close()
         return {"status": "success", "stages": stages}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -4200,396 +4214,6 @@ async def sync_drive_to_rag(data: dict):
         return {"status": "error", "message": str(e)}
 
 
-# ===== CONSTRUCTION / TRADIE MANAGEMENT =====
-
-
-@app.post("/api/construction/leads")
-async def create_lead(data: dict):
-    """Create a new lead from email extraction"""
-    try:
-        from services.construction import get_construction_manager
-
-        # Validate required fields
-        required_fields = [
-            "client_name",
-            "email",
-            "job_type",
-            "location",
-            "estimated_budget",
-        ]
-        missing = [f for f in required_fields if not data.get(f)]
-        if missing:
-            return {
-                "status": "error",
-                "message": f"Missing required fields: {', '.join(missing)}",
-            }
-
-        manager = get_construction_manager()
-
-        result = manager.create_lead(
-            client_name=data.get("client_name") or "",
-            email=data.get("email") or "",
-            job_type=data.get("job_type") or "",
-            location=data.get("location") or "",
-            urgency=data.get("urgency", "medium"),
-            budget=float(data.get("estimated_budget") or 0),
-        )
-
-        return {"status": "success", "data": result}
-    except Exception as e:
-        logger.error(f"Error creating lead: {e}")
-        return {"status": "error", "message": str(e)}
-
-
-@app.get("/api/construction/leads")
-async def get_leads(status: str = None):
-    """Get all leads, optionally filtered by status"""
-    try:
-        from services.construction import get_construction_manager
-
-        manager = get_construction_manager()
-
-        leads = manager.get_leads(status=status)
-        return {"status": "success", "count": len(leads), "leads": leads}
-    except Exception as e:
-        logger.error(f"Error fetching leads: {e}")
-        return {"status": "error", "message": str(e)}
-
-
-@app.get("/api/construction/leads/{lead_id}")
-async def get_lead(lead_id: int):
-    """Get single lead details"""
-    try:
-        from services.construction import get_construction_manager
-
-        manager = get_construction_manager()
-
-        lead = manager.get_lead(lead_id)
-        if not lead:
-            return {"status": "error", "message": "Lead not found"}
-
-        return {"status": "success", "lead": lead}
-    except Exception as e:
-        logger.error(f"Error fetching lead: {e}")
-        return {"status": "error", "message": str(e)}
-
-
-@app.patch("/api/construction/leads/{lead_id}")
-async def update_lead_status(lead_id: int, data: dict):
-    """Update lead status"""
-    try:
-        from services.construction import get_construction_manager
-
-        manager = get_construction_manager()
-
-        result = manager.update_lead_status(lead_id, data.get("status"))
-        return {"status": "success", "data": result}
-    except Exception as e:
-        logger.error(f"Error updating lead: {e}")
-        return {"status": "error", "message": str(e)}
-
-
-@app.post("/api/construction/quotes")
-async def create_quote(data: dict):
-    """Create a quote for a lead"""
-    try:
-        from services.construction import get_construction_manager
-
-        # Validate required fields
-        required_fields = ["lead_id"]
-        missing = [f for f in required_fields if data.get(f) is None]
-        if missing:
-            return {
-                "status": "error",
-                "message": f"Missing required fields: {', '.join(missing)}",
-            }
-
-        manager = get_construction_manager()
-
-        result = manager.create_quote(
-            lead_id=int(data.get("lead_id") or 0),
-            client_name=data.get("client_name", ""),
-            job_type=data.get("job_type", ""),
-            materials_cost=float(data.get("materials_cost", 0)),
-            labor_cost=float(data.get("labor_cost", 0)),
-            markup_percent=float(data.get("markup_percent", 20)),
-        )
-
-        return {"status": "success", "data": result}
-    except Exception as e:
-        logger.error(f"Error creating quote: {e}")
-        return {"status": "error", "message": str(e)}
-
-
-@app.get("/api/construction/quotes")
-async def get_quotes(status: str = None):
-    """Get all quotes, optionally filtered by status"""
-    try:
-        from services.construction import get_construction_manager
-
-        manager = get_construction_manager()
-
-        quotes = manager.get_quotes(status=status)
-        return {"status": "success", "count": len(quotes), "quotes": quotes}
-    except Exception as e:
-        logger.error(f"Error fetching quotes: {e}")
-        return {"status": "error", "message": str(e)}
-
-
-@app.get("/api/construction/quotes/{quote_id}")
-async def get_quote(quote_id: int):
-    """Get single quote details"""
-    try:
-        from services.construction import get_construction_manager
-
-        manager = get_construction_manager()
-
-        quote = manager.get_quote(quote_id)
-        if not quote:
-            return {"status": "error", "message": "Quote not found"}
-
-        return {"status": "success", "quote": quote}
-    except Exception as e:
-        logger.error(f"Error fetching quote: {e}")
-        return {"status": "error", "message": str(e)}
-
-
-@app.patch("/api/construction/quotes/{quote_id}")
-async def update_quote_status(quote_id: int, data: dict):
-    """Update quote status"""
-    try:
-        from services.construction import get_construction_manager
-
-        manager = get_construction_manager()
-
-        result = manager.update_quote_status(quote_id, data.get("status"))
-        return {"status": "success", "data": result}
-    except Exception as e:
-        logger.error(f"Error updating quote: {e}")
-        return {"status": "error", "message": str(e)}
-
-
-@app.get("/api/construction/pipeline")
-async def get_pipeline():
-    """Get quote pipeline summary"""
-    try:
-        from services.construction import get_construction_manager
-
-        manager = get_construction_manager()
-
-        summary = manager.get_pipeline_summary()
-        return {"status": "success", "data": summary}
-    except Exception as e:
-        logger.error(f"Error fetching pipeline: {e}")
-        return {"status": "error", "message": str(e)}
-
-
-@app.post("/api/construction/payments")
-async def record_payment(data: dict):
-    """Record a payment received"""
-    try:
-        from services.construction import get_construction_manager
-
-        # Validate required fields
-        if not data.get("quote_id") or not data.get("amount"):
-            return {
-                "status": "error",
-                "message": "Missing required fields: quote_id and amount",
-            }
-
-        manager = get_construction_manager()
-
-        result = manager.record_payment(
-            quote_id=int(data.get("quote_id") or 0),
-            amount=float(data.get("amount") or 0),
-            client_name=data.get("client_name", ""),
-        )
-
-        return {"status": "success", "data": result}
-    except Exception as e:
-        logger.error(f"Error recording payment: {e}")
-        return {"status": "error", "message": str(e)}
-
-
-@app.get("/api/construction/payments")
-async def get_payments(quote_id: int = None):
-    """Get all payments"""
-    try:
-        from services.construction import get_construction_manager
-
-        manager = get_construction_manager()
-
-        payments = manager.get_payments(quote_id=quote_id)
-        return {"status": "success", "count": len(payments), "payments": payments}
-    except Exception as e:
-        logger.error(f"Error fetching payments: {e}")
-        return {"status": "error", "message": str(e)}
-
-
-@app.post("/api/construction/leads/extract")
-async def extract_lead_from_email(data: dict):
-    """Extract lead data from email using Lead-to-Scope AI"""
-    try:
-        import os
-        import requests
-        import json
-        import re
-
-        email_subject = data.get("subject", "")
-        email_body = data.get("body", "")
-        email_from = data.get("from", "")
-
-        # AI Prompt: Lead-to-Scope Extractor
-        prompt = f"""Act as a specialized construction estimator. Analyze this email and extract the following as a JSON object:
-
-{{
-  "client_name": "(Full name from email or 'Unknown')",
-  "job_type": "(e.g., Kitchen Reno, Deck, Emergency Repair)",
-  "location": "(Street address if mentioned or empty string)",
-  "pain_points": ["list", "of", "problems"],
-  "scope_items": ["list", "of", "items"],
-  "urgency": "(High/Medium/Low based on tone, default Medium)",
-  "estimated_budget": (number or null)
-}}
-
-EMAIL:
-From: {email_from}
-Subject: {email_subject}
-Body: {email_body}
-
-Return ONLY the JSON object, no other text or markdown."""
-
-        # Call OpenRouter
-        api_key = os.getenv("OPENROUTER_API_KEY")
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "HTTP-Referer": "backpocket.ai",
-            },
-            json={
-                "model": "openrouter/auto",
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.3,
-                "max_tokens": 300,
-            },
-            timeout=10,
-        )
-
-        if response.status_code == 200:
-            result = response.json()
-            ai_response = (
-                result.get("choices", [{}])[0]
-                .get("message", {})
-                .get("content", "")
-                .strip()
-            )
-
-            # Extract JSON from response (handle markdown code blocks)
-            json_match = re.search(r"\{.*\}", ai_response, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(0)
-            else:
-                json_str = ai_response
-
-            # Parse JSON from response
-            extracted = json.loads(json_str)
-
-            # Create lead in database
-            from services.construction import get_construction_manager
-
-            manager = get_construction_manager()
-
-            lead_result = manager.create_lead(
-                client_name=extracted.get("client_name", "Unknown"),
-                email=email_from,
-                job_type=extracted.get("job_type", "General"),
-                location=extracted.get("location", ""),
-                urgency=extracted.get("urgency", "medium").lower(),
-                budget=extracted.get("estimated_budget"),
-            )
-
-            return {
-                "status": "success",
-                "lead_id": lead_result.get("lead_id"),
-                "extracted_data": extracted,
-            }
-        else:
-            logger.error(
-                f"OpenRouter API error: {response.status_code} - {response.text}"
-            )
-            return {
-                "status": "error",
-                "message": f"AI extraction failed: {response.status_code}",
-            }
-
-    except Exception as e:
-        logger.error(f"Error extracting lead: {e}")
-        return {"status": "error", "message": str(e)}
-
-
-@app.post("/api/construction/quotes/{quote_id}/tradie-followup")
-async def generate_tradie_followup(quote_id: int):
-    """Generate friendly tradie follow-up message"""
-    try:
-        import os
-        import requests
-
-        # Get quote details
-        from services.construction import get_construction_manager
-
-        manager = get_construction_manager()
-        quote = manager.get_quote(quote_id)
-
-        if not quote:
-            return {"status": "error", "message": "Quote not found"}
-
-        # AI Prompt: Tradie Persona Follow-up
-        prompt = f"""You are an AI Digital Twin for a professional contractor in Western Sydney.
-Your tone is professional, reliable, and 'no-nonsense', but friendly.
-
-Task: Draft a follow-up message for a quote sent to {quote["client_name"]}
-regarding a {quote["job_type"]} job.
-
-Constraints:
-- Keep it under 60 words
-- No corporate speak like 'per our previous correspondence'
-- Use casual, respectful closings like 'Cheers' or 'Let me know'
-- Include a subtle 'nudge' about schedule filling up
-- Sound like a real person, not AI
-- Include their specific job type
-- One clear next step (call/email)
-
-Generate ONLY the message text, nothing else."""
-
-        api_key = os.getenv("OPENROUTER_API_KEY")
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "HTTP-Referer": "backpocket.ai",
-            },
-            json={
-                "model": "openrouter/auto",
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.7,
-                "max_tokens": 150,
-            },
-            timeout=10,
-        )
-
-        if response.status_code == 200:
-            result = response.json()
-            message = (
-                result.get("choices", [{}])[0].get("message", {}).get("content", "")
-            )
-            return {"status": "success", "message": message}
-        else:
-            return {"status": "error", "message": "Failed to generate message"}
-
-    except Exception as e:
-        logger.error(f"Error generating followup: {e}")
-        return {"status": "error", "message": str(e)}
 
 
 if __name__ == "__main__":
@@ -4597,8 +4221,8 @@ if __name__ == "__main__":
 
     uvicorn.run(
         "main:app",
-        host="127.0.0.1",
-        port=8000,
+        host=os.getenv("BP_HOST", "0.0.0.0"),
+        port=int(os.getenv("BP_PORT", "8000")),
         reload=False,
         use_colors=False,
         log_level="warning",
