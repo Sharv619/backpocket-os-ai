@@ -3,21 +3,25 @@
     "backpocket-leads": {
       "command": "node",
       "args": ["./mcp_servers/leads.mjs"],
+      "env": { "LOCAL_DB_PATH": "${workspaceFolder}/backpocket.db" },
       "disabled": false
     },
     "backpocket-quotes": {
       "command": "node",
       "args": ["./mcp_servers/quotes.mjs"],
+      "env": { "LOCAL_DB_PATH": "${workspaceFolder}/backpocket.db" },
       "disabled": false
     },
     "backpocket-pipeline": {
       "command": "node",
       "args": ["./mcp_servers/pipeline.mjs"],
+      "env": { "LOCAL_DB_PATH": "${workspaceFolder}/backpocket.db" },
       "disabled": false
     },
     "backpocket-knowledge": {
       "command": "node",
       "args": ["./mcp_servers/knowledge.mjs"],
+      "env": { "LOCAL_DB_PATH": "${workspaceFolder}/backpocket.db" },
       "disabled": false
     }
   }

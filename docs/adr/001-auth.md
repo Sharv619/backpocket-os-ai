@@ -8,51 +8,75 @@
 
 ## Context
 
-BackPocket OS needs multi-tenant authentication for:
-1. Flutter mobile app users (tradies)
-2. Web dashboard users (sole traders)
-3. Future team features (marketers, admins)
+BackPocket OS needs a robust, scalable, and cost-effective authentication solution that supports multi-tenancy, Google SSO, and seamless integration with both a Flutter frontend and a FastAPI backend. Row-Level Security (RLS) integration with Postgres is a critical factor.
 
-Constraints:
-- **$0 cost** preferred (seed stage)
-- **Google SSO** required (tradies use Gmail)
-- **Postgres RLS** integration needed
-- No on-prem/self-hosted IdP (we're cloud-only on Oracle)
+### Decision Drivers
+*   **Cost-effectiveness:** Prioritize solutions with a generous free tier or low operational cost.
+*   **Ease of integration:** Simple to integrate with Flutter (frontend) and FastAPI (backend).
+*   **Google SSO:** Must support Google sign-in out-of-the-box.
+*   **Multi-tenancy support:** Ability to isolate user data per "tradie business."
+*   **RLS compatibility:** Strong integration capabilities with PostgreSQL Row-Level Security.
+*   **Developer experience:** Good documentation and community support.
+*   **Scalability:** Ability to scale with user growth.
+*   **Self-hosting/Data Sovereignty (Secondary):** While not a primary driver for the IdP itself (as most are SaaS), solutions that offer more control or transparency are a plus.
 
 ---
 
-## Options Considered
+## Evaluation
 
-| Provider | Cost | Google SSO | RLS | Integration Effort |
-|----------|------|-----------|-----|-------------------|
-| **Supabase Auth** | Free tier (50k MAU) | ✅ | ✅ Built-in | Low |
-| **Clerk** | Free tier (25k MAU) | ✅ | ❌ Manual sync | Medium |
-| **Auth.js** | Free | ✅ | ❌ Manual | High |
-| **Cloudflare Access** | Free tier | ✅ | ❌ Not applicable | Medium |
+### Supabase Auth
+*   **Pros:**
+    *   **Open Source:** The core is open source, offering transparency and potential for self-hosting (though typically used as a managed service).
+    *   **Generous Free Tier:** Very comprehensive free tier for authentication and database, offering 50k MAU.
+    *   **Deep Postgres Integration:** Built specifically for PostgreSQL, making RLS integration exceptionally seamless. It often manages RLS policies directly or provides clear patterns, with JWT containing `sub` claim mapping directly to `user_id`.
+    *   **Flutter & FastAPI SDKs:** Excellent Flutter SDK (`supabase_flutter`) and straightforward JWT-based integration with FastAPI.
+    *   **Google SSO:** Fully supported.
+    *   **Database-first:** Auth is tightly coupled with the PostgreSQL database, which aligns with our RLS requirements.
+    *   **Managed Service:** Offers managed hosting, reducing operational overhead.
+    *   **Magic Link:** Email-first for tradies who might not have Gmail on job site.
+*   **Cons:**
+    *   **Learning Curve:** While powerful, the "database-first" approach and some concepts can have a slight learning curve.
+    *   **Vendor Lock-in (soft):** Tightly coupled with Supabase's ecosystem.
+    *   **Not a pure IdP:** While it provides auth, it's part of a larger backend-as-a-service platform.
 
+### Clerk
+*   **Pros:**
+    *   **Dedicated IdP:** Designed purely for authentication and user management, often leading to a highly focused and optimized product.
+    *   **Excellent Developer Experience:** Known for highly intuitive SDKs and comprehensive documentation, especially for frontend frameworks.
+    *   **Flutter & FastAPI Integration:** Offers a Flutter SDK and clear guides for integrating with custom backends like FastAPI (via JWT verification).
+    *   **Google SSO:** Fully supported with easy setup.
+    *   **Multi-tenancy:** Strong support for organizations/multi-tenancy models.
+    *   **Managed Service:** Fully managed SaaS, minimal operational burden.
+    *   **Flexible UI Components:** Provides pre-built, customizable UI components for Flutter.
+*   **Cons:**
+    *   **Cost:** While it has a free tier (25k MAU), it can become more expensive than Supabase as user count grows, especially for advanced features.
+    *   **RLS Integration:** Requires manual JWT verification in FastAPI and then using the decoded `user_id` to enforce RLS in Postgres. This is entirely feasible but less "out-of-the-box" than Supabase's integrated approach.
+    *   **Not Open Source:** Proprietary solution.
+
+### Auth.js
+*   **Pros:** Open source, flexible.
+*   **Cons:** Self-hosted needed (adds infra complexity), no managed Google SSO, PostgreSQL integration requires custom JWT handling.
+
+### Cloudflare Access
+*   **Pros:** Integrates well with Cloudflare ecosystem.
+*   **Cons:** Not a primary IdP for user authentication, more for access control to applications.
 ---
 
 ## Decision: **Supabase Auth**
 
-### Why Supabase
+**Reasoning:**
 
-1. **Zero cost** — 50k monthly active users on free tier is plenty for our target.
-2. **Built-in RLS** — User-scoped data access without extra code.
-3. **Postgres native** — JWT contains `sub` claim, maps directly to `user_id`.
-4. **Flutter SDK** — `supabase_flutter` package is battle-tested.
-5. **Magic Link** — Email-first for tradies who might not have Gmail on job site.
+Supabase Auth is the superior choice for BackPocket OS primarily due to its **deep, native integration with PostgreSQL and Row-Level Security (RLS)**, combined with its **generous free tier**. Given our emphasis on "local-first" and data sovereignty (even if the IdP is SaaS), a system designed around PostgreSQL and offering transparent, open-source components (even if managed) aligns better with our long-term vision.
 
-### Why NOT Clerk
+The seamless RLS integration offered by Supabase significantly reduces development complexity and potential for errors when enforcing multi-tenant data isolation. While Clerk offers an excellent developer experience and is a strong contender for pure authentication, its cost structure and more manual approach to RLS integration make it a slightly less optimal fit for our specific constraints and priorities.
 
-- Lower free tier (25k MAU vs 50k)
-- No built-in RLS integration — requires manual sync to Postgres
-- More expensive after free tier ($0.50/user/month vs Supabase's overage)
+We can leverage Supabase's managed Postgres instance for initial rapid deployment and potentially explore self-hosting its components or migrating to an Oracle-hosted Postgres later if extreme data sovereignty becomes a hard requirement for the auth layer itself.
 
-### Why NOT Auth.js
-
-- Self-hosted needed — adds infra complexity
-- No managed Google SSO — needs OAuth creds setup manually
-- PostgreSQL integration requires custom JWT handling
+## Consequences
+*   We will adopt Supabase's Flutter SDK for frontend authentication and its JWT validation for FastAPI.
+*   We will explicitly define and manage RLS policies within our PostgreSQL database, leveraging Supabase's patterns.
+*   We will monitor Supabase's pricing model as we scale, though the free tier should cover initial customer acquisition.
+*   The tight coupling with Supabase's ecosystem should be noted but is deemed acceptable given its benefits for our data layer.
 
 ---
 
