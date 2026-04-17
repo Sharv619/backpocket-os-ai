@@ -15,6 +15,11 @@ import 'screens/marketing_screen.dart';
 import 'screens/instructions_screen.dart';
 import 'screens/construction_screen.dart';
 import 'screens/settings_screen.dart';
+import 'services/voice_command_service.dart';
+import 'widgets/voice_fab.dart';
+import 'widgets/voice_recording_overlay.dart';
+import 'widgets/voice_confirmation_card.dart';
+import 'models/voice_command_response.dart';
 
 // ─── TwinController for chat state ───────────────────────────────────────────────
 class TwinController extends ChangeNotifier {
@@ -161,9 +166,12 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   late int _tab;
-  String _serverUrl = 'http://127.0.0.1:8000';
+  String _serverUrl = 'http://192.168.1.147:8000';
   String _apiKey = '';
   bool _magnifierMode = false;
+  VoiceCommandService? _voiceService;
+  bool _showVoiceOverlay = false;
+  VoiceCommandResponse? _voiceResponse;
 
   @override
   void initState() {
@@ -175,8 +183,9 @@ class _AppShellState extends State<AppShell> {
   Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _serverUrl = prefs.getString('server_url') ?? 'http://127.0.0.1:8000';
+      _serverUrl = prefs.getString('server_url') ?? 'http://192.168.1.147:8000';
       _apiKey = prefs.getString('api_key') ?? '';
+      _voiceService = VoiceCommandService(baseUrl: _serverUrl, apiKey: _apiKey);
     });
   }
 
@@ -220,7 +229,7 @@ class _AppShellState extends State<AppShell> {
               ),
             ),
             const SizedBox(height: 20),
-            _settingsField(urlCtrl, 'Server URL', 'http://127.0.0.1:8000'),
+            _settingsField(urlCtrl, 'Server URL', 'http://192.168.1.147:8000'),
             const SizedBox(height: 12),
             _settingsField(keyCtrl, 'API Key (optional)', 'BP_API_KEY value'),
             const SizedBox(height: 20),
@@ -407,6 +416,53 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
+  static const _screenNames = ['dashboard', 'inbox', 'chat', 'documents', 'marketing', 'instructions', 'construction', 'settings'];
+
+  void _onVoiceFabTap() {
+    _voiceService?.setScreenContext(_screenNames[_tab], tabIndex: _tab);
+    setState(() => _showVoiceOverlay = true);
+  }
+
+  Future<void> _handleVoiceText(String text) async {
+    if (_voiceService == null) return;
+    _voiceService!.setScreenContext(_screenNames[_tab], tabIndex: _tab);
+    final response = await _voiceService!.sendTranscript(text);
+    if (response != null) {
+      setState(() => _voiceResponse = response);
+      _handleVoiceUiAction(response);
+      if (!response.needsConfirmation && !response.needsMoreInput) {
+        setState(() => _showVoiceOverlay = false);
+      }
+    }
+  }
+
+  Future<void> _handleVoiceConfirm(String answer) async {
+    if (_voiceService == null) return;
+    final response = await _voiceService!.sendConfirmation(answer);
+    if (response != null) {
+      setState(() => _voiceResponse = response);
+      _handleVoiceUiAction(response);
+      if (!response.needsConfirmation && !response.needsMoreInput) {
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted) setState(() => _voiceResponse = null);
+        });
+      }
+    } else {
+      setState(() => _voiceResponse = null);
+    }
+  }
+
+  void _handleVoiceUiAction(VoiceCommandResponse response) {
+    final ui = response.uiAction;
+    if (ui.navigateTo != null) {
+      final idx = _screenNames.indexOf(ui.navigateTo!);
+      if (idx >= 0) setState(() => _tab = idx);
+    }
+    if (ui.tabIndex != null && ui.navigateTo == null) {
+      setState(() => _tab = ui.tabIndex!);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = [
@@ -459,24 +515,42 @@ class _AppShellState extends State<AppShell> {
         ],
       ),
       drawer: _buildSidebar(),
-      body: Transform.scale(
-        scale: _magnifierMode ? 1.1 : 1.0,
-        child: pages[_tab],
-      ),
-      floatingActionButton: _tab == 1
-          ? FloatingActionButton(
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      VisionChatScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-                ),
+      body: Stack(
+        children: [
+          Transform.scale(
+            scale: _magnifierMode ? 1.1 : 1.0,
+            child: pages[_tab],
+          ),
+          if (_voiceResponse != null && (_voiceResponse!.needsConfirmation || _voiceResponse!.needsMoreInput))
+            Positioned(
+              bottom: 80,
+              left: 0,
+              right: 0,
+              child: VoiceConfirmationCard(
+                response: _voiceResponse!,
+                onConfirm: () => _handleVoiceConfirm('yes'),
+                onCancel: () => _handleVoiceConfirm('cancel'),
+                onDismiss: () => setState(() => _voiceResponse = null),
               ),
-              backgroundColor: kOrange,
-              child: const Icon(Icons.camera_alt_rounded),
+            ),
+          if (_showVoiceOverlay && _voiceService != null)
+            VoiceRecordingOverlay(
+              voiceService: _voiceService!,
+              transcript: _voiceService!.lastTranscript,
+              speechResponse: _voiceResponse?.speechResponse,
+              followUpPrompt: _voiceResponse?.followUpPrompt,
+              onClose: () => setState(() => _showVoiceOverlay = false),
+              onTextSubmit: _handleVoiceText,
+            ),
+        ],
+      ),
+      floatingActionButton: _voiceService != null
+          ? VoiceFab(
+              voiceService: _voiceService!,
+              onTap: _onVoiceFabTap,
+              onLongPress: () => setState(() => _showVoiceOverlay = true),
             )
           : null,
-
     );
   }
 }
