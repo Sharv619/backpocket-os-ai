@@ -157,7 +157,7 @@ The HITL control is the single most important mitigation in this document. It is
 | **SEV-1** | Suspected PII breach; financial data exposure | 1 hour detect → triage; 4 hour containment; 30-day OAIC notification window |
 | **SEV-2** | Production outage; AI pipeline down | 1 hour detect; 4 hour restoration |
 | **SEV-3** | Degraded feature; single-customer issue | 1 business day |
-
+f
 ### 6.2 SEV-1 Runbook (Summary)
 
 1.  Detect → alert on-call via Sentry / UptimeRobot.
