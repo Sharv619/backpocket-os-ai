@@ -51,7 +51,11 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
         Uri.parse('${widget.serverUrl}/api/documents'),
         headers: headers,
       );
-      setState(() => _documents = jsonDecode(res.body) ?? []);
+      final body = jsonDecode(res.body);
+      final docs = body is Map && body['documents'] is List
+          ? body['documents'] as List
+          : (body is List ? body : []);
+      setState(() => _documents = docs);
     } catch (e) {
       debugPrint('Load docs error: $e');
     }

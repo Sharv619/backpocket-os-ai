@@ -51,7 +51,14 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
         Uri.parse('${widget.serverUrl}/api/instructions'),
         headers: headers,
       );
-      _instructions = jsonDecode(res.body) ?? [];
+      final body = jsonDecode(res.body);
+      if (body is Map && body['general_instructions'] is List) {
+        _instructions = body['general_instructions'] as List;
+      } else if (body is List) {
+        _instructions = body;
+      } else {
+        _instructions = [];
+      }
     } catch (e) {
       debugPrint('Load instructions error: $e');
     }
@@ -68,7 +75,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
 
     try {
       await http.post(
-        Uri.parse('${widget.serverUrl}/api/instruction'),
+        Uri.parse('${widget.serverUrl}/api/instructions'),
         headers: headers,
         body: jsonEncode({
           'instruction_text': _newInstructionController.text,
@@ -229,7 +236,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
 
     try {
       await http.delete(
-        Uri.parse('${widget.serverUrl}/api/instruction/$id'),
+        Uri.parse('${widget.serverUrl}/api/instructions/$id'),
         headers: headers,
       );
       _loadInstructions();
@@ -248,7 +255,7 @@ class _InstructionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final category = instruction['category'] ?? 'tone';
-    final isActive = instruction['is_active'] == 1;
+    final isActive = instruction['is_active'] == 1 || instruction['is_active'] == true;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -278,7 +285,7 @@ class _InstructionCard extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              instruction['instruction_text'] ?? '',
+              instruction['instruction_text'] ?? instruction['instruction'] ?? '',
               style: const TextStyle(color: Colors.white, fontSize: 13),
             ),
           ),
