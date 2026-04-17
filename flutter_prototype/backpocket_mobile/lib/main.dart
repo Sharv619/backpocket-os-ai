@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,7 +5,6 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'theme.dart';
 import 'screens/inbox_screen.dart';
-import 'screens/vision_chat_screen.dart';
 import 'screens/twin_chat_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/documents_screen.dart';
