@@ -14,6 +14,83 @@ logger = logging.getLogger(__name__)
 
 SESSION_TTL = 300  # 5 minutes
 
+ENTITY_ALIASES = {
+    "name": "client_name",
+    "client": "client_name",
+    "customer": "client_name",
+    "job": "job_type",
+    "work": "job_type",
+    "type": "job_type",
+    "suburb": "location",
+    "area": "location",
+    "where": "location",
+    "address": "location",
+    "budget": "estimated_budget",
+    "amount": "estimated_budget",
+    "cost": "estimated_budget",
+    "price": "estimated_budget",
+    "materials": "materials_cost",
+    "material": "materials_cost",
+    "labor": "labor_cost",
+    "labour": "labor_cost",
+    "markup": "markup_percent",
+    "lead": "lead_id",
+    "lead_name": "lead_id",
+    "quote": "quote_id",
+    "quote_name": "quote_id",
+    "description": "job_description",
+    "job_desc": "job_description",
+    "instruction": "text",
+    "rule": "text",
+    "cat": "category",
+}
+
+MONEY_WORDS = {
+    "grand": 1000,
+    "k": 1000,
+    "thousand": 1000,
+    "hundred": 100,
+    "mil": 1000000,
+    "million": 1000000,
+}
+
+
+def _normalize_entities(entities: dict, valid_params: list[str]) -> dict:
+    """Map Gemini entity keys to PARAM_ORDER keys + parse money slang."""
+    import re
+    normalized = {}
+    for key, val in entities.items():
+        mapped_key = ENTITY_ALIASES.get(key, key)
+        if mapped_key not in valid_params:
+            if key in valid_params:
+                mapped_key = key
+            else:
+                continue
+        if mapped_key in ("estimated_budget", "materials_cost", "labor_cost", "amount", "markup_percent"):
+            val = _parse_money(val)
+        if val is not None:
+            normalized[mapped_key] = val
+    return normalized
+
+
+def _parse_money(val) -> float | None:
+    """Parse money values including slang like '5 grand', '8k', '15 thousand'."""
+    import re
+    if isinstance(val, (int, float)):
+        return float(val)
+    if not isinstance(val, str):
+        return None
+    text = val.lower().strip().replace("$", "").replace(",", "")
+    for word, multiplier in MONEY_WORDS.items():
+        if word in text:
+            numbers = re.findall(r'[\d.]+', text)
+            if numbers:
+                return float(numbers[0]) * multiplier
+    numbers = re.findall(r'[\d.]+', text)
+    if numbers:
+        return float(numbers[0])
+    return None
+
 
 class SessionState(str, Enum):
     IDLE = "IDLE"
@@ -139,9 +216,9 @@ class VoiceSession:
         all_params = list(config["order"])
 
         if initial_entities:
-            for key, val in initial_entities.items():
-                if key in all_params and val is not None:
-                    self.collected_params[key] = val
+            mapped = _normalize_entities(initial_entities, all_params)
+            for key, val in mapped.items():
+                self.collected_params[key] = val
 
         self.missing_params = [p for p in all_params if p not in self.collected_params]
 

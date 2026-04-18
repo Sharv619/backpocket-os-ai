@@ -403,7 +403,7 @@ EMAIL:
             },
         )
 
-        # Index email for semantic search (Agentic RAG)
+        # Index email for semantic search (FTS5 + ChromaDB RAG)
         try:
             from services.email_memory import index_email
 
@@ -415,7 +415,31 @@ EMAIL:
                 datetime.now().strftime("%Y-%m-%d %H:%M"),
             )
         except Exception as idx_err:
-            logger.warning(f"Email indexing skipped: {idx_err}")
+            logger.warning(f"Email FTS indexing skipped: {idx_err}")
+
+        try:
+            from services.twin_engine import rag, TwinType
+
+            rag_text = (
+                f"Email from: {clean_email}\n"
+                f"Subject: {email.get('subject', '')}\n"
+                f"Tier: {tier}\n"
+                f"AI Draft Response:\n{draft_body}"
+            )
+            rag_meta = {
+                "source": "email_triage",
+                "ref_id": ref_id,
+                "sender": clean_email,
+                "subject": email.get("subject", ""),
+                "tier": str(tier),
+            }
+            twin = TwinType.ACCOUNTANT if any(
+                w in email.get("subject", "").lower()
+                for w in ("invoice", "tax", "bas", "gst", "expense")
+            ) else TwinType.ADMIN
+            rag.ingest(twin, f"triage-{ref_id}", rag_text, rag_meta)
+        except Exception as rag_err:
+            logger.warning(f"RAG ingest skipped: {rag_err}")
 
         action_hint = (
             f"Draft ready. (Ref #{ref_id}) Stay in Inbox."

@@ -735,14 +735,33 @@ def _draft_response_openrouter(
     subject = email_content.get("subject", "")
     snippet = email_content.get("snippet", "")
 
-    prompt = f"""You are a professional email assistant. Generate a brief, professional response to this email.
+    rag_context = ""
+    try:
+        from services.twin_engine import rag, TwinType
+
+        twin = TwinType.ACCOUNTANT if any(
+            w in subject.lower() for w in ("invoice", "tax", "bas", "gst", "expense")
+        ) else TwinType.ADMIN
+        chunks = rag.retrieve(twin, f"{subject} {snippet[:200]}", n=3)
+        if chunks:
+            rag_context = "\n\nRELEVANT CONTEXT FROM PAST INTERACTIONS:\n" + "\n---\n".join(
+                c[:300] for c in chunks
+            )
+    except Exception:
+        pass
+
+    prompt = f"""You are a professional email assistant for an Australian tradie/accounting business.
+Generate a brief, professional response to this email. Be friendly, direct, Australian-casual.
 
 Subject: {subject}
 From: {email_content.get("sender", "")}
 
 Message snippet: {snippet}
+{rag_context}
+{f"Historical context: {historical_context[:300]}" if historical_context else ""}
+{f"Client info: {client_info}" if client_info else ""}
 
-Generate a concise (2-3 sentences), professional response draft."""
+Generate a concise (2-4 sentences), professional response draft. Sign off as Steve."""
 
     try:
         response = requests.post(

@@ -121,6 +121,22 @@ async def api_approve(request: ApproveRequest):
             sender=email_addr,
             subject=subject,
         )
+
+        try:
+            from services.twin_engine import rag, TwinType
+
+            rag.ingest(TwinType.ADMIN, f"approved-{ref_id}", (
+                f"APPROVED DRAFT (human-validated):\n"
+                f"To: {email_addr}\nSubject: {subject}\nDraft:\n{draft}"
+            ), {
+                "source": "approved_draft",
+                "ref_id": ref_id,
+                "sender": email_addr,
+                "subject": subject,
+            })
+        except Exception:
+            pass
+
         db.delete_pending_approval(ref_id)
 
         try:
@@ -241,6 +257,24 @@ async def api_revise(request: ReviseRequest):
         info["draft_body"] = new_draft
         db.save_pending_approval(ref_id, info)
         db.save_correction(ref_id, "revise", original, new_draft, feedback)
+
+        try:
+            from services.twin_engine import rag, TwinType
+
+            rag.ingest(TwinType.ADMIN, f"revision-{ref_id}", (
+                f"REVISION (user corrected AI draft):\n"
+                f"Sender: {info.get('sender', '')}\nSubject: {info.get('subject', '')}\n"
+                f"Original: {original[:300]}\n"
+                f"Corrected: {new_draft[:500]}\n"
+                f"Feedback: {feedback}"
+            ), {
+                "source": "revision",
+                "ref_id": ref_id,
+                "feedback": feedback,
+            })
+        except Exception:
+            pass
+
         return {"status": "success", "new_draft": new_draft, "message": "Draft saved"}
 
     if not request.comment:

@@ -44,7 +44,20 @@ async def handle_documents_upload(params: dict, screen_context: str, metadata: d
 
 @register_handler("documents.analyze")
 async def handle_documents_analyze(params: dict, screen_context: str, metadata: dict | None) -> dict:
-    doc_id = params.get("doc_id")
+    doc_id = params.get("doc_id") or params.get("document_id") or params.get("id")
+    if not doc_id and metadata and metadata.get("selected_item_id"):
+        doc_id = metadata["selected_item_id"]
+    if not doc_id:
+        async with httpx.AsyncClient(timeout=10) as client:
+            try:
+                resp = await client.get(f"{BASE}/api/documents")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    docs = data if isinstance(data, list) else data.get("documents", [])
+                    if docs:
+                        doc_id = docs[0].get("id")
+            except Exception:
+                pass
     if not doc_id:
         return {"error": "Which document should I analyze?"}
 

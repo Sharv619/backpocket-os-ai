@@ -508,7 +508,9 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
     final tier = widget.item['tier'] as int? ?? 3;
     final tierLabel = _tierLabels[tier] ?? 'MEDIUM';
     final tierColor = _tierColors[tier] ?? AppColors.amber;
+    final draftBody = widget.item['draft_body'] as String? ?? '';
     final preview = widget.item['preview'] as String? ?? '';
+    final displayDraft = draftBody.isNotEmpty ? draftBody : preview;
 
     return Scaffold(
       backgroundColor: AppColors.bgDark,
@@ -594,14 +596,9 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
                 border: Border.all(color: AppColors.border),
               ),
               child: Text(
-                preview.isNotEmpty ? preview : 'No preview available.',
+                displayDraft.isNotEmpty ? displayDraft : 'No draft available. Tap to generate one.',
                 style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.6),
               ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Full draft available in desktop dashboard',
-              style: TextStyle(color: AppColors.textMuted, fontSize: 11),
             ),
             const SizedBox(height: 32),
             SizedBox(

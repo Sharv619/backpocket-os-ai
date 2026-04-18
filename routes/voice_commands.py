@@ -221,7 +221,8 @@ async def _handle_confirmation_response(session: VoiceSession, transcript: str) 
 
 async def _handle_collecting_response(session: VoiceSession, transcript: str, screen_context: str) -> VoiceCommandResponse:
     lower = transcript.lower().strip()
-    if any(w in lower for w in NO_WORDS):
+    cancel_only = lower in NO_WORDS or lower in ("no", "nah", "cancel", "stop", "never mind")
+    if cancel_only:
         session.cancel()
         session.reset()
         return VoiceCommandResponse(
@@ -278,16 +279,13 @@ async def _handle_collecting_response(session: VoiceSession, transcript: str, sc
 
 def _parse_param_value(transcript: str, param_name: str):
     """Parse a raw transcript value into the appropriate type for a parameter."""
+    from services.voice_session import _parse_money
     clean = transcript.strip()
 
     if param_name in ("estimated_budget", "materials_cost", "labor_cost", "amount", "markup_percent"):
-        import re
-        numbers = re.findall(r'[\d,]+\.?\d*', clean.replace("$", "").replace("grand", "000").replace("k", "000"))
-        if numbers:
-            try:
-                return float(numbers[0].replace(",", ""))
-            except ValueError:
-                pass
+        result = _parse_money(clean)
+        if result is not None:
+            return result
 
     if param_name in ("lead_id", "quote_id"):
         import re

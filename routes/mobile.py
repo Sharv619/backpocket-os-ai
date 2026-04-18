@@ -44,6 +44,7 @@ async def mobile_pending():
                     "tier": int(r["tier"]) if r["tier"] else 3,
                     "tier_label": _TIER_LABELS.get(str(r["tier"]), "MEDIUM"),
                     "preview": (r["draft_body"] or "")[:120],
+                    "draft_body": r["draft_body"] or "",
                     "age_hours": age_hours,
                 }
             )
@@ -148,6 +149,24 @@ async def mobile_approve(request: MobileApproveRequest):
                 sender=email_addr,
                 subject=clean_subject,
             )
+
+            try:
+                from services.twin_engine import rag, TwinType
+
+                rag_text = (
+                    f"APPROVED DRAFT (human-validated):\n"
+                    f"To: {email_addr}\nSubject: {clean_subject}\n"
+                    f"Draft:\n{draft}"
+                )
+                rag.ingest(TwinType.ADMIN, f"approved-{ref_id}", rag_text, {
+                    "source": "approved_draft",
+                    "ref_id": ref_id,
+                    "sender": email_addr,
+                    "subject": clean_subject,
+                })
+            except Exception:
+                pass
+
             db.delete_pending_approval(ref_id)
 
             # WhatsApp notification
