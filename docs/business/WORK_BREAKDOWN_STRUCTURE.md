@@ -61,14 +61,14 @@
 **Owner:** Product Manager / Founder  
 **Focus:** GTM, customer acquisition, brand, content, partnerships
 
-### Phase 1 — Design Partner (Weeks 0–8)
+### Phase 1 — Design Partner 
 | Task | Description | Timing |
 |------|-------------|--------|
 | M1 | Recruit 10 "Pioneers" via Parramatta Chamber | Days 1–14 |
 | M2 | Weekly feedback calls with Pioneers | Ongoing |
 | M3 | Collect 3 case studies with hard numbers | Days 30–56 |
 
-### Phase 2 — Paid Pilot (Weeks 9–16)
+### Phase 2 — Paid Pilot 
 | Task | Description | Timing |
 |------|-------------|--------|
 | M4 | Launch at $199 one-off + $15/mo (founder pricing) | Day 60 |
@@ -77,7 +77,7 @@
 | M7 | Trade supplier partnerships (Reece, Tradelink, Bunnings) | Days 60–90 |
 | M8 | Referral program ($50 credit per referral) | Day 60 |
 
-### Phase 3 — Scale (Weeks 17–52)
+### Phase 3 — Scale 
 | Task | Description | Timing |
 |------|-------------|--------|
 | M9 | Raise pricing to $299 + $15/mo | Day 120 |
@@ -173,39 +173,6 @@ A1 ──────► A2
 
 ---
 
-## 🛠️ Build Your Own Tools — Ideas for Team Members
-
-Based on this project, here are small tools each team can build using OpenCode:
-
-### 🖥️ IT Team — Automation & DevOps Tools
-| Tool | What It Does | Use Case |
-|------|-------------|----------|
-| **Auto-SQL-Migration** | Detects SQLite schema changes → generates Postgres migration scripts | Save hours on E1/E2 |
-| **API-Health-Checker** | Pings all `/api/*` endpoints hourly → alerts if down | Uptime monitoring |
-| **Secret-Scanner** | Scans repo for exposed API keys → rotates them | Security H2 |
-| **Docker-Deploy-Bot** | One-command deploy to Oracle ARM via SSH | CI/CD automation |
-| **LLM-Cost-Tracker** | Logs AI token usage per user → predicts monthly spend | Cost management |
-
-### 📢 Marketing Team — Content & Growth Tools
-| Tool | What It Does | Use Case |
-|------|-------------|----------|
-| **SEO-Post-Generator** | Takes a job photo → auto-generates SEO blog post with keywords | Content C2 |
-| **Tradie-POV-Script-Gen** | Generates TikTok/Reels scripts from job success stories | Content M6 |
-| **Review-Collector** | Auto-sends WhatsApp nudge after job completion → collects Google reviews | Growth |
-| **Lead-Score-Predictor** | ML model predicts which leads convert → prioritises callbacks | Sales |
-| **Competitor-Tracker** | Monitors ServiceM8/Tradify pricing changes → alerts on differences | Strategy |
-
-### 💰 Finance Team — Compliance & Billing Tools
-| Tool | What It Does | Use Case |
-|------|-------------|----------|
-| **Voice-Invoice-Builder** | Dictate line items → auto-generates ATO-compliant invoice (GST, ABN) | FC1 |
-| **GST-Calculator** | Auto-calculates 10% GST on any quote → validates against BAS | Compliance |
-| **Receipt-Ocr-Scanner** | Photo of receipt → extracts data → populates expense tracker | Bookkeeping |
-| **Subscription-Churn-Alert** | Monitors Stripe failed payments → triggers WhatsApp recovery flow | Revenue |
-| **Profit-Margin-Calculator** | Input job costs → outputs margin breakdown → recommends pricing | Unit economics |
-
----
-
-**Document Owner:** Product Manager / Founder  
+**Document Owner:** Himanshu Lade  
 **Last Updated:** 2026-04-13  
-**Next Review:** 2026-04-30 (post-sprint)
+**Next Review:** 2026-04-20
