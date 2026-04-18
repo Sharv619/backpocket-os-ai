@@ -1,5 +1,8 @@
 import 'dart:math';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 
 import '../theme.dart';
 import '../services/voice_command_service.dart';
@@ -26,9 +29,11 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
   late AnimationController _waveController;
   late VoiceCommandService _voiceService;
   final TextEditingController _textController = TextEditingController();
+  final AudioRecorder _recorder = AudioRecorder();
 
   bool _isRecording = false;
   bool _showTextInput = false;
+  bool _isProcessing = false;
   VoiceCommandResponse? _response;
   final List<_ConversationEntry> _conversation = [];
 
@@ -50,6 +55,7 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
   void dispose() {
     _waveController.dispose();
     _textController.dispose();
+    _recorder.dispose();
     super.dispose();
   }
 
@@ -95,12 +101,47 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
   }
 
   Future<void> _startRecording() async {
-    setState(() => _isRecording = true);
-    // Text fallback since audio recording requires platform-specific setup
-    setState(() {
-      _isRecording = false;
-      _showTextInput = true;
-    });
+    final hasPermission = await _recorder.hasPermission();
+    if (!hasPermission) {
+      if (mounted) setState(() => _showTextInput = true);
+      return;
+    }
+
+    final dir = await getTemporaryDirectory();
+    final path = '${dir.path}/voice_cmd_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
+    await _recorder.start(const RecordConfig(encoder: AudioEncoder.aacLc), path: path);
+    if (mounted) setState(() => _isRecording = true);
+  }
+
+  Future<void> _stopRecording() async {
+    final path = await _recorder.stop();
+    if (mounted) setState(() { _isRecording = false; _isProcessing = true; });
+
+    if (path == null) {
+      if (mounted) setState(() => _isProcessing = false);
+      return;
+    }
+
+    final response = await _voiceService.processAudio(path);
+
+    // Clean up temp file
+    try { File(path).deleteSync(); } catch (_) {}
+
+    if (mounted) {
+      setState(() {
+        _isProcessing = false;
+        if (response != null) {
+          _response = response;
+          if (response.speechResponse.isNotEmpty) {
+            _conversation.add(_ConversationEntry(
+              text: response.speechResponse,
+              isUser: false,
+            ));
+          }
+        }
+      });
+    }
   }
 
   @override
@@ -136,7 +177,8 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
             if (_response?.followUpPrompt != null &&
                 _response?.needsConfirmation != true)
               _buildFollowUpHint(),
-            if (!_isRecording) _buildInputArea(),
+            if (_isProcessing) _buildProcessingArea(),
+            if (!_isRecording && !_isProcessing) _buildInputArea(),
             if (_isRecording) _buildRecordingArea(),
           ],
         ),
@@ -299,6 +341,25 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
     );
   }
 
+  Widget _buildProcessingArea() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      color: AppColors.card,
+      child: const Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(color: AppColors.orange, strokeWidth: 2),
+          ),
+          SizedBox(width: 12),
+          Text('Processing...', style: TextStyle(color: AppColors.orange, fontSize: 16)),
+        ],
+      ),
+    );
+  }
+
   Widget _buildRecordingArea() {
     return Container(
       padding: const EdgeInsets.all(24),
@@ -323,7 +384,7 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
           const Text('Listening...', style: TextStyle(color: AppColors.orange, fontSize: 16)),
           const SizedBox(height: 16),
           GestureDetector(
-            onTap: () => setState(() => _isRecording = false),
+            onTap: _stopRecording,
             child: Container(
               width: 60,
               height: 60,

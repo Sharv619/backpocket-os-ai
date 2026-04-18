@@ -166,7 +166,7 @@ class AgenticRAG:
 class NarrativeBlogGenerator:
     """Generate AI-written blog posts in wine-commercial storytelling style."""
 
-    WINE_COMMERCIAL_STYLE = """You are a masterful storyteller in the style of premium wine commercials.
+    WINE_COMMERCIAL_STYLE = """You are a masterful storyteller in the style of premium building community.
 Create a narrative that:
 - Opens with evocative, sensory-rich language
 - Builds tension/emotion gradually

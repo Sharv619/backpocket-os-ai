@@ -51,7 +51,11 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
         Uri.parse('${widget.serverUrl}/api/documents'),
         headers: headers,
       );
-      setState(() => _documents = jsonDecode(res.body) ?? []);
+      final body = jsonDecode(res.body);
+      final docs = body is Map && body['documents'] is List
+          ? body['documents'] as List
+          : (body is List ? body : []);
+      setState(() => _documents = docs);
     } catch (e) {
       debugPrint('Load docs error: $e');
     }
@@ -112,8 +116,8 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
       final base64File = base64Encode(bytes);
 
       // Upload with retry logic (3 attempts)
-      var uploadResult;
-      var lastError;
+      dynamic uploadResult;
+      String lastError = 'Upload failed after 3 attempts';
 
       for (var attempt = 1; attempt <= 3; attempt++) {
         try {
@@ -147,7 +151,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
       }
 
       if (uploadResult == null || uploadResult['status'] != 'success') {
-        throw Exception(lastError ?? 'Upload failed after 3 attempts');
+        throw Exception(lastError);
       }
 
       var docId = uploadResult['document_id'];

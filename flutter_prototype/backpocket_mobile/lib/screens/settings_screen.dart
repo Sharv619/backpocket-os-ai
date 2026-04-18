@@ -19,7 +19,7 @@ class SettingsScreen extends StatefulWidget {
 
   const SettingsScreen({
     super.key,
-    this.serverUrl = 'http://127.0.0.1:8000',
+    this.serverUrl = 'http://192.168.1.147:8000',
     this.apiKey = '',
     this.onSettingsChanged,
   });
@@ -69,6 +69,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _apiKeyController.text.trim(),
     );
 
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Settings saved!'),
@@ -109,7 +110,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _SettingsField(
                 controller: _serverUrlController,
                 label: 'Server URL',
-                hint: 'http://127.0.0.1:8000',
+                hint: 'http://192.168.1.147:8000',
                 icon: Icons.dns_outlined,
               ),
               const SizedBox(height: 12),

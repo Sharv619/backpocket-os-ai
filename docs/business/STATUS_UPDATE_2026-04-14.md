@@ -14,7 +14,7 @@ BackPocket OS is a locally-hosted AI business system for Australian tradies. The
 
 ## What's Live Now
 
-### ✅ Frontend (PWA)
+### Frontend (PWA)
 - **URL:** https://os.backpocketsystem.io
 - **Features:**
   - Dashboard with pending approvals
@@ -24,13 +24,13 @@ BackPocket OS is a locally-hosted AI business system for Australian tradies. The
   - Kanban board for team tracking
 - **Tech:** Cloudflare Pages (free), PWA enabled
 
-### ✅ Core APIs Working
+### Core APIs Working
 | Endpoint | Status | Notes |
 |----------|--------|-------|
-| `/api/mobile/pending` | ✅ Returns 27 items | Demo data loaded |
-| `/api/voice/quote-from-transcript` | ✅ Working | Voice → quote draft |
-| `/api/construction/leads` | ✅ Ready | Lead CRUD |
-| `/api/construction/quotes` | ✅ Ready | Quote creation |
+| `/api/mobile/pending` |  Returns 27 items | Demo data loaded |
+| `/api/voice/quote-from-transcript` |  Working | Voice → quote draft |
+| `/api/construction/leads` |  Ready | Lead CRUD |
+| `/api/construction/quotes` |  Ready | Quote creation |
 
 ---
 
@@ -58,21 +58,21 @@ BackPocket OS is a locally-hosted AI business system for Australian tradies. The
 ### Database
 | Component | Status | Purpose |
 |-----------|--------|---------|
-| PostgreSQL | 🔄 Ready | Main database |
-| PGVector | 🔄 Ready | AI semantic search |
-| SQLite | ⚠️ Legacy | Current demo data |
+| PostgreSQL |  Ready (Approved by Cherry)| Main database |
+| PGVector |  Ready (Approved by Cherry)| AI semantic search |
+| SQLite |  Legacy | Current demo data |
 
 ### AI Layer
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Ollama | 🔄 Ready | Local Llama 3.2 |
-| OpenRouter | ✅ Backup | Cloud fallback |
-| Gemini | ✅ Backup | Primary cloud |
-| ChromaDB | ⚠️ Legacy | Being replaced by PGVector |
+| Ollama |  Ready | Local Llama 3.2 |
+| OpenRouter |  Backup | Cloud fallback |
+| Gemini |  Backup | Primary cloud |
+| ChromaDB |  Legacy | Being replaced by PGVector |
 
 ---
 
-## What Was Done Tonight
+## What should be  done this week
 
 ### 1. PWA Setup ✅
 - Created `manifest.json` with icons
@@ -98,7 +98,7 @@ BackPocket OS is a locally-hosted AI business system for Australian tradies. The
 
 ---
 
-## What's Next (Tonight's Deploy)
+## What's Next (Weekend)
 
 ### Priority 1: Connect Backend to Frontend
 ```

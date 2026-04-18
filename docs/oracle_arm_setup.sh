@@ -24,7 +24,7 @@ ADMIN_EMAIL="himanshu@backpocket.ai"
 DOMAIN="api.backpocket.ai"
 APP_DIR="/opt/backpocket"
 DB_PATH="/var/lib/backpocket/backpocket.db"
-OLLAMA_MODEL="llama3.2:3b"
+OLLAMA_MODELS="llama3.1:8b-instruct llama3:8b-instruct gemma2:9b" # Ollama models to pull (separated by space)
 
 # ── Check root ────────────────────────────────────────────────────────────────
 if [[ $EUID -ne 0 ]]; then
@@ -87,8 +87,8 @@ log_ok "Caddy installed"
 # ── Caddy config ───────────────────────────────────────────────────
 cat > /etc/caddy/Caddyfile << 'CADDYFILE'
 {
-    email admin@backpocket.ai
-    auto_https off
+    email himanshu@backpocket.ai # Use the specified email for Caddy
+    auto_https off # Keep off for Certbot to manage TLS
 }
 
 api.backpocket.ai {
@@ -97,12 +97,12 @@ api.backpocket.ai {
 
     # Security headers
     header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
-        X-Content-Type-Options "nosniff"
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" # Added preload
         X-Frame-Options "DENY"
+        X-Content-Type-Options "nosniff"
         X-XSS-Protection "1; mode=block"
         Referrer-Policy "strict-origin-when-cross-origin"
-        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com"
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https: wss:; font-src 'self' data:; frame-ancestors 'none';" # More robust CSP
     }
 
     # Rate limiting
@@ -120,8 +120,11 @@ log_info "Installing Ollama..."
 curl -fsSL https://ollama.ai/install.sh | sh
 
 # Pull models
-log_info "Pulling Ollama models: $OLLAMA_MODEL"
-su -c "OLLAMA_HOST=127.0.0.1:11434 ollama pull $OLLAMA_MODEL" ubuntu || true
+log_info "Pulling Ollama models: $OLLAMA_MODELS"
+for model in $OLLAMA_MODELS; do
+    log_info "Pulling $model..."
+    su -c "OLLAMA_HOST=127.0.0.1:11434 ollama pull $model" ubuntu || true
+done
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Python Environment
@@ -159,7 +162,7 @@ Group=ubuntu
 WorkingDirectory=/opt/backpocket
 Environment="PATH=/opt/backpocket/venv/bin"
 Environment="PYTHONUNBUFFERED=1"
-ExecStart=/opt/backpocket/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --workers 2
+ExecStart=/opt/backpocket/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --workers 2 --proxy-headers
 Restart=always
 RestartSec=10
 StandardOutput=journal
@@ -184,8 +187,13 @@ log_ok "Systemd service created"
 # TLS (Let's Encrypt)
 # ═══════════════════════════════════════════════════════════════════════════
 log_info "Configure TLS..."
+# Certbot will manage TLS, Caddy will proxy to Uvicorn
 if [[ -n "$ADMIN_EMAIL" ]]; then
-    certbot --non-interactive --agree-tos --email "$ADMIN_EMAIL" --nginx -d "$DOMAIN" || log_warn "TLS may require DNS A record"
+    # Ensure Nginx is not running before running certbot --nginx
+    systemctl stop nginx || true # Stop nginx if it's running
+    certbot --non-interactive --agree-tos --email "$ADMIN_EMAIL" --webroot -w /var/www/certbot -d "$DOMAIN" || log_warn "Certbot may require DNS A record and Caddy to be temporarily stopped or configured for webroot."
+    # Restart Caddy to pick up new certificates, or ensure Caddy is set up to read them
+    systemctl reload caddy
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════

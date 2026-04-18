@@ -1,6 +1,4 @@
 import os
-import sys
-import io
 import logging
 import json
 import requests
@@ -10,23 +8,9 @@ from google import genai  # google-genai (new SDK) — exposes genai.Client
 from dotenv import load_dotenv
 from datetime import datetime
 
-if sys.platform == "win32":
-    try:
-        if sys.stdout.buffer is not None:
-            sys.stdout = io.TextIOWrapper(
-                sys.stdout.buffer, encoding="utf-8", errors="replace"
-            )
-        if sys.stderr.buffer is not None:
-            sys.stderr = io.TextIOWrapper(
-                sys.stderr.buffer, encoding="utf-8", errors="replace"
-            )
-    except Exception:
-        pass
-
 load_dotenv()
 
-# Setup logging
-logging.basicConfig(level=logging.INFO, encoding="utf-8")
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ---- In-memory whitelist cache (refreshed every 5 minutes) ----

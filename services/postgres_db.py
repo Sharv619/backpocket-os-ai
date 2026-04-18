@@ -4,6 +4,7 @@ Replaces services/database.py for Postgres with RLS support.
 """
 
 import os
+import uuid
 from contextlib import contextmanager
 from typing import Any, Generator, Optional
 
@@ -13,7 +14,18 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session, sessionmaker, declarative_base
+from sqlalchemy.orm import Session, sessionmaker, declarative_base, relationship
+from sqlalchemy import (
+    Column,
+    String,
+    Boolean,
+    DateTime,
+    Float,
+    Integer,
+    Text,
+    ForeignKey,
+)
+from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
 from sqlalchemy.pool import NullPool
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -21,7 +33,8 @@ from sqlalchemy.pool import NullPool
 # ═══════════════════════════════════════════════════════════════════════
 
 DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://backpocket:backpocket@localhost:5432/backpocket"
+    "POSTGRES_DB_URL",
+    "postgresql+psycopg2://backpocket_user:backpocket_password@localhost:5432/backpocket_db",
 )
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -100,33 +113,78 @@ class PostgresDB:
 # Base Model
 # ═══════════════════════════════════════════════════════════════════════
 
-Base = declarative_base()
+Base = declarative_base()  # Already defined at line 103, keep this one
 
 
-class Lead(Base):
-    """Lead model."""
+class User(Base):
+    __tablename__ = "users"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(String, unique=True, index=True)
+    hashed_password = Column(String)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, server_default=text("NOW()"))
+    updated_at = Column(DateTime, server_default=text("NOW()"), onupdate=text("NOW()"))
 
-    __tablename__ = "leads"
 
-    id = Column(Integer, primary_key=True)
-    user_id = Column(String(36), nullable=False, index=True)
-    client_name = Column(String(255), nullable=False)
-    email = Column(String(255))
-    phone = Column(String(50))
-    job_type = Column(String(100))
-    location = Column(String(255))
-    urgency = Column(String(50))
-    estimated_budget = Column(Integer)
-    status = Column(String(50), default="new")
-    created_at = Column(Time, server_default=text("NOW()"))
-    updated_at = Column(DateTime, server_default=text("NOW()"))
+class Quote(Base):
+    __tablename__ = "quotes"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    lead_id = Column(UUID(as_uuid=True), ForeignKey("leads.id"), nullable=True)
+    client_name = Column(String)
+    items_json = Column(JSONB)
+    total_amount = Column(Float)
+    status = Column(String, default="draft")
+    created_at = Column(DateTime, server_default=text("NOW()"))
+    updated_at = Column(DateTime, server_default=text("NOW()"), onupdate=text("NOW()"))
 
+
+class Payment(Base):
+    __tablename__ = "payments"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    quote_id = Column(UUID(as_uuid=True), ForeignKey("quotes.id"), nullable=True)
+    amount = Column(Float)
+    currency = Column(String, default="AUD")
+    payment_date = Column(DateTime, server_default=text("NOW()"))
+    status = Column(String, default="completed")
+    created_at = Column(DateTime, server_default=text("NOW()"))
+    updated_at = Column(DateTime, server_default=text("NOW()"), onupdate=text("NOW()"))
+
+
+class PendingApproval(Base):
+    __tablename__ = "pending_approvals"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    ref_id = Column(String, index=True)
+    ref_type = Column(String)
+    preview = Column(Text)
+    status = Column(String, default="pending")
+    age_hours = Column(Integer)
+    embedding = Column(
+        ARRAY(Float)
+    )  # Use ARRAY(Float) for pgvector compatibility, or direct vector(dim) if ORM supports
+    created_at = Column(DateTime, server_default=text("NOW()"))
+    updated_at = Column(DateTime, server_default=text("NOW()"), onupdate=text("NOW()"))
+
+
+class KnowledgeNote(Base):
+    __tablename__ = "knowledge_notes"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    title = Column(String)
+    content = Column(Text)
+    tags = Column(ARRAY(String))
+    embedding = Column(ARRAY(Float))  # Use ARRAY(Float) for pgvector compatibility
+    created_at = Column(DateTime, server_default=text("NOW()"))
+    updated_at = Column(DateTime, server_default=text("NOW()"), onupdate=text("NOW()"))
+
+
+_db: Optional["PostgresDB"] = None
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Initialization
 # ═══════════════════════════════════════════════════════════════════════════════
-
-_db: Optional[PostgresDB] = None
 
 
 def get_db() -> PostgresDB:
@@ -155,7 +213,7 @@ def get_all_leads(user_id: str) -> list[dict]:
             text("SELECT * FROM leads WHERE user_id = :uid ORDER BY created_at DESC"),
             {"uid": user_id},
         )
-        return [dict(r) for r in result.fetchall()]
+        return [dict(r._mapping) for r in result.fetchall() if r]
 
 
 def get_lead(lead_id: int, user_id: str) -> Optional[dict]:
@@ -166,7 +224,8 @@ def get_lead(lead_id: int, user_id: str) -> Optional[dict]:
             text("SELECT * FROM leads WHERE id = :id AND user_id = :uid"),
             {"id": lead_id, "uid": user_id},
         )
-        return dict(result.fetchone()) if result.fetchone() else None
+        lead_data = result.fetchone()
+        return dict(lead_data._mapping) if lead_data else None
 
 
 def create_lead(user_id: str, data: dict) -> dict:
@@ -190,7 +249,8 @@ def create_lead(user_id: str, data: dict) -> dict:
                 "estimated_budget": data.get("estimated_budget"),
             },
         )
-        return dict(result.fetchone())
+        row = result.fetchone()
+        return dict(row._mapping) if row else None
 
 
 def update_lead_status(lead_id: int, user_id: str, status: str) -> dict:
@@ -216,7 +276,7 @@ def get_all_quotes(user_id: str) -> list[dict]:
             text("SELECT * FROM quotes WHERE user_id = :uid ORDER BY created_at DESC"),
             {"uid": user_id},
         )
-        return [dict(r) for r in result.fetchall()]
+        return [dict(r._mapping) for r in result.fetchall() if r]
 
 
 def create_quote(user_id: str, data: dict) -> dict:
@@ -245,7 +305,7 @@ def create_quote(user_id: str, data: dict) -> dict:
                 "total": total,
             },
         )
-        return dict(result.fetchone())
+        return dict(result.fetchone()._mapping)
 
 
 def get_all_payments(user_id: str) -> list[dict]:
@@ -256,7 +316,7 @@ def get_all_payments(user_id: str) -> list[dict]:
             text("SELECT * FROM payments WHERE user_id = :uid ORDER BY paid_at DESC"),
             {"uid": user_id},
         )
-        return [dict(r) for r in result.fetchall()]
+        return [dict(r._mapping) for r in result.fetchall()]
 
 
 def record_payment(user_id: str, data: dict) -> dict:
@@ -275,7 +335,8 @@ def record_payment(user_id: str, data: dict) -> dict:
                 "amount": data["amount"],
             },
         )
-        return dict(result.fetchone())
+        row = result.fetchone()
+        return dict(row._mapping) if row else {}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -292,4 +353,5 @@ def set_user_id(user_id: str) -> None:
 
 
 # Import needed for type hints
-from datetime import Time, DateTime
+from datetime import datetime
+import uuid  # Added uuid import

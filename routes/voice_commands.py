@@ -173,6 +173,20 @@ async def _dispatch_intent(
             session_state=session.to_dict(),
         )
 
+    # Intents not in PARAM_ORDER but still requiring confirmation (e.g. inbox.approve)
+    if intent in CONFIRM_REQUIRED and session.state != SessionState.CONFIRMING:
+        session.intent = intent
+        session.state = SessionState.CONFIRMING
+        session.pending_action = {"intent": intent, "params": entities}
+        prompt = generate_confirmation_prompt(intent, entities, intent in STRONG_CONFIRM)
+        return VoiceCommandResponse(
+            intent=intent, confidence=1.0, action="confirm",
+            result=entities,
+            speech_response=prompt,
+            needs_confirmation=True,
+            session_state=session.to_dict(),
+        )
+
     return await _execute_intent(session, intent, entities, screen_context, metadata)
 
 

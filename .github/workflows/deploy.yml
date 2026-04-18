@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  PYTHON_VERSION: "3.11"
+  PYTHON_VERSION: "3.10" # Align with Oracle ARM setup
   OLLAMA_BASE_URL: "http://10.0.0.10:11434"
 
 jobs:
@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install ruff mypy pytest pytest-asyncio
+          pip install ruff mypy pytest pytest-asyncio uvicorn httpx # Added uvicorn and httpx for consistency with Oracle setup
 
       - name: Lint
         run: ruff check .
@@ -41,27 +41,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build Flutter
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.24.0"
+          flutter-version: "3.19.0" # Pin to version used in requirements
 
-      - name: Flutter pub get
-        run: cd flutter_prototype/backpocket_mobile && flutter pub get
+      - name: Flutter Pub Get
+        run: |
+          cd flutter_prototype/backpocket_mobile
+          flutter pub get
 
-      - name: Flutter build web
-        run: cd flutter_prototype/backpocket_mobile && flutter build web --release
+      - name: Flutter Build Web
+        run: |
+          cd flutter_prototype/backpocket_mobile
+          flutter build web --release --base-href /static/
 
-      - name: Upload artifacts
+      - name: Archive Flutter Web Build
         uses: actions/upload-artifact@v4
         with:
-          name: build-artifacts
+          name: flutter-web-build
+          path: flutter_prototype/backpocket_mobile/build/web
+          retention-days: 7
+
+      - name: Upload Python and MCP Code
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-code
           path: |
-            flutter_prototype/backpocket_mobile/build/web/
-            static/
             main.py
             services/
             mcp_servers/
+            requirements.txt
+            # Add other necessary backend files/directories
           retention-days: 7
 
   deploy:
@@ -69,37 +80,52 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download artifacts
+      - name: Download Flutter Web Build
         uses: actions/download-artifact@v4
         with:
-          name: build-artifacts
+          name: flutter-web-build
+          path: /tmp/flutter-web-build
 
-      - name: Deploy to Oracle VM
-        uses: appleboy/ssh-action@v1
+      - name: Download Backend Code
+        uses: actions/download-artifact@v4
         with:
-          host: ${{ secrets.ORACLE_HOST }}
-          username: ${{ secrets.ORACLE_USER }}
-          key: ${{ secrets.ORACLE_SSH_KEY }}
+          name: backend-code
+          path: /tmp/backend-code
+
+      - name: Deploy to Oracle ARM VM via SSH
+        uses: appleboy/ssh-action@v0.1.10 # Using v0.1.10 as specified previously
+        with:
+          host: ${{ secrets.PROD_SSH_HOST }}
+          username: ${{ secrets.PROD_SSH_USERNAME }}
+          key: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
           script: |
-            # Create backup of current deployment
-            sudo cp -r /opt/backpocket /opt/backpocket.bak.$(date +%Y%m%d)
+            APP_DIR="/var/www/backpocket-mvp" # Ensure this matches APP_DIR in oracle_arm_setup.sh
             
-            # Sync new code
-            rsync -avz --delete \
-              --exclude '.git' \
-              --exclude '__pycache__' \
-              --exclude '*.pyc' \
-              --exclude '.venv' \
-              ./ ${{ secrets.ORACLE_PATH }}
-            
-            # Restart service
-            sudo systemctl restart backpocket
-            
-            # Health check
-            sleep 5
-            curl -sf https://api.backpocket.ai/api/ping || exit 1
-            
-            echo "Deployment successful"
+            # Create application directory if it doesn't exist
+            mkdir -p $APP_DIR
+
+            # Sync backend code
+            rsync -avz --delete /tmp/backend-code/ $APP_DIR/
+
+            # Sync Flutter web build
+            mkdir -p $APP_DIR/static/
+            rsync -avz --delete /tmp/flutter-web-build/ $APP_DIR/static/
+
+            # Recreate/update Python virtual environment if necessary
+            cd $APP_DIR
+            python3 -m venv venv || true # Use || true to avoid failing if venv exists
+            source venv/bin/activate
+            pip install --upgrade pip
+            pip install -r requirements.txt
+            # Add any other core dependencies if not in requirements.txt (e.g., uvicorn, httpx)
+            pip install uvicorn httpx cryptography
+
+            # Restart the FastAPI service
+            sudo systemctl restart backpocket-api
+
+            echo "Deployment complete."
+
+        env:
+          PROD_SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          PROD_SSH_USERNAME: ${{ secrets.PROD_SSH_USERNAME }}
+          PROD_SSH_PRIVATE_KEY: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
