@@ -105,6 +105,20 @@ SCREEN_NAMES = {
     "marketing", "instructions", "construction", "settings",
 }
 
+# Built once at import — avoids re-joining large static strings on every call
+_BASE_PROMPT = (
+    "You are the voice command classifier for BackPocket OS, a tradie business app.\n"
+    "The user is Steve, an Australian contractor. He speaks casually.\n\n"
+    + INTENT_TAXONOMY
+    + "\n"
+    + TRADIE_SLANG
+    + "\nClassify the following voice command. Extract all parameters you can from the text.\n"
+    "For fuzzy references like \"the Penrith one\" or \"that bloke\", extract the keyword as a fuzzy_ref.\n\n"
+    "Return JSON with exactly these fields:\n"
+    '{\n  "intent": "screen.entity.action",\n  "entities": {},\n'
+    '  "confidence": 0.0-1.0,\n  "ambiguity_reason": null or "reason string"\n}'
+)
+
 
 async def classify_intent(
     transcript: str,
@@ -130,29 +144,13 @@ async def classify_intent(
     if available_entities:
         entity_context = f"\nAVAILABLE DATA CONTEXT:\n{json.dumps(available_entities, default=str)[:2000]}"
 
-    prompt = f"""You are the voice command classifier for BackPocket OS, a tradie business app.
-The user is Steve, an Australian contractor. He speaks casually.
-
-Current screen: {screen_context}
-{session_info}
-{entity_context}
-
-{INTENT_TAXONOMY}
-
-{TRADIE_SLANG}
-
-Classify the following voice command. Extract all parameters you can from the text.
-For fuzzy references like "the Penrith one" or "that bloke", extract the keyword as a fuzzy_ref.
-
-Command: "{transcript}"
-
-Return JSON with exactly these fields:
-{{
-  "intent": "screen.entity.action",
-  "entities": {{}},
-  "confidence": 0.0-1.0,
-  "ambiguity_reason": null or "reason string"
-}}"""
+    prompt = (
+        f"Current screen: {screen_context}\n"
+        f"{session_info}\n"
+        f"{entity_context}\n\n"
+        + _BASE_PROMPT
+        + f'\n\nCommand: "{transcript}"'
+    )
 
     try:
         from google.genai import types as genai_types
