@@ -1,19 +1,7 @@
 import sqlite3
-import sys
-import io
 import logging
 import json
 
-if sys.platform == 'win32':
-    try:
-        if sys.stdout.buffer is not None:
-            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-        if sys.stderr.buffer is not None:
-            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
-    except Exception:
-        pass
-
-# Log settings
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
