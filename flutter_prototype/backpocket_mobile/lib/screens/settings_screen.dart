@@ -69,6 +69,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _apiKeyController.text.trim(),
     );
 
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Settings saved!'),
