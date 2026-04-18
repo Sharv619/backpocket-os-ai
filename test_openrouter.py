@@ -11,7 +11,7 @@ print(f"API Key length: {len(api_key) if api_key else 0}")
 # Test simple API call
 import requests
 try:
-    print("\n📡 Testing OpenRouter API connection...")
+    print("\nTesting OpenRouter API connection...")
     response = requests.post(
         "https://openrouter.ai/api/v1/chat/completions",
         headers={
