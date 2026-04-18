@@ -117,6 +117,36 @@ async def handle_quote_to_invoice(params: dict, screen_context: str, metadata: d
     return {"error": "Failed to generate invoice."}
 
 
+@register_handler("cross.quote_to_followup")
+async def handle_quote_to_followup(params: dict, screen_context: str, metadata: dict | None) -> dict:
+    quote_id = params.get("quote_id")
+    fuzzy = params.get("fuzzy", params.get("fuzzy_ref", ""))
+
+    if not quote_id and fuzzy:
+        resolved = resolve_entity("quote", str(fuzzy))
+        if resolved["match"] in ("exact", "fuzzy") and resolved["entity"]:
+            quote_id = resolved["entity"]["id"]
+
+    if not quote_id:
+        return {"error": "Which quote should I follow up on?"}
+
+    async with httpx.AsyncClient(timeout=20) as client:
+        resp = await client.post(f"{BASE}/api/construction/quotes/{quote_id}/tradie-followup")
+        if resp.status_code == 200:
+            data = resp.json()
+            message = data.get("message", "")
+            quote_data = data.get("quote", {})
+            return {
+                "quote_id": quote_id,
+                "follow_up_message": message,
+                "client_name": quote_data.get("client_name", ""),
+                "job_type": quote_data.get("job_type", ""),
+                "_ui_action": {"navigate_to": "construction", "tab_index": 1, "highlight_item": quote_id},
+            }
+
+    return {"error": "Couldn't generate follow-up. Check the quote ID."}
+
+
 @register_handler("cross.full_report")
 async def handle_full_report(params: dict, screen_context: str, metadata: dict | None) -> dict:
     report = {}

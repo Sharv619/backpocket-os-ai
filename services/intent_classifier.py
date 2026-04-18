@@ -73,6 +73,7 @@ construction.payment.pipeline — "What's the damage?", "How much outstanding?"
 cross.email_to_lead        — "That email looks like a lead, extract it"
 cross.lead_to_quote        — "Create a lead and generate a quote"
 cross.quote_to_invoice     — "The [suburb] job is done, invoice them"
+cross.quote_to_followup    — "Follow up with the [suburb] bloke about his quote", "Chase up the Campbelltown quote"
 cross.full_report          — "Give me the full rundown on the business"
 
 # Navigation
