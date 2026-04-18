@@ -117,7 +117,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
 
       // Upload with retry logic (3 attempts)
       dynamic uploadResult;
-      String? lastError;
+      String lastError = 'Upload failed after 3 attempts';
 
       for (var attempt = 1; attempt <= 3; attempt++) {
         try {
@@ -151,7 +151,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
       }
 
       if (uploadResult == null || uploadResult['status'] != 'success') {
-        throw Exception(lastError ?? 'Upload failed after 3 attempts');
+        throw Exception(lastError);
       }
 
       var docId = uploadResult['document_id'];
