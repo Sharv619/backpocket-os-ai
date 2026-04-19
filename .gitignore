@@ -49,3 +49,8 @@ video_output/
 *.zip
 nul
 docs/reviews/ai-handbook-90day-review.ics
+
+# Android signing
+flutter_prototype/backpocket_mobile/android/key.properties
+*.jks
+*.keystore

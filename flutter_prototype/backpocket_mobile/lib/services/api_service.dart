@@ -17,7 +17,7 @@ class ApiService {
   final String apiKey;
 
   // Timeout tiers matched to actual backend processing time
-  static const _tFast    = Duration(seconds: 10);   // status, lists, CRUD
+  static const _tFast = Duration(seconds: 10); // status, lists, CRUD
   static const _tAI      = Duration(seconds: 45);   // chat, twin, draft generation
   static const _tVision  = Duration(seconds: 90);   // vision analysis (Ollama + OpenRouter)
   static const _tAudio   = Duration(seconds: 30);   // ElevenLabs TTS
@@ -53,7 +53,7 @@ class ApiService {
     final res = await http.get(
       Uri.parse('$baseUrl/api/status'),
       headers: _headers,
-    );
+    ).timeout(_tFast);
     return jsonDecode(res.body);
   }
 

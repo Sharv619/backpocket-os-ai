@@ -1,8 +1,6 @@
 name: backpocket_mobile
-description: "A new Flutter project."
-# The following line prevents the package from being accidentally published to
-# pub.dev using `flutter pub publish`. This is preferred for private packages.
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+description: "BackPocket OS — AI Business Operating System for Australian tradies and SMEs. Automates emails, quotes, leads, and client follow-ups."
+publish_to: 'none'
 
 # The following defines the version and build number for your application.
 # A version number is three numbers separated by dots, like 1.2.43
@@ -47,8 +45,8 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.3
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -60,6 +58,14 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/icon/app_icon.png"
+  adaptive_icon_background: "#0D0A07"
+  adaptive_icon_foreground: "assets/icon/app_icon_fg.png"
+  min_sdk_android: 21
 
   # To add assets to your application, add an assets section, like this:
   # assets:

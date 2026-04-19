@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import '../theme.dart';
 
 const Color kBg = Color(0xFF0D0A07);
 const Color kSurface = Color(0xFF1A1208);

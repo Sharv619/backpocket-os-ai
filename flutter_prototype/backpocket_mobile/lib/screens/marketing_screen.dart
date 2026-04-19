@@ -509,7 +509,7 @@ class _MarketingScreenState extends State<MarketingScreen> {
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
-            value: _selectedTheme,
+            initialValue: _selectedTheme,
             dropdownColor: kSurface,
             style: const TextStyle(color: Colors.white),
             decoration: InputDecoration(
