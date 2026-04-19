@@ -262,3 +262,67 @@ def analyze_document(doc_id, custom_prompt: str | None = None):
 
 
 init_documents_table()
+
+
+# ── Building material / damage assessment prompts ─────────────────────────────
+
+MATERIAL_VISION_PROMPT = """You are an expert building inspector assistant helping an Australian tradie assess a job site photo.
+
+Analyse this image and return a JSON object with EXACTLY these fields:
+{
+  "material_type": "<primary material visible: brick/timber/concrete/render/tile/metal/other>",
+  "condition_score": <integer 1-10 where 10=new, 1=failed>,
+  "damage_visible": <true/false>,
+  "damage_types": ["<list of: crack/water_damage/rot/rust/spalling/mould/other>"],
+  "urgency": "<immediate/soon/routine/none>",
+  "estimated_hours": <integer — rough labour hours to fix>,
+  "notes": "<one sentence plain-English assessment for the tradie>"
+}
+
+Return ONLY the JSON. No markdown, no extra text."""
+
+DAMAGE_ASSESSMENT_PROMPT = """You are a structural damage assessor helping an Australian tradie quote a repair job.
+
+Look at this photo and return a JSON object with EXACTLY these fields:
+{
+  "structural_concern": <true/false>,
+  "crack_severity": "<none/hairline/moderate/severe>",
+  "water_ingress": <true/false>,
+  "affected_area_sqm": <float estimate or null if cannot determine>,
+  "repair_complexity": "<simple/moderate/complex>",
+  "recommended_action": "<one sentence: what the tradie should do first>",
+  "safety_risk": <true/false>
+}
+
+Return ONLY the JSON. No markdown, no extra text."""
+
+
+def analyze_building_image(image_b64: str, analysis_type: str = "material") -> dict:
+    """
+    Analyse a building/site photo for materials or structural damage.
+    analysis_type: 'material' | 'damage'
+    Returns structured dict parsed from AI JSON response.
+    """
+    import json as _json
+
+    prompt = MATERIAL_VISION_PROMPT if analysis_type == "material" else DAMAGE_ASSESSMENT_PROMPT
+
+    raw = None
+    for model in VISION_MODELS:
+        try:
+            raw = _call_openrouter_vision(image_b64, prompt, model)
+            if raw:
+                break
+        except Exception as e:
+            logger.warning(f"Vision model {model} failed: {e}")
+
+    if not raw:
+        return {"error": "All vision models failed", "analysis_type": analysis_type}
+
+    try:
+        cleaned = raw.strip().lstrip("```json").lstrip("```").rstrip("```").strip()
+        result = _json.loads(cleaned)
+        result["analysis_type"] = analysis_type
+        return result
+    except _json.JSONDecodeError:
+        return {"analysis_type": analysis_type, "raw": raw, "parse_error": "Could not parse JSON from AI response"}

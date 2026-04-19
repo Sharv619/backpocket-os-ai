@@ -3,12 +3,14 @@ import logging
 import os
 import uuid
 from typing import List
+import base64
 from services.document_vision import (
     save_document,
     get_all_documents,
     get_document,
     analyze_document,
     delete_document,
+    analyze_building_image,
 )
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -77,6 +79,28 @@ async def analyze_document_endpoint(doc_id: int):
         return result
     except Exception as e:
         logger.error(f"Analyze error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@router.post("/analyze-material")
+async def analyze_material_endpoint(
+    file: UploadFile = File(...),
+    analysis_type: str = "material",
+):
+    """
+    Analyse a building/site photo for materials or structural damage.
+    analysis_type: 'material' (default) | 'damage'
+    Returns structured JSON: material_type, condition_score, damage_types, urgency, estimated_hours.
+    """
+    if analysis_type not in ("material", "damage"):
+        raise HTTPException(status_code=400, detail="analysis_type must be 'material' or 'damage'")
+    try:
+        content = await file.read()
+        image_b64 = base64.b64encode(content).decode()
+        result = analyze_building_image(image_b64, analysis_type=analysis_type)
+        return result
+    except Exception as e:
+        logger.error(f"Material analysis error: {e}")
         return {"status": "error", "message": str(e)}
 
 
