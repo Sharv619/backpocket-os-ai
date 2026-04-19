@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 const Color kBg = Color(0xFF0D0A07);
@@ -19,7 +21,7 @@ class SettingsScreen extends StatefulWidget {
 
   const SettingsScreen({
     super.key,
-    this.serverUrl = 'http://192.168.1.147:8000',
+    this.serverUrl = 'http://127.0.0.1:8000',
     this.apiKey = '',
     this.onSettingsChanged,
   });
@@ -32,6 +34,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late TextEditingController _serverUrlController;
   late TextEditingController _apiKeyController;
   bool _saving = false;
+  String? _pingResult;
+  bool _pinging = false;
+
+  Future<void> _testConnection() async {
+    final url = _serverUrlController.text.trim();
+    setState(() { _pinging = true; _pingResult = null; });
+    try {
+      final response = await http.get(
+        Uri.parse('$url/api/status'),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 5));
+      setState(() {
+        _pingResult = response.statusCode == 200 ? 'Connected' : 'HTTP ${response.statusCode}';
+        _pinging = false;
+      });
+    } on TimeoutException {
+      setState(() { _pingResult = 'Timeout — server not reachable'; _pinging = false; });
+    } catch (e) {
+      setState(() { _pingResult = 'Error: $e'; _pinging = false; });
+    }
+  }
 
   @override
   void initState() {
@@ -110,9 +133,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _SettingsField(
                 controller: _serverUrlController,
                 label: 'Server URL',
-                hint: 'http://192.168.1.147:8000',
+                hint: 'http://192.168.x.x:8000',
                 icon: Icons.dns_outlined,
               ),
+              const SizedBox(height: 8),
+              Row(children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: _pinging
+                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.wifi_find_outlined, size: 16),
+                    label: Text(_pinging ? 'Testing…' : 'Test Connection'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: kAmber,
+                      side: const BorderSide(color: kAmber),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                    ),
+                    onPressed: _pinging ? null : _testConnection,
+                  ),
+                ),
+              ]),
+              if (_pingResult != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Row(children: [
+                    Icon(
+                      _pingResult == 'Connected' ? Icons.check_circle_outline : Icons.error_outline,
+                      size: 14,
+                      color: _pingResult == 'Connected' ? kGreen : kRed,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(child: Text(
+                      _pingResult!,
+                      style: TextStyle(
+                        color: _pingResult == 'Connected' ? kGreen : kRed,
+                        fontSize: 12,
+                      ),
+                    )),
+                  ]),
+                ),
               const SizedBox(height: 12),
               _SettingsField(
                 controller: _apiKeyController,
