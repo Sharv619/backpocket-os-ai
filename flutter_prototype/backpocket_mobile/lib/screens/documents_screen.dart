@@ -116,7 +116,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
       final base64File = base64Encode(bytes);
 
       // Upload with retry logic (3 attempts)
-      dynamic uploadResult;
+      Map<String, dynamic>? uploadResult;
       String lastError = 'Upload failed after 3 attempts';
 
       for (var attempt = 1; attempt <= 3; attempt++) {
