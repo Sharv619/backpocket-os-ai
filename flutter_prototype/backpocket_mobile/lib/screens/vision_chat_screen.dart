@@ -478,10 +478,10 @@ class _VisionChatScreenState extends State<VisionChatScreen>
           const SizedBox(width: 8),
           Text(
             _phase == _Phase.camera
-                ? 'Scan Document'
+                ? 'Scan / Cost Estimate'
                 : _phase == _Phase.processing
                 ? 'Processing'
-                : 'Document Analysis',
+                : 'Vision Analysis',
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.bold,
@@ -751,6 +751,11 @@ class _VisionChatScreenState extends State<VisionChatScreen>
         scrollDirection: Axis.horizontal,
         children: [
           _ActionChip(
+            label: '🏗️ Cost Estimate',
+            onTap: _chatSending ? null : _showCostEstimateDialog,
+          ),
+          const SizedBox(width: 8),
+          _ActionChip(
             label: '📄 Extract ABN',
             onTap: _chatSending ? null : _extractAbn,
           ),
@@ -767,6 +772,88 @@ class _VisionChatScreenState extends State<VisionChatScreen>
         ],
       ),
     );
+  }
+
+  Future<void> _showCostEstimateDialog() async {
+    final queryCtrl = TextEditingController();
+    final query = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _kSurface,
+        title: const Text(
+          '🏗️ Construction Cost Estimate',
+          style: TextStyle(color: Colors.white, fontSize: 16),
+        ),
+        content: TextField(
+          controller: queryCtrl,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
+            hintText: 'e.g. aluminium house structure, kitchen reno...',
+            hintStyle: TextStyle(color: _kMuted),
+            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: _kBorder)),
+            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: _kPrimary)),
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: _kMuted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: _kPrimary, foregroundColor: Colors.black),
+            onPressed: () => Navigator.pop(ctx, queryCtrl.text.trim()),
+            child: const Text('Estimate'),
+          ),
+        ],
+      ),
+    );
+    if (query == null || query.isEmpty) return;
+    await _runCostEstimate(query);
+  }
+
+  Future<void> _runCostEstimate(String query) async {
+    setState(() {
+      _messages.add(_Message('user', '🏗️ Cost estimate: $query'));
+      _chatSending = true;
+    });
+    _scrollToBottom();
+
+    try {
+      final prompt =
+          'You are a construction cost estimator for Australia (NSW). '
+          'I have a site photo. Here is the AI analysis of the site:\n\n'
+          '$_docContext\n\n'
+          'The user wants to build/install: $query\n\n'
+          'Provide a detailed cost estimate including:\n'
+          '1. Materials breakdown with approximate AUD costs\n'
+          '2. Labour estimate (hours × \$150/hr standard tradie rate)\n'
+          '3. Total range (low/high)\n'
+          '4. Key considerations for this specific site\n\n'
+          'Base estimates on current Australian construction market rates (2024-2025). '
+          'Be specific and practical.';
+
+      final res = await http
+          .post(
+            Uri.parse('${widget.serverUrl}/api/mobile/chat'),
+            headers: {
+              'Content-Type': 'application/json',
+              if (widget.apiKey.isNotEmpty) 'X-API-Key': widget.apiKey,
+            },
+            body: jsonEncode({'message': prompt}),
+          )
+          .timeout(const Duration(seconds: 45));
+
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final reply = data['response'] as String? ?? 'Could not generate estimate.';
+      setState(() => _messages.add(_Message('assistant', reply)));
+    } catch (e) {
+      setState(() => _messages.add(_Message('assistant', 'Cost estimate error: $e')));
+    } finally {
+      setState(() => _chatSending = false);
+      _scrollToBottom();
+    }
   }
 
   Widget _buildInputBar() {

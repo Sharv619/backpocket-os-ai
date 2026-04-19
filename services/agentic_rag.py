@@ -20,6 +20,12 @@ import json
 
 logger = logging.getLogger(__name__)
 
+PRIVACY_FOOTER = (
+    "\n\n[PRIVACY MODE: ACTIVE] All reasoning stays local. "
+    "Do not suggest sending data to external services without explicit user approval. "
+    "Flag any action that would transmit client data off-device."
+)
+
 
 class AgenticRAG:
     """Orchestrates twin agents with RAG context."""
@@ -56,16 +62,34 @@ class AgenticRAG:
             subject = email_content.get("subject", "")
             snippet = email_content.get("snippet", "")
 
-            # Get learned patterns from corrections history
+            # Get learned patterns — fetch more, IF-filter to best signal
             learned_patterns = get_learned_patterns(
-                sender_email=sender, subject=subject, limit=5
+                sender_email=sender, subject=subject, limit=12
             ) or []
+            if len(learned_patterns) >= 6:
+                from services.if_filter import IFFilter
+                query_hint = f"{subject} {snippet}"
+                learned_patterns, _diag = IFFilter.filter_dicts(
+                    learned_patterns,
+                    text_key="feedback",
+                    query=query_hint,
+                    top_n=5,
+                )
+                logger.debug(f"Learned patterns IF: {_diag}")
 
             # Get sender history
             historical = get_historical_context(sender, max_results=3) or ""
 
-            # Get recent corrections for learning
-            recent_corrections = get_corrections(limit=3) or []
+            # Get recent corrections — IF-filter noise before injecting into prompt
+            recent_corrections = get_corrections(limit=8) or []
+            if len(recent_corrections) >= 6:
+                from services.if_filter import IFFilter
+                recent_corrections, _diag = IFFilter.filter_dicts(
+                    recent_corrections,
+                    text_key="correction_note",
+                    top_n=3,
+                )
+                logger.debug(f"Corrections IF: {_diag}")
 
             return {
                 "learned_patterns": learned_patterns,
@@ -89,11 +113,16 @@ class AgenticRAG:
         """Delegate to the best twin based on email content."""
         subject = email_content.get("subject", "").lower()
         sender = email_content.get("sender", "").lower()
+        # Also check snippet/body so routing isn't defeated by vague subject lines
+        body_hint = (email_content.get("snippet", "") + " " + email_content.get("body", ""))[:500].lower()
+        full_text = subject + " " + body_hint
 
-        # Heuristic routing
-        if any(x in subject for x in ["invoice", "tax", "bas", "ato", "gst", "expense"]):
+        ACCOUNTANT_KEYWORDS = ["invoice", "tax", "bas", "ato", "gst", "expense", "abn", "acn", "receipt", "payment", "quote", "budget"]
+        AUDITOR_KEYWORDS    = ["audit", "compliance", "review", "verify", "check", "discrepancy", "dispute", "incorrect"]
+
+        if any(x in full_text for x in ACCOUNTANT_KEYWORDS):
             return "accountant"
-        elif any(x in subject for x in ["audit", "compliance", "review", "verify", "check"]):
+        elif any(x in full_text for x in AUDITOR_KEYWORDS):
             return "auditor"
         else:
             return "admin"
@@ -130,6 +159,7 @@ class AgenticRAG:
         }
 
         system_prompt = twin_prompts.get(best_twin, f"You are the {best_twin} assistant for BackPocket OS.")
+        system_prompt += PRIVACY_FOOTER
 
         # Construct agentic response
         response = {
@@ -224,7 +254,7 @@ Write an evocative, narrative blog post that feels like a premium storytelling e
                         "temperature": 0.85,
                         "max_tokens": 500,
                     },
-                    timeout=15,
+                    timeout=45,
                 )
                 response.raise_for_status()
                 content = response.json()["choices"][0]["message"]["content"]

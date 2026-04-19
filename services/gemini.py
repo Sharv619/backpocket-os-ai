@@ -14,7 +14,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ---- In-memory whitelist cache (refreshed every 5 minutes) ----
+_last_thought_log: str = ""
 _client_whitelist_cache = set()
+
+
+def get_last_thought_log() -> str:
+    """Return current value of agent thinking log. Use this — never import the var directly."""
+    return _last_thought_log
 _domain_whitelist_cache = set()
 _priority_list_cache = {}
 _cache_last_loaded = None
@@ -167,7 +173,12 @@ def get_ollama_response(prompt, json_mode=False):
         response = requests.post(url, json=payload, timeout=180)
         if response.status_code == 200:
             raw_text = response.json().get("response", "")
-            # Strip any thinking tags if present
+            # Capture thinking block before stripping
+            global _last_thought_log
+            thinking_match = re.search(r"<think>(.*?)</think>", raw_text, flags=re.DOTALL)
+            if thinking_match:
+                _last_thought_log = thinking_match.group(1).strip()
+                logger.info(f"[AGENT THINKING] {_last_thought_log}")
             clean_text = re.sub(
                 r"<think>.*?</think>", "", raw_text, flags=re.DOTALL
             ).strip()

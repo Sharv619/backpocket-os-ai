@@ -18,8 +18,45 @@ SCHEDULE_JOBS_DONE = set()
 
 @router.get("/health")
 async def health_check():
-    pending_refs = db.get_all_pending_refs()
-    return {"status": "healthy", "version": "2.2", "pending": pending_refs}
+    """Deep health check — verifies DB, env vars, and optional services."""
+    checks = {}
+
+    # Database
+    try:
+        pending_refs = db.get_all_pending_refs()
+        checks["database"] = "ok"
+    except Exception as e:
+        checks["database"] = f"ERROR: {e}"
+
+    # Critical env vars
+    checks["gemini_key"]      = "ok" if os.getenv("GEMINI_API_KEY") else "MISSING"
+    checks["openrouter_key"]  = "ok" if os.getenv("OPENROUTER_API_KEY") else "MISSING"
+    checks["google_creds"]    = "ok" if os.getenv("GOOGLE_APPLICATION_CREDENTIALS") else "MISSING"
+
+    # Auth (EPIC F)
+    from services.auth import auth_is_configured
+    checks["auth"] = "ok" if auth_is_configured() else "not configured (dev mode)"
+
+    # Optional services
+    checks["elevenlabs"]      = "ok" if os.getenv("ELEVENLABS_API_KEY") else "not configured"
+    checks["ollama"]          = "ok" if os.getenv("OLLAMA_BASE_URL", "http://localhost:11434") else "not configured"
+
+    # Ollama reachability (non-blocking, best-effort)
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=2) as client:
+            r = await client.get(os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
+            checks["ollama"] = "ok" if r.status_code < 500 else "unreachable"
+    except Exception:
+        checks["ollama"] = "unreachable"
+
+    all_critical = all(v == "ok" for k, v in checks.items() if k in ("database", "gemini_key"))
+    return {
+        "status": "READY" if all_critical else "DEGRADED",
+        "version": "2.2",
+        "checks": checks,
+        "pending_count": len(pending_refs) if "pending_refs" in dir() else 0,
+    }
 
 
 @router.get("/")
@@ -47,6 +84,8 @@ async def get_system_status():
         "ollama": "Active",
         "spreadsheet_url": spreadsheet_url,
         "debug_spreadsheet_id": spreadsheet_id,
+        "privacy_mode": True,
+        "data_residency": "local",
     }
 
 
@@ -119,10 +158,32 @@ async def api_invoice_generate(request: Request):
 
     try:
         data = await request.json()
-        client_name = data.get("client_name", "Client")
-        client_email = data.get("client_email", "")
-        items = data.get("items", [])
-        notes = data.get("notes", "")
+        quote_id = data.get("quote_id")
+
+        # Auto-populate from quote record when quote_id provided
+        if quote_id:
+            from services.construction import ConstructionManager
+            mgr = ConstructionManager()
+            quote = mgr.get_quote(int(quote_id))
+            if not quote:
+                return JSONResponse({"error": f"Quote {quote_id} not found"}, status_code=404)
+            if quote.get("status") not in ("accepted", "invoiced"):
+                return JSONResponse(
+                    {"error": f"Quote must be accepted before invoicing (current status: {quote.get('status')})"},
+                    status_code=400,
+                )
+            client_name  = data.get("client_name") or quote.get("client_name", "Client")
+            client_email = data.get("client_email", "")
+            notes = data.get("notes", quote.get("description", ""))
+            items = data.get("items") or [
+                {"description": f"Materials – {quote.get('job_type', 'Job')}", "qty": 1, "rate": quote.get("materials_cost", 0), "gst": True},
+                {"description": f"Labour – {quote.get('job_type', 'Job')}", "qty": 1, "rate": quote.get("labor_cost", 0), "gst": True},
+            ]
+        else:
+            client_name  = data.get("client_name", "Client")
+            client_email = data.get("client_email", "")
+            items = data.get("items", [])
+            notes = data.get("notes", "")
 
         if not items:
             return JSONResponse({"error": "No line items provided"}, status_code=400)
@@ -202,50 +263,18 @@ async def api_compact_chat(conversation_id: str):
 
 @router.post("/api/voice/tts")
 async def text_to_speech(request: TTSRequest):
-    api_key = os.getenv("ELEVENLABS_API_KEY", "")
+    from services.elevenlabs import synthesize, is_configured
+    from fastapi.responses import Response as FastAPIResponse
 
-    if not api_key or api_key == "your_elevenlabs_api_key_here":
-        return {"status": "error", "message": "ElevenLabs API key not configured"}
-
-    voice_map = {
-        "male": "pNInz6obpgDQGcFmaJgB",
-        "female": "21m00Tcm4TlvDq8ikWAM",
-    }
-    voice_id = voice_map.get(request.voice, voice_map["male"])
+    if not is_configured():
+        return {"status": "error", "message": "ELEVENLABS_API_KEY not configured"}
 
     try:
-        import requests
-
-        response = requests.post(
-            f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
-            headers={
-                "Accept": "audio/mpeg",
-                "Content-Type": "application/json",
-                "xi-api-key": api_key,
-            },
-            json={
-                "text": request.text,
-                "model_id": "eleven_monolingual_v1",
-                "voice_settings": {
-                    "stability": 0.5,
-                    "similarity_boost": 0.75,
-                },
-            },
-            timeout=30,
-        )
-
-        if response.status_code != 200:
-            return {
-                "status": "error",
-                "message": f"ElevenLabs error: {response.status_code}",
-            }
-
-        from fastapi.responses import Response
-
-        return Response(
-            content=response.content,
+        audio_bytes = await synthesize(request.text, voice=request.voice)
+        return FastAPIResponse(
+            content=audio_bytes,
             media_type="audio/mpeg",
-            headers={"Content-Disposition": "inline"},
+            headers={"Content-Disposition": "inline", "Cache-Control": "no-store"},
         )
     except Exception as e:
         logger.error(f"TTS error: {e}")
@@ -432,3 +461,15 @@ async def api_self_check():
     loop = asyncio.get_running_loop()
     report = await loop.run_in_executor(None, run_self_check)
     return {"status": "success", "report": report}
+
+
+@router.get("/api/debug/last-thought")
+async def get_last_thought():
+    """Return the most recent agent thinking block for frontend polling."""
+    from services.gemini import get_last_thought_log
+    thought = get_last_thought_log()
+    return {
+        "status": "success",
+        "thinking": thought,
+        "has_content": bool(thought),
+    }

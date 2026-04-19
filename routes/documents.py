@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Request, UploadFile, File, HTTPException
+import asyncio
 import logging
 import os
 import uuid
@@ -75,7 +76,8 @@ async def get_document_detail(doc_id: int):
 async def analyze_document_endpoint(doc_id: int):
     """Analyze document with AI."""
     try:
-        result = analyze_document(doc_id)
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, analyze_document, doc_id)
         return result
     except Exception as e:
         logger.error(f"Analyze error: {e}")
@@ -97,7 +99,8 @@ async def analyze_material_endpoint(
     try:
         content = await file.read()
         image_b64 = base64.b64encode(content).decode()
-        result = analyze_building_image(image_b64, analysis_type=analysis_type)
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, analyze_building_image, image_b64, analysis_type)
         return result
     except Exception as e:
         logger.error(f"Material analysis error: {e}")

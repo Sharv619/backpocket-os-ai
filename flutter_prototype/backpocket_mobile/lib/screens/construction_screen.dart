@@ -151,29 +151,29 @@ class _ConstructionScreenState extends State<ConstructionScreen>
                   ],
                 ),
                 const SizedBox(height: 12),
-                // Pipeline Summary
+                // Pipeline Summary — field names match backend get_pipeline_summary()
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
                     _PipelineCounter(
-                      label: 'Draft',
-                      count: _pipeline?['draft'] ?? 0,
+                      label: 'Total',
+                      count: _pipeline?['total_quotes'] ?? 0,
                       color: Colors.grey,
                     ),
                     _PipelineCounter(
                       label: 'Sent',
-                      count: _pipeline?['sent'] ?? 0,
+                      count: _pipeline?['pending_quotes'] ?? 0,
                       color: AppColors.amber,
                     ),
                     _PipelineCounter(
                       label: 'Accepted',
-                      count: _pipeline?['accepted'] ?? 0,
+                      count: _pipeline?['accepted_quotes'] ?? 0,
                       color: AppColors.green,
                     ),
                     Column(
                       children: [
                         Text(
-                          '\$${_pipeline?['revenue_pipeline'] ?? 0}',
+                          '\$${(_pipeline?['revenue_pipeline'] ?? 0).toStringAsFixed(0)}',
                           style: const TextStyle(
                             color: AppColors.green,
                             fontSize: 16,

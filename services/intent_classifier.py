@@ -5,6 +5,7 @@ Gemini-powered intent classification + entity extraction for voice commands.
 
 import json
 import logging
+import re
 from services.gemini import get_gemini_client
 
 logger = logging.getLogger(__name__)
@@ -163,22 +164,27 @@ async def classify_intent(
         )
         text = response.text.strip() if response and response.text else ""
         if text:
-            result = json.loads(text)
-            if "intent" in result and "confidence" in result:
-                result.setdefault("entities", {})
-                result.setdefault("ambiguity_reason", None)
-                return result
+            try:
+                cleaned = re.sub(r"```json|```", "", text).strip()
+                result = json.loads(cleaned)
+                if "intent" in result and "confidence" in result:
+                    result.setdefault("entities", {})
+                    result.setdefault("ambiguity_reason", None)
+                    return result
+            except (json.JSONDecodeError, ValueError) as parse_err:
+                logger.warning(f"Intent JSON parse failed: {parse_err}. Raw: {text[:100]}")
+                return _fallback(transcript, "json_parse_error")
     except Exception as e:
         logger.error(f"Intent classification error: {e}")
 
     return _fallback(transcript)
 
 
-def _fallback(transcript: str) -> dict:
-    """Fallback when Gemini unavailable — route everything to chat."""
+def _fallback(transcript: str, reason: str = "classifier_unavailable") -> dict:
+    """Fallback when Gemini unavailable or JSON parse fails — route to chat."""
     return {
         "intent": "chat.ask",
         "entities": {"message": transcript},
         "confidence": 0.3,
-        "ambiguity_reason": "AI classifier unavailable, falling back to chat",
+        "ambiguity_reason": reason,
     }

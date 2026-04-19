@@ -48,7 +48,37 @@ def init_db():
         cursor.execute("ALTER TABLE pending_approvals ADD COLUMN last_nudge_at DATETIME")
         conn.commit()
     except sqlite3.OperationalError:
-        pass # already exists
+        pass  # already exists
+
+    # Migration: Add workflow_stage to pending_approvals
+    try:
+        cursor.execute("ALTER TABLE pending_approvals ADD COLUMN workflow_stage TEXT DEFAULT 'triage'")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # already exists
+
+    # Seed workflow_stages lookup table for the Flutter UI
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS workflow_stages (
+            stage_number INTEGER PRIMARY KEY,
+            title TEXT NOT NULL,
+            description TEXT,
+            triggers TEXT,
+            next_steps TEXT,
+            branch_type TEXT DEFAULT 'linear'
+        )
+    """)
+    cursor.executemany(
+        "INSERT OR IGNORE INTO workflow_stages (stage_number, title, description, triggers, next_steps, branch_type) VALUES (?,?,?,?,?,?)",
+        [
+            (1, "Triage",   "Email received and classified by tier", "new email", "draft",    "linear"),
+            (2, "Draft",    "AI draft generated, awaiting approval", "triage done", "approve", "linear"),
+            (3, "Approval", "Owner reviews and approves draft",      "draft ready", "send",    "decision"),
+            (4, "Sent",     "Email sent to client",                  "approved",    "archive",  "linear"),
+            (5, "Archived", "Completed or closed",                   "sent",        None,       "terminal"),
+        ]
+    )
+    conn.commit()
         
     # 3. Table for Corrections (Cherry's feedback on drafts) - with learning metadata
     cursor.execute('''
@@ -271,18 +301,19 @@ def save_pending_approval(ref_id, data):
     
     try:
         cursor.execute('''
-            INSERT OR REPLACE INTO pending_approvals 
-            (ref_id, message_id, thread_id, sender, subject, draft_body, delivered_to, tier)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO pending_approvals
+            (ref_id, message_id, thread_id, sender, subject, draft_body, delivered_to, tier, workflow_stage)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
-            ref_id, 
-            data['message_id'], 
-            data['thread_id'], 
-            data['sender'], 
-            data['subject'], 
-            data['draft_body'], 
-            data['delivered_to'], 
-            data['tier']
+            ref_id,
+            data['message_id'],
+            data['thread_id'],
+            data['sender'],
+            data['subject'],
+            data['draft_body'],
+            data['delivered_to'],
+            data['tier'],
+            data.get('workflow_stage', 'draft'),
         ))
         conn.commit()
         conn.close()

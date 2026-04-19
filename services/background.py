@@ -100,6 +100,19 @@ async def inbox_polling_loop_once():
                 else:
                     all_emails_to_triage.append(email)
 
+        # --- IF NOISE FILTER — strip auto-replies/newsletters before triage AI call ---
+        if len(all_emails_to_triage) >= 6:
+            try:
+                from services.if_filter import IFFilter
+                all_emails_to_triage, _if_diag = IFFilter.filter_emails_for_twin(
+                    all_emails_to_triage,
+                    text_key="snippet",
+                    top_n=len(all_emails_to_triage),  # keep all inliers, just drop outliers
+                )
+                logger.info(f"🔬 IF pre-filter: {_if_diag}")
+            except Exception as _e:
+                logger.debug(f"IF filter skipped: {_e}")
+
         # --- BATCH TRIAGE REMAINING (HUGE COST SAVINGS) ---
         if all_emails_to_triage:
             logger.info(
@@ -393,30 +406,14 @@ EMAIL:
                 "draft_body": draft_body,
                 "delivered_to": f"{email.get('delivered_to', 'unknown')}|{token_file}",
                 "tier": str(tier),
-                "email_body": email_body[
-                    :5000
-                ],  # Save first 5000 chars for client extraction
-                "suggested_actions": json.dumps(
-                    suggested_actions
-                ),  # Save as JSON string
+                "workflow_stage": "draft",
+                "email_body": email_body[:5000],
+                "suggested_actions": json.dumps(suggested_actions),
                 "sender_instructions": sender_instructions,
             },
         )
 
-        # Index email for semantic search (FTS5 + ChromaDB RAG)
-        try:
-            from services.email_memory import index_email
-
-            index_email(
-                ref_id,
-                email.get("subject", ""),
-                snippet[:500],
-                clean_email,
-                datetime.now().strftime("%Y-%m-%d %H:%M"),
-            )
-        except Exception as idx_err:
-            logger.warning(f"Email FTS indexing skipped: {idx_err}")
-
+        # Index email to ChromaDB RAG (single sovereign source of truth)
         try:
             from services.twin_engine import rag, TwinType
 

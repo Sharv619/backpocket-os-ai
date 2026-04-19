@@ -2,12 +2,14 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/voice_command_response.dart';
+import 'tts_service.dart';
 
 enum VoiceFlowState { idle, recording, transcribing, processing, speaking, error }
 
 class VoiceCommandService extends ChangeNotifier {
   final String baseUrl;
   final String apiKey;
+  late final TtsService _tts;
 
   VoiceFlowState _state = VoiceFlowState.idle;
   String? _sessionId;
@@ -18,7 +20,9 @@ class VoiceCommandService extends ChangeNotifier {
   int? _selectedItemId;
   int? _tabIndex;
 
-  VoiceCommandService({required this.baseUrl, this.apiKey = ''});
+  VoiceCommandService({required this.baseUrl, this.apiKey = ''}) {
+    _tts = TtsService(baseUrl: baseUrl, apiKey: apiKey);
+  }
 
   VoiceFlowState get state => _state;
   VoiceCommandResponse? get lastResponse => _lastResponse;
@@ -68,6 +72,9 @@ class VoiceCommandService extends ChangeNotifier {
         final data = jsonDecode(resp.body);
         _lastResponse = VoiceCommandResponse.fromJson(data);
         _sessionId = _lastResponse?.sessionState?.sessionId ?? _sessionId;
+        _state = VoiceFlowState.speaking;
+        notifyListeners();
+        await _speakResponse(_lastResponse);
         _state = VoiceFlowState.idle;
         notifyListeners();
         return _lastResponse;
@@ -82,6 +89,13 @@ class VoiceCommandService extends ChangeNotifier {
       notifyListeners();
     }
     return null;
+  }
+
+  Future<void> _speakResponse(VoiceCommandResponse? response) async {
+    final text = response?.speechResponse ?? response?.followUpPrompt;
+    if (text != null && text.isNotEmpty) {
+      await _tts.speak(text);
+    }
   }
 
   Future<String?> transcribeAudio(String audioPath) async {
@@ -143,6 +157,9 @@ class VoiceCommandService extends ChangeNotifier {
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body);
         _lastResponse = VoiceCommandResponse.fromJson(data);
+        _state = VoiceFlowState.speaking;
+        notifyListeners();
+        await _speakResponse(_lastResponse);
         _state = VoiceFlowState.idle;
         notifyListeners();
         return _lastResponse;

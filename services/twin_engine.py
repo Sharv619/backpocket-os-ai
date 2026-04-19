@@ -104,14 +104,21 @@ class RAGContextBuilder:
             return False
 
     def retrieve(self, twin_type: TwinType, query: str, n: int = 5) -> list[str]:
-        """Retrieve relevant chunks for a query."""
+        """Retrieve relevant chunks for a query, then IF-filter before returning."""
         client = self._get_client()
         if not client:
             return []
         try:
             collection = client.get_or_create_collection(name=twin_type.value)
-            results = collection.query(query_texts=[query], n_results=n)
-            return results.get("documents", [[]])[0]
+            # Fetch 2× requested so IF has enough to filter from
+            results = collection.query(query_texts=[query], n_results=n * 2)
+            chunks = results.get("documents", [[]])[0]
+            if not chunks:
+                return []
+            from services.if_filter import IFFilter
+            clean, diag = IFFilter.filter_rag_chunks(chunks, query=query, top_n=n)
+            logger.debug(f"RAG IF: {diag}")
+            return clean
         except Exception as e:
             logger.warning(f"RAG retrieval failed: {e}")
             return []

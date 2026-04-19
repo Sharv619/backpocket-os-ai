@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:math';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
@@ -36,6 +38,7 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
   bool _isProcessing = false;
   VoiceCommandResponse? _response;
   final List<_ConversationEntry> _conversation = [];
+  String _lastTranscript = '';
 
   @override
   void initState() {
@@ -63,6 +66,7 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
     if (text.isEmpty) return;
 
     setState(() {
+      _lastTranscript = text;
       _conversation.add(_ConversationEntry(text: text, isUser: true));
     });
     _textController.clear();
@@ -144,6 +148,28 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
     }
   }
 
+  Future<void> _showInvoiceSheet() async {
+    if (_lastTranscript.isEmpty && _conversation.isEmpty) return;
+
+    final transcript = _lastTranscript.isNotEmpty
+        ? _lastTranscript
+        : _conversation.where((e) => e.isUser).map((e) => e.text).join(' ');
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _InvoiceSheet(
+        serverUrl: widget.serverUrl,
+        apiKey: widget.apiKey,
+        transcript: transcript,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -160,6 +186,12 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
           style: TextStyle(color: AppColors.cream, fontWeight: FontWeight.bold),
         ),
         actions: [
+          if (_conversation.isNotEmpty)
+            TextButton.icon(
+              icon: const Icon(Icons.receipt_long, size: 16, color: AppColors.amber),
+              label: const Text('Invoice', style: TextStyle(color: AppColors.amber, fontSize: 13)),
+              onPressed: _showInvoiceSheet,
+            ),
           IconButton(
             icon: Icon(
               _showTextInput ? Icons.mic_rounded : Icons.keyboard_rounded,
@@ -408,6 +440,244 @@ class _ConversationEntry {
   final String text;
   final bool isUser;
   _ConversationEntry({required this.text, required this.isUser});
+}
+
+// ── Voice → Invoice bottom sheet ─────────────────────────────────────────────
+class _InvoiceSheet extends StatefulWidget {
+  final String serverUrl;
+  final String apiKey;
+  final String transcript;
+
+  const _InvoiceSheet({
+    required this.serverUrl,
+    required this.apiKey,
+    required this.transcript,
+  });
+
+  @override
+  State<_InvoiceSheet> createState() => _InvoiceSheetState();
+}
+
+class _InvoiceSheetState extends State<_InvoiceSheet> {
+  bool _parsing = false;
+  bool _generating = false;
+  Map<String, dynamic>? _quoteDraft;
+  String? _invoiceUrl;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _parseTranscript();
+  }
+
+  Future<void> _parseTranscript() async {
+    setState(() { _parsing = true; _error = null; });
+    final headers = {
+      'Content-Type': 'application/json',
+      if (widget.apiKey.isNotEmpty) 'X-API-Key': widget.apiKey,
+    };
+    try {
+      final res = await http.post(
+        Uri.parse('${widget.serverUrl}/api/voice/quote-from-transcript'),
+        headers: headers,
+        body: jsonEncode({'transcript': widget.transcript}),
+      ).timeout(const Duration(seconds: 45));
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      setState(() => _quoteDraft = data['quote_draft'] as Map<String, dynamic>?);
+    } catch (e) {
+      setState(() => _error = 'Parse error: $e');
+    } finally {
+      setState(() => _parsing = false);
+    }
+  }
+
+  Future<void> _generateInvoice() async {
+    if (_quoteDraft == null) return;
+    setState(() { _generating = true; _error = null; });
+    final headers = {
+      'Content-Type': 'application/json',
+      if (widget.apiKey.isNotEmpty) 'X-API-Key': widget.apiKey,
+    };
+
+    final items = (_quoteDraft!['items'] as List?)?.map((i) => {
+      'description': i['description'] ?? 'Labour',
+      'qty': i['quantity'] ?? 1,
+      'rate': i['unit_cost'] ?? 0,
+      'gst': true,
+    }).toList() ?? [
+      {
+        'description': _quoteDraft!['job_description'] ?? 'Construction Work',
+        'qty': _quoteDraft!['labor_hours'] ?? 2,
+        'rate': 150,
+        'gst': true,
+      },
+      if ((_quoteDraft!['materials_cost'] ?? 0) > 0)
+        {
+          'description': 'Materials',
+          'qty': 1,
+          'rate': _quoteDraft!['materials_cost'],
+          'gst': true,
+        },
+    ];
+
+    try {
+      final res = await http.post(
+        Uri.parse('${widget.serverUrl}/api/invoice/generate'),
+        headers: headers,
+        body: jsonEncode({
+          'client_name': _quoteDraft!['client_name'] ?? 'Client',
+          'client_email': _quoteDraft!['client_email'] ?? '',
+          'items': items,
+          'notes': _quoteDraft!['notes'] ?? '',
+        }),
+      ).timeout(const Duration(seconds: 30));
+
+      if (res.statusCode == 200 && res.headers['content-type']?.contains('pdf') == true) {
+        setState(() => _invoiceUrl = 'Invoice PDF generated successfully');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Invoice PDF generated'),
+              backgroundColor: AppColors.green,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      } else {
+        final data = jsonDecode(res.body);
+        setState(() => _error = data['error'] ?? 'Invoice failed');
+      }
+    } catch (e) {
+      setState(() => _error = 'Invoice error: $e');
+    } finally {
+      setState(() => _generating = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 20, right: 20, top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.receipt_long, color: AppColors.amber, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Generate Invoice',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.close, color: AppColors.textDim, size: 20),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_parsing)
+            const Center(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: AppColors.amber, strokeWidth: 2)),
+                  SizedBox(width: 10),
+                  Text('Parsing transcript...', style: TextStyle(color: AppColors.textDim)),
+                ],
+              ),
+            )
+          else if (_error != null)
+            Text(_error!, style: const TextStyle(color: AppColors.red, fontSize: 13))
+          else if (_invoiceUrl != null)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.green.withAlpha(26),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.green.withAlpha(77)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.check_circle, color: AppColors.green, size: 20),
+                  SizedBox(width: 8),
+                  Text('Invoice PDF generated', style: TextStyle(color: AppColors.green, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            )
+          else if (_quoteDraft != null) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _DraftRow('Client', _quoteDraft!['client_name']?.toString() ?? 'TBD'),
+                  _DraftRow('Job', _quoteDraft!['job_description']?.toString() ?? 'Construction Work'),
+                  _DraftRow('Location', _quoteDraft!['location']?.toString() ?? 'TBD'),
+                  _DraftRow('Labour hrs', '${_quoteDraft!['labor_hours'] ?? 2}'),
+                  _DraftRow('Materials', '\$${_quoteDraft!['materials_cost'] ?? 0}'),
+                  _DraftRow('Markup', '${_quoteDraft!['markup_percent'] ?? 20}%'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                icon: _generating
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                    : const Icon(Icons.picture_as_pdf, size: 18),
+                label: Text(_generating ? 'Generating PDF...' : 'Generate Invoice PDF'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.amber,
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: _generating ? null : _generateInvoice,
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+}
+
+class _DraftRow extends StatelessWidget {
+  final String label;
+  final String value;
+  const _DraftRow(this.label, this.value);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 90,
+            child: Text(label, style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+          ),
+          Expanded(
+            child: Text(value, style: const TextStyle(color: Colors.white, fontSize: 13)),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _WaveformPainter extends CustomPainter {

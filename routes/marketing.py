@@ -1,3 +1,5 @@
+import asyncio
+import functools
 import logging
 import sqlite3
 from datetime import datetime
@@ -235,21 +237,27 @@ async def generate_startup_story(data: dict):
     try:
         from services.agentic_rag import NarrativeBlogGenerator
 
-        generator = NarrativeBlogGenerator()
-        company_name = data.get("company_name", "")
+        company_name = data.get("company_name", "") or "BackPocket"
         theme = data.get("theme", "entrepreneurship")
+        title = f"The {company_name} Story"
 
-        result = generator.generate_blog_post(
-            title=f"The {company_name} Story" if company_name else "Our Journey",
-            theme=theme,
-            company_name=company_name,
+        generator = NarrativeBlogGenerator()
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            functools.partial(
+                generator.generate_blog_post,
+                title=title,
+                theme=theme,
+                company_name=company_name,
+            ),
         )
 
-        if result.get("status") == "error":
-            return {"error": result.get("message", "Generation failed")}
+        if result.get("error"):
+            return {"error": result["error"]}
 
         return {
-            "title": result.get("title", "Untitled"),
+            "title": result.get("title", title),
             "content": result.get("content", ""),
             "company": company_name,
             "style": result.get("style", "wine_commercial_narrative"),

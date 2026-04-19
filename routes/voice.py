@@ -3,6 +3,8 @@ BackPocket OS — Voice-to-Quote Routes
 FastAPI endpoints for voice transcription and quote generation.
 """
 
+import asyncio
+import functools
 import io
 import os
 from typing import Optional
@@ -58,13 +60,16 @@ async def transcribe_audio(
     content = await audio.read()
 
     try:
-        # Try faster-whisper first (local)
-        response = requests.post(
+        # Try faster-whisper first (local) — run in executor to avoid blocking event loop
+        loop = asyncio.get_event_loop()
+        _req = functools.partial(
+            requests.post,
             f"{OLLAMA_URL}/api/transcribe",
             files={"file": ("audio.m4a", content, "audio/m4a")},
             data={"model": model},
             timeout=60,
         )
+        response = await loop.run_in_executor(None, _req)
 
         if response.status_code == 200:
             return response.json()
@@ -88,28 +93,25 @@ async def quote_from_transcript(request: QuoteDraftRequest) -> dict:
     prompt = _build_quote_prompt(transcript)
 
     try:
-        # Call Ollama with Trinity model
-        response = requests.post(
+        # Call Ollama with Trinity model — run in executor to avoid blocking event loop
+        import json
+        loop = asyncio.get_event_loop()
+        _req = functools.partial(
+            requests.post,
             f"{OLLAMA_URL}/api/generate",
-            json={
-                "model": "gemma2:2b",
-                "prompt": prompt,
-                "format": "json",
-                "stream": False,
-            },
+            json={"model": "gemma2:2b", "prompt": prompt, "format": "json", "stream": False},
             timeout=45,
         )
+        response = await loop.run_in_executor(None, _req)
 
         if response.status_code == 200:
             result = response.json()
-            import json
-
             try:
                 quote_data = json.loads(result.get("response", "{}"))
                 return {"quote_draft": quote_data}
-            except:
+            except Exception:
                 pass
-    except Exception as e:
+    except Exception:
         pass
 
     # Fallback

@@ -16,6 +16,12 @@ class ApiService {
   final String baseUrl;
   final String apiKey;
 
+  // Timeout tiers matched to actual backend processing time
+  static const _tFast    = Duration(seconds: 10);   // status, lists, CRUD
+  static const _tAI      = Duration(seconds: 45);   // chat, twin, draft generation
+  static const _tVision  = Duration(seconds: 90);   // vision analysis (Ollama + OpenRouter)
+  static const _tAudio   = Duration(seconds: 30);   // ElevenLabs TTS
+
   ApiService({required this.baseUrl, this.apiKey = ''});
 
   Map<String, String> get _headers => {
@@ -106,7 +112,7 @@ class ApiService {
     final res = await http.post(
       Uri.parse('$baseUrl/api/documents/analyze/$docId'),
       headers: _headers,
-    );
+    ).timeout(_tVision);
     return jsonDecode(res.body);
   }
 
@@ -154,7 +160,7 @@ class ApiService {
       Uri.parse('$baseUrl/api/mobile/chat'),
       headers: _headers,
       body: jsonEncode({'message': message}),
-    );
+    ).timeout(_tAI);
     return jsonDecode(res.body);
   }
 
@@ -193,7 +199,7 @@ class ApiService {
           if (apiKey.isNotEmpty) 'X-API-Key': apiKey,
         },
         body: jsonEncode({'text': text, 'voice': 'male'}),
-      );
+      ).timeout(_tAudio);
       if (res.statusCode == 200) return 'elevenlabs';
     } catch (e) {
       // Fall back to web speech

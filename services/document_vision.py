@@ -238,10 +238,27 @@ def analyze_document(doc_id, custom_prompt: str | None = None):
                 logger.warning(f"OpenRouter vision {model} failed: {e2}")
 
     if not ai_response:
-        return {
-            "status": "error",
-            "message": "All vision models failed.",
-        }
+        logger.warning(f"[VISION] All models failed for doc {doc_id}. Attempting RAG fallback.")
+        try:
+            from services.agentic_rag import get_agentic_rag
+            rag = get_agentic_rag()
+            rag_context = rag.get_context_for_email(
+                {"snippet": f"Document analysis request for doc_id={doc_id}", "subject": "document"},
+                tier=2,
+            )
+            return {
+                "status": "rag_fallback",
+                "source": "chromadb_local",
+                "analysis": rag_context,
+                "document_id": doc_id,
+                "message": "Vision models unavailable. Returned local RAG context instead.",
+            }
+        except Exception as rag_err:
+            logger.error(f"[VISION] RAG fallback also failed: {rag_err}")
+            return {
+                "status": "error",
+                "message": "All vision models failed and RAG fallback unavailable.",
+            }
 
     # Persist analysis to DB
     conn = sqlite3.connect(DB_PATH)
