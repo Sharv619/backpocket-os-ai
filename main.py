@@ -133,6 +133,7 @@ from routes.marketing import router as marketing_router
 from routes.utilities import router as utilities_router
 from routes.approvals import router as approvals_router
 from routes.webhook import router as webhook_router
+from routes.billing import router as billing_router
 
 import routes.voice_handlers_dashboard
 import routes.voice_handlers_inbox
@@ -154,6 +155,7 @@ app.include_router(marketing_router)
 app.include_router(utilities_router)
 app.include_router(approvals_router)
 app.include_router(webhook_router)
+app.include_router(billing_router)
 
 
 @app.on_event("startup")
