@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -37,6 +38,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _pingResult;
   bool _pinging = false;
 
+  // BYOK — Sovereign Engine
+  final _orKeyController = TextEditingController();
+  final _geminiKeyController = TextEditingController();
+  final _elKeyController = TextEditingController();
+  Map<String, dynamic> _byokStatus = {};
+  bool _byokLoading = false;
+
   Future<void> _testConnection() async {
     final url = _serverUrlController.text.trim();
     setState(() { _pinging = true; _pingResult = null; });
@@ -68,6 +76,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void dispose() {
     _serverUrlController.dispose();
     _apiKeyController.dispose();
+    _orKeyController.dispose();
+    _geminiKeyController.dispose();
+    _elKeyController.dispose();
     super.dispose();
   }
 
@@ -78,6 +89,74 @@ class _SettingsScreenState extends State<SettingsScreen> {
           prefs.getString('server_url') ?? widget.serverUrl;
       _apiKeyController.text = prefs.getString('api_key') ?? widget.apiKey;
     });
+    _loadBYOKStatus();
+  }
+
+  Future<void> _loadBYOKStatus() async {
+    setState(() => _byokLoading = true);
+    try {
+      final url = _serverUrlController.text.trim();
+      final res = await http.get(
+        Uri.parse('$url/api/settings/byok-status'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (_apiKeyController.text.isNotEmpty)
+            'X-API-Key': _apiKeyController.text,
+        },
+      ).timeout(const Duration(seconds: 5));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        setState(() => _byokStatus = data['providers'] ?? {});
+      }
+    } catch (_) {}
+    setState(() => _byokLoading = false);
+  }
+
+  Future<void> _saveBYOKKey(String provider, String key) async {
+    if (key.isEmpty) return;
+    try {
+      final url = _serverUrlController.text.trim();
+      final res = await http.post(
+        Uri.parse('$url/api/settings/byok'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (_apiKeyController.text.isNotEmpty)
+            'X-API-Key': _apiKeyController.text,
+        },
+        body: jsonEncode({'provider': provider, 'api_key': key}),
+      ).timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200 && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('$provider key saved — you are now sovereign.'),
+          backgroundColor: kGreen,
+          behavior: SnackBarBehavior.floating,
+        ));
+        _loadBYOKStatus();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: kRed,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
+  Future<void> _clearBYOKKey(String provider) async {
+    try {
+      final url = _serverUrlController.text.trim();
+      await http.delete(
+        Uri.parse('$url/api/settings/byok/$provider'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (_apiKeyController.text.isNotEmpty)
+            'X-API-Key': _apiKeyController.text,
+        },
+      ).timeout(const Duration(seconds: 5));
+      _loadBYOKStatus();
+    } catch (_) {}
   }
 
   Future<void> _saveSettings() async {
@@ -214,6 +293,84 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 32),
 
+          // ── SOVEREIGN ENGINE — BYOK ─────────────────────────────────────────
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Text(
+                    'SOVEREIGN ENGINE',
+                    style: TextStyle(
+                      color: kTextDim,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: kAmber.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'BYOK',
+                      style: TextStyle(color: kAmber, fontSize: 10, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Use your own API keys. Your data, your keys, no cloud lock-in.',
+                style: TextStyle(color: kTextMuted, fontSize: 11),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: kCard,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: kBorder),
+                ),
+                child: _byokLoading
+                    ? const Center(child: CircularProgressIndicator(color: kAmber))
+                    : Column(
+                        children: [
+                          _BYOKRow(
+                            provider: 'openrouter',
+                            label: 'OpenRouter',
+                            controller: _orKeyController,
+                            isConfigured: _byokStatus['openrouter']?['configured'] == true,
+                            onSave: () => _saveBYOKKey('openrouter', _orKeyController.text.trim()),
+                            onClear: () => _clearBYOKKey('openrouter'),
+                          ),
+                          const Divider(color: kBorder, height: 24),
+                          _BYOKRow(
+                            provider: 'gemini',
+                            label: 'Gemini',
+                            controller: _geminiKeyController,
+                            isConfigured: _byokStatus['gemini']?['configured'] == true,
+                            onSave: () => _saveBYOKKey('gemini', _geminiKeyController.text.trim()),
+                            onClear: () => _clearBYOKKey('gemini'),
+                          ),
+                          const Divider(color: kBorder, height: 24),
+                          _BYOKRow(
+                            provider: 'elevenlabs',
+                            label: 'ElevenLabs',
+                            controller: _elKeyController,
+                            isConfigured: _byokStatus['elevenlabs']?['configured'] == true,
+                            onSave: () => _saveBYOKKey('elevenlabs', _elKeyController.text.trim()),
+                            onClear: () => _clearBYOKKey('elevenlabs'),
+                          ),
+                        ],
+                      ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 32),
+
           // About
           _SettingsSection(
             title: 'About',
@@ -316,6 +473,115 @@ class _SettingsField extends StatelessWidget {
           borderSide: const BorderSide(color: kBorder),
         ),
       ),
+    );
+  }
+}
+
+class _BYOKRow extends StatelessWidget {
+  final String provider;
+  final String label;
+  final TextEditingController controller;
+  final bool isConfigured;
+  final VoidCallback onSave;
+  final VoidCallback onClear;
+
+  const _BYOKRow({
+    required this.provider,
+    required this.label,
+    required this.controller,
+    required this.isConfigured,
+    required this.onSave,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              isConfigured ? Icons.verified : Icons.key_off_outlined,
+              color: isConfigured ? kGreen : kTextMuted,
+              size: 16,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: isConfigured ? kGreen : kTextDim,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (isConfigured)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: kGreen.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text('SOVEREIGN', style: TextStyle(color: kGreen, fontSize: 9)),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: controller,
+                obscureText: true,
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+                decoration: InputDecoration(
+                  hintText: isConfigured ? '••••••• (replace to update)' : 'sk-or-v1-...',
+                  hintStyle: const TextStyle(color: kTextMuted, fontSize: 12),
+                  filled: true,
+                  fillColor: kSurface,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: kBorder),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: kBorder),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: onSave,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: kAmber,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text('Save', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 12)),
+              ),
+            ),
+            if (isConfigured) ...[
+              const SizedBox(width: 6),
+              GestureDetector(
+                onTap: onClear,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: kRed.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: kRed.withValues(alpha: 0.3)),
+                  ),
+                  child: const Icon(Icons.delete_outline, color: kRed, size: 16),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
     );
   }
 }

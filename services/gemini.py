@@ -235,8 +235,13 @@ def get_openrouter_response(
     model="openai/gpt-4o",
     sys_prompt="You are a helpful assistant.",
     json_mode=False,
+    user_id: str = "",
 ):
-    """Call AI: local server first (private), OpenRouter as fallback."""
+    """Call AI: local server first (private), OpenRouter as fallback.
+
+    If user_id is set and a BYOK openrouter key is stored, use that key
+    instead of the server-level key (data sovereignty).
+    """
     # 1. Try local AI first (private, on-prem)
     local_result = get_local_ai_response(
         prompt, sys_prompt=sys_prompt, json_mode=json_mode
@@ -245,8 +250,18 @@ def get_openrouter_response(
         logger.info("Using local AI server (private mode).")
         return local_result
 
-    # 2. Fallback to OpenRouter (cloud)
-    api_key = os.getenv("OPENROUTER_API_KEY")
+    # 2. BYOK key takes priority over server key
+    api_key = ""
+    if user_id:
+        try:
+            from services.byok import get_effective_key
+            api_key = get_effective_key(user_id, "openrouter")
+            if api_key:
+                logger.info(f"SOVEREIGN: using BYOK OpenRouter key for user {user_id[:8]}...")
+        except Exception:
+            pass
+    if not api_key:
+        api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
         logger.warning(
             "LOCAL_AI_URL not set and OPENROUTER_API_KEY missing — Coach unavailable."

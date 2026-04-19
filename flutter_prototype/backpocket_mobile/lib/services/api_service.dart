@@ -456,4 +456,72 @@ class ApiService {
     );
     return await _handleResponse(res);
   }
+
+  // ── SOVEREIGN ENGINE — Bring Your Own Key (BYOK) ──────────────────────────
+  Future<Map<String, dynamic>> setBYOKKey({
+    required String provider,
+    required String apiKey,
+    String? voiceId,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/settings/byok'),
+      headers: _headers,
+      body: jsonEncode({
+        'provider': provider,
+        'api_key': apiKey,
+        if (voiceId != null) 'voice_id': voiceId,
+      }),
+    );
+    return await _handleResponse(res);
+  }
+
+  Future<Map<String, dynamic>> getBYOKStatus() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/settings/byok-status'),
+      headers: _headers,
+    );
+    return await _handleResponse(res);
+  }
+
+  Future<Map<String, dynamic>> clearBYOKKey(String provider) async {
+    final res = await http.delete(
+      Uri.parse('$baseUrl/api/settings/byok/$provider'),
+      headers: _headers,
+    );
+    return await _handleResponse(res);
+  }
+
+  // ── Style Scanner ──────────────────────────────────────────────────────────
+  Future<Map<String, dynamic>> scanWritingStyle({String tokenFile = 'token.json'}) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/style/scan-sent'),
+      headers: _headers,
+      body: jsonEncode({'token_file': tokenFile}),
+    ).timeout(_tAI);
+    return await _handleResponse(res);
+  }
+
+  Future<Map<String, dynamic>> getCurrentStyle() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/style/current'),
+      headers: _headers,
+    );
+    return await _handleResponse(res);
+  }
+
+  // ── Material Vision Analysis ───────────────────────────────────────────────
+  Future<Map<String, dynamic>> analyzeMaterialImage({
+    required String imageBase64,
+    String analysisType = 'material',
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/documents/analyze-material'),
+      headers: _headers,
+      body: jsonEncode({
+        'image_base64': imageBase64,
+        'analysis_type': analysisType,
+      }),
+    ).timeout(_tVision);
+    return await _handleResponse(res);
+  }
 }

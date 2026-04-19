@@ -202,6 +202,7 @@ from routes.approvals import router as approvals_router
 from routes.webhook import router as webhook_router
 from routes.billing import router as billing_router
 from routes.compliance import router as compliance_router
+from routes.byok import router as byok_router
 
 import routes.voice_handlers_dashboard
 import routes.voice_handlers_inbox
@@ -226,6 +227,7 @@ app.include_router(approvals_router)
 app.include_router(webhook_router)
 app.include_router(billing_router)
 app.include_router(compliance_router)
+app.include_router(byok_router)
 
 
 @app.on_event("startup")
