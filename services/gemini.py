@@ -13,6 +13,12 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ── Owner persona — configurable, not hardcoded ───────────────────────────────
+# Set BP_OWNER_NAME in .env to personalise all AI responses.
+# NSW Govt / investor demo: set to "the founder" or a role title.
+OWNER_NAME      = os.getenv("BP_OWNER_NAME", "the founder")
+BUSINESS_SECTOR = os.getenv("BP_BUSINESS_TYPE", "business")  # e.g. "construction", "NSW Govt"
+
 # ---- In-memory whitelist cache (refreshed every 5 minutes) ----
 _last_thought_log: str = ""
 _client_whitelist_cache = set()
@@ -303,7 +309,7 @@ def analyze_draft_with_coach(email_content, draft_response):
     Passes the draft to GPT-4o via OpenRouter to act as a Communication Coach.
     Returns confidence score, feedback, and a Power Version.
     """
-    sys_prompt = "You are Steve's Communication Coach (GPT-4o). Your job is to analyze her email drafts."
+    sys_prompt = f"You are {OWNER_NAME}'s Communication Coach (GPT-4o). Your job is to analyze email drafts."
     prompt = f"""
 Please analyze this drafted email reply to a client.
 
@@ -776,7 +782,7 @@ def _draft_response_openrouter(
     except Exception:
         pass
 
-    prompt = f"""You are a professional email assistant for an Australian tradie/accounting business.
+    prompt = f"""You are a professional email assistant for an Australian {BUSINESS_SECTOR}.
 Generate a brief, professional response to this email. Be friendly, direct, Australian-casual.
 
 Subject: {subject}
@@ -787,7 +793,7 @@ Message snippet: {snippet}
 {f"Historical context: {historical_context[:300]}" if historical_context else ""}
 {f"Client info: {client_info}" if client_info else ""}
 
-Generate a concise (2-4 sentences), professional response draft. Sign off as Steve."""
+Generate a concise (2-4 sentences), professional response draft. Sign off as {OWNER_NAME}."""
 
     try:
         response = requests.post(
@@ -972,31 +978,32 @@ def draft_response(email_content, tier, historical_context="", client_info=None)
                 )
 
         prompt = f"""
-        You are Steve, founder of BackPocket. Rewrite this email AS IF YOU wrote it.
-        
+        You are {OWNER_NAME}, founder of BackPocket OS — an AI Business Operating System.
+        Rewrite this email AS IF YOU wrote it.
+
         MANDATORY SELF-CHECK RULES:
         - Only write facts from the email, don't hallucinate
         - If unsure about something, ask the user
         - Don't make up dates, prices, or details
         - Cite "the email says..." when referring to specific info
-        
+
         MANDATORY WRITING RULES (follow exactly):
         1. ALWAYS personalize with first name: Start with "Hi {sender_name}," if you know their name
         2. Start with actual message - NO "Subject:", NO intro like "Thanks for..."
-        3. Use FIRST PERSON: "I" or "We" - NEVER "Steve finds", NEVER "BackPocket Twin"  
+        3. Use FIRST PERSON: "I" or "We" - NEVER "{OWNER_NAME} finds", NEVER "BackPocket Twin"
         4. Maximum 4 sentences
-        5. END with EXACTLY: "Talk soon, Steve" or "Thanks, Steve" (pick one based on tone)
+        5. END with EXACTLY: "Talk soon, {OWNER_NAME}" or "Thanks, {OWNER_NAME}" (pick one based on tone)
         6. NO other signature, NO title, NO "AI", NO robot mention
-        
+
         {corrections_context}
         {sender_instructions}
-        
+
         ORIGINAL EMAIL:
         Subject: {email_content.get("subject")}
         From: {email_content.get("sender", "")}
         Body: {email_content.get("snippet")}
-        
-        Rewrite Steve's reply (use their first name if known):
+
+        Rewrite {OWNER_NAME}'s reply (use their first name if known):
         """
 
         response = client.models.generate_content(
@@ -1048,11 +1055,11 @@ def refine_draft(email_content, original_draft, feedback):
             pass
 
         prompt = f"""
-        Refine this email draft based on feedback. Fix it to sound like Steve wrote it.
-        
+        Refine this email draft based on feedback. Fix it to sound like {OWNER_NAME} wrote it.
+
         MANDATORY RULES:
-        - Use "I" or "We" - NEVER "BackPocket Twin" or "Steve finds"
-        - End with EXACTLY: "Talk soon, Steve" or "Thanks, Steve"
+        - Use "I" or "We" - NEVER "BackPocket Twin" or "{OWNER_NAME} finds"
+        - End with EXACTLY: "Talk soon, {OWNER_NAME}" or "Thanks, {OWNER_NAME}"
         - No extra signatures or titles
         - Personalize with recipient's first name if you know it
         

@@ -171,7 +171,7 @@ def get_action_history(limit=20):
 
 
 def get_recent_corrections(limit=10):
-    """Load recent corrections/feedback from Steve"""
+    """Load recent corrections/feedback from the founder."""
     conn = get_connection()
     cur = conn.cursor()
 
@@ -329,7 +329,7 @@ SYSTEM STATS:
 === RECENT ACTIVITY ===
 {history_text if history_text else "No recent activity"}
 
-=== RECENT CORRECTIONS (Learning from Steve) ===
+=== RECENT CORRECTIONS (Learning from founder) ===
 """
 
     for c in corrections[:5]:

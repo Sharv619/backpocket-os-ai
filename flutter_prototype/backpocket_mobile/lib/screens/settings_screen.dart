@@ -377,7 +377,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               _InfoRow(label: 'App', value: 'BackPocket OS'),
               _InfoRow(label: 'Version', value: '2.3'),
-              _InfoRow(label: 'User', value: 'Steve (Tradie)'),
+              _InfoRow(label: 'Platform', value: 'Business OS'),
               _InfoRow(label: 'Theme', value: '5am Warehouse'),
             ],
           ),

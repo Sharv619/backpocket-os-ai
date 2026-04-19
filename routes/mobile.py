@@ -221,9 +221,13 @@ async def mobile_chat(request: MobileChatRequest):
         except Exception:
             pass
 
+        import os as _os
+        _owner = _os.getenv("BP_OWNER_NAME", "the founder")
+        _sector = _os.getenv("BP_BUSINESS_TYPE", "business")
         system_prompt = (
-            "You are BackPocket Twin, an AI assistant for Steve, an Australian accountant "
-            "who manages emails for sole traders and tradies. Be concise and helpful.\n\n"
+            f"You are BackPocket OS — an AI Business Operating System for {_owner}. "
+            f"You help run a {_sector} by automating emails, quotes, leads, and decisions. "
+            "Be concise, direct, and Australian-practical.\n\n"
             f"{context}"
         )
 
