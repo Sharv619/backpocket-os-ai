@@ -425,59 +425,70 @@ class _TwinChatScreenState extends State<TwinChatScreen> {
               ),
             // Input area
             Container(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
               decoration: const BoxDecoration(
                 color: AppColors.surface,
                 border: Border(top: BorderSide(color: AppColors.border)),
               ),
-              child: Row(
+              child: Column(
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _ctrl,
-                      focusNode: _focusNode,
-                      style: const TextStyle(color: Colors.white, fontSize: 14),
-                      maxLines: null,
-                      onSubmitted: (_) => _send(),
-                      decoration: InputDecoration(
-                        hintText: 'Ask Pip anything... (type / for commands)',
-                        hintStyle: const TextStyle(color: AppColors.textMuted),
-                        filled: true,
-                        fillColor: AppColors.card,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: AppColors.border),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: AppColors.border),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: AppColors.amber, width: 1.5),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _ctrl,
+                          focusNode: _focusNode,
+                          style: const TextStyle(color: Colors.white, fontSize: 14),
+                          maxLines: null,
+                          onSubmitted: (_) => _send(),
+                          decoration: InputDecoration(
+                            hintText: 'Ask Pip anything... (type / for commands)',
+                            hintStyle: const TextStyle(color: AppColors.textMuted),
+                            filled: true,
+                            fillColor: AppColors.card,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(color: AppColors.border),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(color: AppColors.border),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(color: AppColors.amber, width: 1.5),
+                            ),
+                          ),
                         ),
                       ),
-                    ),
+                      const SizedBox(width: 10),
+                      GestureDetector(
+                        onTap: _sending ? null : _send,
+                        child: Container(
+                          width: 44, height: 44,
+                          decoration: BoxDecoration(
+                            gradient: _sending ? null
+                                : const LinearGradient(colors: [AppColors.orange, Color(0xFFEA580C)]),
+                            color: _sending ? AppColors.card : null,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            Icons.send_rounded,
+                            color: _sending ? AppColors.textMuted : Colors.white,
+                            size: 18,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 10),
-                  GestureDetector(
-                    onTap: _sending ? null : _send,
-                    child: Container(
-                      width: 44, height: 44,
-                      decoration: BoxDecoration(
-                        gradient: _sending ? null
-                            : const LinearGradient(colors: [AppColors.orange, Color(0xFFEA580C)]),
-                        color: _sending ? AppColors.card : null,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        Icons.send_rounded,
-                        color: _sending ? AppColors.textMuted : Colors.white,
-                        size: 18,
-                      ),
-                    ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'AI-generated suggestions. Steve remains the final authority.',
+                    style: TextStyle(color: AppColors.textDim, fontSize: 10),
+                    textAlign: TextAlign.center,
                   ),
+                  const SizedBox(height: 4),
                 ],
               ),
             ),

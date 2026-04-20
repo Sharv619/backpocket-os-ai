@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import '../theme.dart';
+import 'vision_chat_screen.dart';
 
 class DocumentsScreen extends StatefulWidget {
   final String serverUrl;
@@ -284,6 +285,8 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                   ),
                 ),
                 const SizedBox(width: 10),
+                _buildVisionButton(),
+                const SizedBox(width: 10),
                 _buildUploadButton(),
               ],
             ),
@@ -374,11 +377,8 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
         width: 48,
         height: 48,
         decoration: BoxDecoration(
-          gradient: _uploading
-              ? null
-              : const LinearGradient(
-                  colors: [AppColors.orange, Color(0xFFEA580C)]),
-          color: _uploading ? AppColors.card : null,
+          color: _uploading ? AppColors.card : AppColors.card,
+          border: Border.all(color: AppColors.border),
           borderRadius: BorderRadius.circular(12),
         ),
         child: _uploading
@@ -387,10 +387,48 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                   width: 20,
                   height: 20,
                   child: CircularProgressIndicator(
-                      color: AppColors.amber, strokeWidth: 2),
+                      color: AppColors.textMuted, strokeWidth: 2),
                 ),
               )
-            : const Icon(Icons.add_a_photo, color: Colors.white, size: 22),
+            : const Icon(Icons.upload_file, color: AppColors.textMuted, size: 20),
+      ),
+    );
+  }
+
+  Widget _buildVisionButton() {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => VisionChatScreen(
+              serverUrl: widget.serverUrl,
+              apiKey: widget.apiKey,
+            ),
+          ),
+        );
+      },
+      child: Container(
+        height: 48,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+              colors: [AppColors.amber, AppColors.orange]),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.document_scanner_outlined, color: Colors.black, size: 20),
+            SizedBox(width: 8),
+            Text(
+              'Scan Receipt',
+              style: TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

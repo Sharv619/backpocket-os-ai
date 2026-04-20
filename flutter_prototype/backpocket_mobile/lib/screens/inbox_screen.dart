@@ -377,7 +377,7 @@ class _InboxCard extends StatelessWidget {
                             Icon(Icons.check_circle_outline, color: Colors.white, size: 16),
                             SizedBox(width: 6),
                             Text(
-                              'Approve & Send',
+                              'Verify Approve & Send Send',
                               style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
@@ -784,7 +784,7 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
                               const Icon(Icons.send_rounded, color: Colors.white, size: 18),
                             const SizedBox(width: 10),
                             Text(
-                              _approving ? 'Sending...' : 'Approve & Send',
+                              _approving ? 'Sending...' : 'Verify Approve & Send Send',
                               style: TextStyle(
                                 color: _approving ? AppColors.textDim : Colors.white,
                                 fontWeight: FontWeight.bold, fontSize: 15,
@@ -879,7 +879,7 @@ class _ApproveDialog extends StatelessWidget {
         side: const BorderSide(color: AppColors.border),
       ),
       title: const Text(
-        'Approve & Send?',
+        'Verify Approve & Send Send?',
         style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
       ),
       content: Column(

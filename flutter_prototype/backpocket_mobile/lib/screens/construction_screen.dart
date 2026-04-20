@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../theme.dart';
 import 'voice_input_screen.dart';
+import 'vision_chat_screen.dart';
 
 class ConstructionScreen extends StatefulWidget {
   final String serverUrl;
@@ -469,24 +470,50 @@ class _ConstructionScreenState extends State<ConstructionScreen>
   }
 
   Widget _buildQuotesTab() {
-    if (_quotes.isEmpty) {
-      return Center(child: Text('No quotes yet', style: TextStyle(color: Colors.grey[400])));
-    }
-    return RefreshIndicator(
-      onRefresh: _loadData,
-      color: AppColors.amber,
-      child: ListView.builder(
-        padding: const EdgeInsets.all(12),
-        itemCount: _quotes.length,
-        itemBuilder: (context, index) {
-          final quote = _quotes[index];
-          return _QuoteCard(
-            quote: quote,
-            statusColor: _getStatusColor(quote['status'] ?? 'draft'),
-            onRecordPayment: () => _showRecordPaymentSheet(quote as Map<String, dynamic>),
-          );
-        },
-      ),
+    return Stack(
+      children: [
+        _quotes.isEmpty
+            ? Center(child: Text('No quotes yet.\nTap below to draft an invoice.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey[400])))
+            : RefreshIndicator(
+                onRefresh: _loadData,
+                color: AppColors.amber,
+                child: ListView.builder(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: _quotes.length,
+                  itemBuilder: (context, index) {
+                    final quote = _quotes[index];
+                    return _QuoteCard(
+                      quote: quote,
+                      statusColor: _getStatusColor(quote['status'] ?? 'draft'),
+                      onRecordPayment: () => _showRecordPaymentSheet(quote as Map<String, dynamic>),
+                    );
+                  },
+                ),
+              ),
+        Positioned(
+          bottom: 16,
+          right: 16,
+          child: FloatingActionButton.extended(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => VisionChatScreen(
+                    serverUrl: widget.serverUrl,
+                    apiKey: widget.apiKey,
+                  ),
+                ),
+              );
+            },
+            backgroundColor: AppColors.orange,
+            foregroundColor: Colors.white,
+            icon: const Icon(Icons.receipt_long),
+            label: const Text('Voice Invoice', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ),
+      ],
     );
   }
 

@@ -2,27 +2,21 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
 
-import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
-// ─── Warehouse Sunrise palette (matches main.dart) ────────────────────────────
 const Color _kBg = Color(0xFF121212);
 const Color _kSurface = Color(0xFF1E1E1E);
 const Color _kCard = Color(0xFF252525);
 const Color _kBorder = Color(0x20FFFFFF);
-const Color _kPrimary = Color(0xFFFFB300); // amber/gold
+const Color _kPrimary = Color(0xFFFFB300); 
 const Color _kOrange = Color(0xFFF97316);
 const Color _kRed = Color(0xFFEF4444);
 const Color _kGreen = Color(0xFF22C55E);
 const Color _kDim = Color(0xFFD4C4B4);
 const Color _kMuted = Color(0xFF9E8E7E);
 
-// ─────────────────────────────────────────────────────────────────────────────
-/// Entry point — picks the right initial state based on camera availability.
-/// Call this directly: `Navigator.push(..., VisionChatScreen(...))`
-// ─────────────────────────────────────────────────────────────────────────────
 class VisionChatScreen extends StatefulWidget {
   final String serverUrl;
   final String apiKey;
@@ -37,117 +31,47 @@ class VisionChatScreen extends StatefulWidget {
   State<VisionChatScreen> createState() => _VisionChatScreenState();
 }
 
-// ─── Screen phases ────────────────────────────────────────────────────────────
-enum _Phase { camera, processing, chat }
+enum _Phase { picker, processing, chat }
 
-// ─── A single chat message in the analysis conversation ──────────────────────
 class _Message {
-  final String role; // 'system' | 'user' | 'assistant'
+  final String role;
   final String content;
   const _Message(this.role, this.content);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-class _VisionChatScreenState extends State<VisionChatScreen>
-    with WidgetsBindingObserver {
-  // Camera
-  List<CameraDescription> _cameras = [];
-  CameraController? _cameraCtrl;
-  bool _cameraReady = false;
-
-  // Processing
-  _Phase _phase = _Phase.camera;
-  double _uploadProgress = 0; // 0.0 → 1.0
+class _VisionChatScreenState extends State<VisionChatScreen> {
+  _Phase _phase = _Phase.picker;
+  double _uploadProgress = 0; 
   String _processingLabel = 'Initialising...';
 
-  // Chat
   int? _documentId;
-  String _docContext = ''; // raw analysis text stored for Twin forwarding
+  String _docContext = ''; 
   final List<_Message> _messages = [];
   final TextEditingController _chatCtrl = TextEditingController();
   final ScrollController _scrollCtrl = ScrollController();
   bool _chatSending = false;
 
-  // No additional local state needed for invoice pre-fill (data extracted on demand)
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    _initCamera();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    final ctrl = _cameraCtrl;
-    if (ctrl == null || !ctrl.value.isInitialized) return;
-    if (state == AppLifecycleState.inactive) {
-      ctrl.dispose();
-    } else if (state == AppLifecycleState.resumed) {
-      _initCamera();
-    }
-  }
-
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _cameraCtrl?.dispose();
     _chatCtrl.dispose();
     _scrollCtrl.dispose();
     super.dispose();
   }
 
-  // ─── Camera init ───────────────────────────────────────────────────────────
-  Future<void> _initCamera() async {
-    try {
-      _cameras = await availableCameras();
-      if (_cameras.isEmpty) {
-        _showSnack('No camera found on this device.', error: true);
-        return;
-      }
-      final ctrl = CameraController(
-        _cameras.first,
-        ResolutionPreset.high,
-        enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.jpeg,
-      );
-      await ctrl.initialize();
-      if (!mounted) return;
-      setState(() {
-        _cameraCtrl = ctrl;
-        _cameraReady = true;
-      });
-    } catch (e) {
-      if (mounted) _showSnack('Camera error: $e', error: true);
-    }
-  }
-
-  // ─── Capture (camera) or pick from gallery ─────────────────────────────────
-  Future<void> _capturePhoto() async {
-    if (_cameraCtrl == null || !_cameraCtrl!.value.isInitialized) return;
-    try {
-      final xfile = await _cameraCtrl!.takePicture();
-      await _processFile(File(xfile.path));
-    } catch (e) {
-      _showSnack('Capture failed: $e', error: true);
-    }
-  }
-
-  Future<void> _pickFromGallery() async {
+  Future<void> _pickImage(ImageSource source) async {
     try {
       final picker = ImagePicker();
       final xfile = await picker.pickImage(
-        source: ImageSource.gallery,
+        source: source,
         imageQuality: 90,
       );
       if (xfile == null) return;
       await _processFile(File(xfile.path));
     } catch (e) {
-      _showSnack('Gallery error: $e', error: true);
+      _showSnack('Image error: $e', error: true);
     }
   }
 
-  // ─── Upload → Analyse pipeline ─────────────────────────────────────────────
   Future<void> _processFile(File file) async {
     setState(() {
       _phase = _Phase.processing;
@@ -159,7 +83,6 @@ class _VisionChatScreenState extends State<VisionChatScreen>
       if (widget.apiKey.isNotEmpty) 'X-API-Key': widget.apiKey,
     };
 
-    // 1. Upload
     int? docId;
     try {
       final uri = Uri.parse('${widget.serverUrl}/api/documents/upload');
@@ -174,7 +97,6 @@ class _VisionChatScreenState extends State<VisionChatScreen>
           ),
         );
 
-      // Simulate progress since MultipartRequest doesn't expose byte-level progress
       _animateProgress(0, 0.6, const Duration(milliseconds: 800));
 
       final streamed = await req.send().timeout(const Duration(seconds: 30));
@@ -194,12 +116,11 @@ class _VisionChatScreenState extends State<VisionChatScreen>
       setState(() => _processingLabel = 'Analysing with AI...');
       _animateProgress(0.6, 0.9, const Duration(milliseconds: 600));
     } catch (e) {
-      setState(() => _phase = _Phase.camera);
+      setState(() => _phase = _Phase.picker);
       _showSnack('Upload error: $e', error: true);
       return;
     }
 
-    // 2. Analyse
     try {
       final analysisUri = Uri.parse(
         '${widget.serverUrl}/api/documents/analyze/$docId',
@@ -220,8 +141,6 @@ class _VisionChatScreenState extends State<VisionChatScreen>
           'Analysis complete.';
 
       _animateProgress(0.9, 1.0, const Duration(milliseconds: 300));
-
-      // Short pause so the bar visually completes
       await Future<void>.delayed(const Duration(milliseconds: 400));
 
       _docContext = analysis;
@@ -233,7 +152,7 @@ class _VisionChatScreenState extends State<VisionChatScreen>
       });
       _scrollToBottom();
     } catch (e) {
-      setState(() => _phase = _Phase.camera);
+      setState(() => _phase = _Phase.picker);
       _showSnack('Analysis error: $e', error: true);
     }
   }
@@ -252,62 +171,34 @@ class _VisionChatScreenState extends State<VisionChatScreen>
     });
   }
 
-  // ─── Action chip handlers ─────────────────────────────────────────────────
-
-  Future<void> _extractAbn() async {
-    if (_documentId == null) return;
-    setState(() => _chatSending = true);
-    _messages.add(const _Message('user', '📄 Extract ABN'));
-    _scrollToBottom();
-
-    try {
-      final res = await http
-          .post(
-            Uri.parse('${widget.serverUrl}/api/documents/analyze/$_documentId'),
-            headers: {
-              'Content-Type': 'application/json',
-              if (widget.apiKey.isNotEmpty) 'X-API-Key': widget.apiKey,
-            },
-            body: jsonEncode({'prompt': 'Extract ABN'}),
-          )
-          .timeout(const Duration(seconds: 30));
-
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
-      final result =
-          (data['analysis'] as String?) ??
-          (data['result'] as String?) ??
-          (data['message'] as String?) ??
-          'Could not extract ABN.';
-      setState(() => _messages.add(_Message('assistant', result)));
-    } catch (e) {
-      setState(
-        () => _messages.add(_Message('assistant', 'ABN extraction error: $e')),
-      );
-    } finally {
-      setState(() => _chatSending = false);
+  void _extractAbn() {
+    final extracted = _tryExtract(r'ABN[:\s]*([\d\s]{11,14})', _docContext);
+    if (extracted != null) {
+      setState(() {
+        _messages.add(_Message('user', 'Extract ABN'));
+        _messages.add(_Message('assistant', 'Found ABN: **$extracted**'));
+      });
       _scrollToBottom();
+    } else {
+      _showSnack('No ABN found in document');
     }
   }
 
   void _draftInvoice() {
-    // Parse extracted data for pre-fill hints
-    final abn = _tryExtract(r'ABN[:\s]+(\d[\d\s]+\d)', _docContext);
-    final name = _tryExtract(
-      r'(?:Name|Client)[:\s]+([A-Za-z\s]+)',
-      _docContext,
-    );
-    final amount = _tryExtract(r'\$\s*([\d,]+(?:\.\d{2})?)', _docContext);
+    final name = _tryExtract(r'Name[:\s]*([A-Za-z\s]+)\n', _docContext) ?? 'Client';
+    final abn = _tryExtract(r'ABN[:\s]*([\d\s]{11,14})', _docContext) ?? '';
+    final amount = _tryExtract(r'Total[:\s\$]*([\d\.\,]+)', _docContext) ?? '0.00';
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: _kSurface,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => _InvoicePreFillSheet(
-        abn: abn,
+      builder: (ctx) => _InvoicePreFillSheet(
         clientName: name,
+        abn: abn,
         amount: amount,
         docContext: _docContext,
         serverUrl: widget.serverUrl,
@@ -317,62 +208,36 @@ class _VisionChatScreenState extends State<VisionChatScreen>
   }
 
   Future<void> _askTwin() async {
-    setState(() => _chatSending = true);
-    _messages.add(const _Message('user', '🧠 Ask Pip about this document'));
-    _scrollToBottom();
-
-    try {
-      final prompt =
-          'I have just scanned a document. Here is the AI analysis:\n\n'
-          '$_docContext\n\n'
-          'What should I do next regarding this document?';
-
-      final res = await http
-          .post(
-            Uri.parse('${widget.serverUrl}/api/mobile/chat'),
-            headers: {
-              'Content-Type': 'application/json',
-              if (widget.apiKey.isNotEmpty) 'X-API-Key': widget.apiKey,
-            },
-            body: jsonEncode({'message': prompt}),
-          )
-          .timeout(const Duration(seconds: 30));
-
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
-      final reply = data['response'] as String? ?? 'No response from Pip.';
-      setState(() => _messages.add(_Message('assistant', reply)));
-    } catch (e) {
-      setState(() => _messages.add(_Message('assistant', 'Pip error: $e')));
-    } finally {
-      setState(() => _chatSending = false);
-      _scrollToBottom();
-    }
-  }
-
-  Future<void> _sendChatMessage() async {
-    final text = _chatCtrl.text.trim();
-    if (text.isEmpty || _chatSending) return;
-    _chatCtrl.clear();
     setState(() {
-      _messages.add(_Message('user', text));
+      _messages.add(_Message('user', 'Ask Pip to review'));
       _chatSending = true;
     });
     _scrollToBottom();
+    _sendChatMessage(text: 'Review this document analysis and provide advice: \n\n$_docContext');
+  }
+
+  Future<void> _sendChatMessage({String? text}) async {
+    final msg = text ?? _chatCtrl.text.trim();
+    if (msg.isEmpty) return;
+
+    if (text == null) {
+      setState(() {
+        _messages.add(_Message('user', msg));
+        _chatSending = true;
+      });
+      _chatCtrl.clear();
+      _scrollToBottom();
+    }
 
     try {
-      final prompt =
-          'Regarding the document I scanned:\n\n'
-          'Document context:\n$_docContext\n\n'
-          'User question: $text';
-
       final res = await http
           .post(
-            Uri.parse('${widget.serverUrl}/api/documents/analyze/$_documentId'),
+            Uri.parse('${widget.serverUrl}/api/documents/chat/$_documentId'),
             headers: {
               'Content-Type': 'application/json',
               if (widget.apiKey.isNotEmpty) 'X-API-Key': widget.apiKey,
             },
-            body: jsonEncode({'prompt': prompt}),
+            body: jsonEncode({'message': msg}),
           )
           .timeout(const Duration(seconds: 30));
 
@@ -384,7 +249,6 @@ class _VisionChatScreenState extends State<VisionChatScreen>
           'No response.';
       setState(() => _messages.add(_Message('assistant', reply)));
     } catch (e) {
-      // Fall back to twin chat
       try {
         final res = await http
             .post(
@@ -394,7 +258,7 @@ class _VisionChatScreenState extends State<VisionChatScreen>
                 if (widget.apiKey.isNotEmpty) 'X-API-Key': widget.apiKey,
               },
               body: jsonEncode({
-                'message': 'Document context: $_docContext\n\nQuestion: $text',
+                'message': 'Document context: $_docContext\n\nQuestion: $msg',
               }),
             )
             .timeout(const Duration(seconds: 30));
@@ -409,8 +273,6 @@ class _VisionChatScreenState extends State<VisionChatScreen>
       _scrollToBottom();
     }
   }
-
-  // ─── Helpers ──────────────────────────────────────────────────────────────
 
   String? _tryExtract(String pattern, String text) {
     final match = RegExp(pattern, caseSensitive: false).firstMatch(text);
@@ -441,15 +303,13 @@ class _VisionChatScreenState extends State<VisionChatScreen>
     );
   }
 
-  // ─── Build ────────────────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _kBg,
       appBar: _buildAppBar(),
       body: switch (_phase) {
-        _Phase.camera => _buildCameraView(),
+        _Phase.picker => _buildPickerView(),
         _Phase.processing => _buildProcessingOverlay(),
         _Phase.chat => _buildChatView(),
       },
@@ -467,8 +327,8 @@ class _VisionChatScreenState extends State<VisionChatScreen>
       title: Row(
         children: [
           Icon(
-            _phase == _Phase.camera
-                ? Icons.camera_alt_outlined
+            _phase == _Phase.picker
+                ? Icons.document_scanner_outlined
                 : _phase == _Phase.processing
                 ? Icons.hourglass_top_rounded
                 : Icons.chat_bubble_outline_rounded,
@@ -477,8 +337,8 @@ class _VisionChatScreenState extends State<VisionChatScreen>
           ),
           const SizedBox(width: 8),
           Text(
-            _phase == _Phase.camera
-                ? 'Scan / Cost Estimate'
+            _phase == _Phase.picker
+                ? 'Scan Receipt / Cost Estimate'
                 : _phase == _Phase.processing
                 ? 'Processing'
                 : 'Vision Analysis',
@@ -496,7 +356,7 @@ class _VisionChatScreenState extends State<VisionChatScreen>
             tooltip: 'Scan another',
             icon: const Icon(Icons.camera_alt_outlined, color: _kMuted),
             onPressed: () => setState(() {
-              _phase = _Phase.camera;
+              _phase = _Phase.picker;
               _messages.clear();
               _documentId = null;
               _docContext = '';
@@ -510,131 +370,68 @@ class _VisionChatScreenState extends State<VisionChatScreen>
     );
   }
 
-  // ─── Phase 1: Camera ──────────────────────────────────────────────────────
-  Widget _buildCameraView() {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Camera preview or placeholder
-        if (_cameraReady && _cameraCtrl != null)
-          CameraPreview(_cameraCtrl!)
-        else
-          Container(
-            color: _kBg,
-            child: const Center(
-              child: CircularProgressIndicator(color: _kPrimary),
-            ),
+  Widget _buildPickerView() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.document_scanner, size: 80, color: _kMuted),
+          const SizedBox(height: 24),
+          const Text(
+            'Scan a Document or Receipt',
+            style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
           ),
-
-        // Viewfinder overlay
-        if (_cameraReady) CustomPaint(painter: _ViewfinderPainter()),
-
-        // Bottom controls
-        Positioned(left: 0, right: 0, bottom: 0, child: _buildCameraControls()),
-      ],
-    );
-  }
-
-  Widget _buildCameraControls() {
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          color: Colors.black.withAlpha(153),
-          padding: const EdgeInsets.fromLTRB(32, 20, 32, 40),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
+          const SizedBox(height: 8),
+          const Text(
+            'Upload a photo for OCR or Cost Estimation.',
+            style: TextStyle(color: _kDim, fontSize: 14),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 48),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Gallery picker
-              _circleBtn(
-                icon: Icons.photo_library_outlined,
+              _bigButton(
+                icon: Icons.camera_alt,
+                label: 'Camera',
+                onTap: () => _pickImage(ImageSource.camera),
+              ),
+              const SizedBox(width: 24),
+              _bigButton(
+                icon: Icons.photo_library,
                 label: 'Gallery',
-                onTap: _pickFromGallery,
-                size: 52,
-              ),
-
-              // Shutter
-              GestureDetector(
-                onTap: _cameraReady ? _capturePhoto : null,
-                child: Container(
-                  width: 76,
-                  height: 76,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: _kPrimary, width: 3),
-                    color: Colors.transparent,
-                  ),
-                  child: Center(
-                    child: Container(
-                      width: 58,
-                      height: 58,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
-              // Flip camera
-              _circleBtn(
-                icon: Icons.flip_camera_ios_outlined,
-                label: 'Flip',
-                size: 52,
-                onTap: _cameras.length > 1
-                    ? () async {
-                        final current = _cameras.indexOf(
-                          _cameraCtrl!.description,
-                        );
-                        final next = _cameras[(current + 1) % _cameras.length];
-                        await _cameraCtrl?.dispose();
-                        final ctrl = CameraController(
-                          next,
-                          ResolutionPreset.high,
-                          enableAudio: false,
-                        );
-                        await ctrl.initialize();
-                        if (mounted) setState(() => _cameraCtrl = ctrl);
-                      }
-                    : null,
+                onTap: () => _pickImage(ImageSource.gallery),
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _circleBtn({
-    required IconData icon,
-    required String label,
-    required VoidCallback? onTap,
-    double size = 48,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: size,
-            height: size,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white.withAlpha(26),
-              border: Border.all(color: Colors.white.withAlpha(51)),
-            ),
-            child: Icon(icon, color: Colors.white, size: size * 0.42),
-          ),
-          const SizedBox(height: 6),
-          Text(label, style: const TextStyle(color: _kDim, fontSize: 11)),
+          )
         ],
       ),
     );
   }
 
-  // ─── Phase 2: Processing ──────────────────────────────────────────────────
+  Widget _bigButton({required IconData icon, required String label, required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 120,
+        height: 120,
+        decoration: BoxDecoration(
+          color: _kCard,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: _kBorder),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 40, color: _kPrimary),
+            const SizedBox(height: 12),
+            Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildProcessingOverlay() {
     return Container(
       color: _kBg,
@@ -644,7 +441,6 @@ class _VisionChatScreenState extends State<VisionChatScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Animated document icon
               TweenAnimationBuilder<double>(
                 tween: Tween(begin: 0.8, end: 1.0),
                 duration: const Duration(milliseconds: 900),
@@ -670,8 +466,6 @@ class _VisionChatScreenState extends State<VisionChatScreen>
                 ),
               ),
               const SizedBox(height: 28),
-
-              // Label
               Text(
                 _processingLabel,
                 style: const TextStyle(
@@ -681,11 +475,32 @@ class _VisionChatScreenState extends State<VisionChatScreen>
                 ),
               ),
               const SizedBox(height: 20),
-
-              // Warehouse sunrise progress bar
-              _WarehouseProgressBar(progress: _uploadProgress),
+              Container(
+                height: 6,
+                decoration: BoxDecoration(
+                  color: Colors.white.withAlpha(20),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                child: LayoutBuilder(
+                  builder: (_, constraints) {
+                    return Stack(
+                      children: [
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          width: constraints.maxWidth * _uploadProgress.clamp(0.0, 1.0),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFFF6B00), _kPrimary, Color(0xFFFFE066)],
+                            ),
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
               const SizedBox(height: 10),
-
               Text(
                 '${(_uploadProgress * 100).round()}%',
                 style: const TextStyle(color: _kDim, fontSize: 12),
@@ -697,11 +512,9 @@ class _VisionChatScreenState extends State<VisionChatScreen>
     );
   }
 
-  // ─── Phase 3: Chat ────────────────────────────────────────────────────────
   Widget _buildChatView() {
     return Column(
       children: [
-        // Message list
         Expanded(
           child: ListView.builder(
             controller: _scrollCtrl,
@@ -710,8 +523,6 @@ class _VisionChatScreenState extends State<VisionChatScreen>
             itemBuilder: (_, i) => _GlassBubble(msg: _messages[i]),
           ),
         ),
-
-        // Typing indicator
         if (_chatSending)
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 20, vertical: 4),
@@ -733,11 +544,7 @@ class _VisionChatScreenState extends State<VisionChatScreen>
               ],
             ),
           ),
-
-        // Action chips
         _buildActionChips(),
-
-        // Text input bar
         _buildInputBar(),
       ],
     );
@@ -751,109 +558,22 @@ class _VisionChatScreenState extends State<VisionChatScreen>
         scrollDirection: Axis.horizontal,
         children: [
           _ActionChip(
+            label: '🧾 Extract Receipt Line Items',
+            onTap: _chatSending ? null : () => _sendChatMessage(text: 'Extract the line items and total from this receipt so I can invoice it.'),
+          ),
+          const SizedBox(width: 8),
+          _ActionChip(
             label: '🏗️ Cost Estimate',
-            onTap: _chatSending ? null : _showCostEstimateDialog,
+            onTap: _chatSending ? null : () => _sendChatMessage(text: 'Provide a cost estimate for building what is shown in this document/plan.'),
           ),
           const SizedBox(width: 8),
           _ActionChip(
-            label: '📄 Extract ABN',
-            onTap: _chatSending ? null : _extractAbn,
-          ),
-          const SizedBox(width: 8),
-          _ActionChip(
-            label: '💰 Draft Invoice',
+            label: '💰 Draft Voice Invoice',
             onTap: _chatSending ? null : _draftInvoice,
           ),
-          const SizedBox(width: 8),
-          _ActionChip(
-            label: '🧠 Ask Pip',
-            onTap: _chatSending ? null : _askTwin,
-          ),
         ],
       ),
     );
-  }
-
-  Future<void> _showCostEstimateDialog() async {
-    final queryCtrl = TextEditingController();
-    final query = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _kSurface,
-        title: const Text(
-          '🏗️ Construction Cost Estimate',
-          style: TextStyle(color: Colors.white, fontSize: 16),
-        ),
-        content: TextField(
-          controller: queryCtrl,
-          autofocus: true,
-          style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(
-            hintText: 'e.g. aluminium house structure, kitchen reno...',
-            hintStyle: TextStyle(color: _kMuted),
-            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: _kBorder)),
-            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: _kPrimary)),
-          ),
-          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: _kMuted)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: _kPrimary, foregroundColor: Colors.black),
-            onPressed: () => Navigator.pop(ctx, queryCtrl.text.trim()),
-            child: const Text('Estimate'),
-          ),
-        ],
-      ),
-    );
-    if (query == null || query.isEmpty) return;
-    await _runCostEstimate(query);
-  }
-
-  Future<void> _runCostEstimate(String query) async {
-    setState(() {
-      _messages.add(_Message('user', '🏗️ Cost estimate: $query'));
-      _chatSending = true;
-    });
-    _scrollToBottom();
-
-    try {
-      final prompt =
-          'You are a construction cost estimator for Australia (NSW). '
-          'I have a site photo. Here is the AI analysis of the site:\n\n'
-          '$_docContext\n\n'
-          'The user wants to build/install: $query\n\n'
-          'Provide a detailed cost estimate including:\n'
-          '1. Materials breakdown with approximate AUD costs\n'
-          '2. Labour estimate (hours × \$150/hr standard tradie rate)\n'
-          '3. Total range (low/high)\n'
-          '4. Key considerations for this specific site\n\n'
-          'Base estimates on current Australian construction market rates (2024-2025). '
-          'Be specific and practical.';
-
-      final res = await http
-          .post(
-            Uri.parse('${widget.serverUrl}/api/mobile/chat'),
-            headers: {
-              'Content-Type': 'application/json',
-              if (widget.apiKey.isNotEmpty) 'X-API-Key': widget.apiKey,
-            },
-            body: jsonEncode({'message': prompt}),
-          )
-          .timeout(const Duration(seconds: 45));
-
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
-      final reply = data['response'] as String? ?? 'Could not generate estimate.';
-      setState(() => _messages.add(_Message('assistant', reply)));
-    } catch (e) {
-      setState(() => _messages.add(_Message('assistant', 'Cost estimate error: $e')));
-    } finally {
-      setState(() => _chatSending = false);
-      _scrollToBottom();
-    }
   }
 
   Widget _buildInputBar() {
@@ -881,10 +601,6 @@ class _VisionChatScreenState extends State<VisionChatScreen>
                   vertical: 12,
                 ),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: _kBorder),
-                ),
-                enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: const BorderSide(color: _kBorder),
                 ),
@@ -923,7 +639,6 @@ class _VisionChatScreenState extends State<VisionChatScreen>
   }
 }
 
-// ─── Glassmorphism chat bubble ────────────────────────────────────────────────
 class _GlassBubble extends StatelessWidget {
   final _Message msg;
   const _GlassBubble({required this.msg});
@@ -940,7 +655,6 @@ class _GlassBubble extends StatelessWidget {
             : MainAxisAlignment.start,
         children: [
           if (!isUser) ...[
-            // Avatar
             Container(
               width: 28,
               height: 28,
@@ -958,8 +672,6 @@ class _GlassBubble extends StatelessWidget {
             ),
             const SizedBox(width: 8),
           ],
-
-          // Glass bubble
           Flexible(
             child: ClipRRect(
               borderRadius: BorderRadius.only(
@@ -1003,7 +715,6 @@ class _GlassBubble extends StatelessWidget {
               ),
             ),
           ),
-
           if (isUser) const SizedBox(width: 8),
         ],
       ),
@@ -1011,7 +722,6 @@ class _GlassBubble extends StatelessWidget {
   }
 }
 
-// ─── Action chip widget ───────────────────────────────────────────────────────
 class _ActionChip extends StatelessWidget {
   final String label;
   final VoidCallback? onTap;
@@ -1048,119 +758,6 @@ class _ActionChip extends StatelessWidget {
   }
 }
 
-// ─── Warehouse Sunrise progress bar ──────────────────────────────────────────
-class _WarehouseProgressBar extends StatelessWidget {
-  final double progress; // 0.0 → 1.0
-
-  const _WarehouseProgressBar({required this.progress});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 6,
-      decoration: BoxDecoration(
-        color: Colors.white.withAlpha(20),
-        borderRadius: BorderRadius.circular(3),
-      ),
-      child: LayoutBuilder(
-        builder: (_, constraints) {
-          return Stack(
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                width: constraints.maxWidth * progress.clamp(0.0, 1.0),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFFF6B00), _kPrimary, Color(0xFFFFE066)],
-                  ),
-                  borderRadius: BorderRadius.circular(3),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _kPrimary.withAlpha(128),
-                      blurRadius: 6,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-// ─── Camera viewfinder overlay ────────────────────────────────────────────────
-class _ViewfinderPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFFFFB300)
-      ..strokeWidth = 2.5
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-
-    const margin = 48.0;
-    const corner = 24.0;
-    final rect = Rect.fromLTRB(
-      margin,
-      margin * 2,
-      size.width - margin,
-      size.height - margin * 2,
-    );
-
-    // Draw corner brackets only
-    final corners = [
-      // TL
-      [
-        Offset(rect.left, rect.top + corner),
-        Offset(rect.left, rect.top),
-        Offset(rect.left + corner, rect.top),
-      ],
-      // TR
-      [
-        Offset(rect.right - corner, rect.top),
-        Offset(rect.right, rect.top),
-        Offset(rect.right, rect.top + corner),
-      ],
-      // BR
-      [
-        Offset(rect.right, rect.bottom - corner),
-        Offset(rect.right, rect.bottom),
-        Offset(rect.right - corner, rect.bottom),
-      ],
-      // BL
-      [
-        Offset(rect.left + corner, rect.bottom),
-        Offset(rect.left, rect.bottom),
-        Offset(rect.left, rect.bottom - corner),
-      ],
-    ];
-
-    for (final pts in corners) {
-      final path = Path()
-        ..moveTo(pts[0].dx, pts[0].dy)
-        ..lineTo(pts[1].dx, pts[1].dy)
-        ..lineTo(pts[2].dx, pts[2].dy);
-      canvas.drawPath(path, paint);
-    }
-
-    // Subtle centre cross
-    final crossPaint = Paint()
-      ..color = const Color(0x33FFB300)
-      ..strokeWidth = 1;
-    final cx = size.width / 2;
-    final cy = size.height / 2;
-    canvas.drawLine(Offset(cx - 12, cy), Offset(cx + 12, cy), crossPaint);
-    canvas.drawLine(Offset(cx, cy - 12), Offset(cx, cy + 12), crossPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter old) => false;
-}
-
-// ─── Invoice pre-fill bottom sheet ───────────────────────────────────────────
 class _InvoicePreFillSheet extends StatefulWidget {
   final String? abn;
   final String? clientName;
@@ -1219,26 +816,24 @@ class _InvoicePreFillSheetState extends State<_InvoicePreFillSheet> {
             },
             body: jsonEncode({
               'client_name': _nameCtrl.text.trim(),
-              'client_abn': _abnCtrl.text.trim(),
-              'amount':
-                  double.tryParse(
-                    _amountCtrl.text.replaceAll(',', '').trim(),
-                  ) ??
-                  0,
-              'description': _descCtrl.text.trim(),
-              'gst_inclusive': true,
+              'client_email': _abnCtrl.text.trim(), // Use as email for now
+              'items': [
+                {'description': _descCtrl.text.trim(), 'qty': 1, 'rate': double.tryParse(_amountCtrl.text) ?? 0, 'gst': true}
+              ],
+              'notes': 'Generated via BackPocket Mobile OS',
             }),
           )
           .timeout(const Duration(seconds: 30));
 
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      if (res.statusCode != 200) {
+        throw Exception('Server error: ${res.statusCode}');
+      }
+      
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            data['message'] ?? data['invoice_path'] ?? 'Invoice generated!',
-          ),
+          content: const Text('Invoice generated as PDF successfully!'),
           backgroundColor: _kGreen,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
@@ -1286,7 +881,7 @@ class _InvoicePreFillSheetState extends State<_InvoicePreFillSheet> {
               ),
               const SizedBox(width: 8),
               const Text(
-                'Draft Invoice',
+                'Draft Voice Invoice',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -1302,13 +897,13 @@ class _InvoicePreFillSheetState extends State<_InvoicePreFillSheet> {
           ),
           const SizedBox(height: 4),
           const Text(
-            'Pre-filled from document scan',
+            'Pre-filled from document scan & OCR',
             style: TextStyle(color: _kDim, fontSize: 12),
           ),
           const SizedBox(height: 20),
           _field(_nameCtrl, 'Client Name'),
           const SizedBox(height: 12),
-          _field(_abnCtrl, 'Client ABN'),
+          _field(_abnCtrl, 'Client Email'),
           const SizedBox(height: 12),
           _field(
             _amountCtrl,
