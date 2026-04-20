@@ -36,9 +36,10 @@ class _VoiceFabState extends State<VoiceFab> with SingleTickerProviderStateMixin
 
   void _onStateChange() {
     final isActive = widget.voiceService.isActive;
-    if (isActive && !_pulseController.isAnimating) {
+    final reduce = mounted ? MediaQuery.of(context).disableAnimations : false;
+    if (isActive && !reduce && !_pulseController.isAnimating) {
       _pulseController.repeat(reverse: true);
-    } else if (!isActive && _pulseController.isAnimating) {
+    } else if ((!isActive || reduce) && _pulseController.isAnimating) {
       _pulseController.stop();
       _pulseController.reset();
     }
@@ -124,31 +125,36 @@ class _VoiceFabState extends State<VoiceFab> with SingleTickerProviderStateMixin
               style: TextStyle(color: _fabColor(), fontSize: 12, fontWeight: FontWeight.w600),
             ),
           ),
-        AnimatedBuilder(
-          animation: _pulseAnimation,
-          builder: (context, child) {
-            return Transform.scale(
-              scale: widget.voiceService.isActive ? _pulseAnimation.value : 1.0,
-              child: child,
-            );
-          },
-          child: GestureDetector(
-            onLongPress: widget.onLongPress,
-            child: FloatingActionButton(
-            heroTag: 'voice_fab',
-            onPressed: widget.onTap,
-            backgroundColor: _fabColor(),
-            elevation: 6,
-            child: isProcessing
-                ? SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      color: Colors.white,
-                    ),
-                  )
-                : Icon(_fabIcon(), color: Colors.white, size: 28),
+        Semantics(
+          label: label ?? 'Activate voice command',
+          hint: 'Double-tap to activate. Long-press to open full voice screen.',
+          button: true,
+          child: AnimatedBuilder(
+            animation: _pulseAnimation,
+            builder: (context, child) {
+              return Transform.scale(
+                scale: widget.voiceService.isActive ? _pulseAnimation.value : 1.0,
+                child: child,
+              );
+            },
+            child: GestureDetector(
+              onLongPress: widget.onLongPress,
+              child: FloatingActionButton(
+                heroTag: 'voice_fab',
+                onPressed: widget.onTap,
+                backgroundColor: _fabColor(),
+                elevation: 6,
+                child: isProcessing
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Icon(_fabIcon(), color: Colors.white, size: 28),
+              ),
             ),
           ),
         ),

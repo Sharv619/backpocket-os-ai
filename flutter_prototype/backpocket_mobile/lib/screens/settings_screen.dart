@@ -3,17 +3,9 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../theme.dart';
 
 const Color kBg = Color(0xFF0D0A07);
-const Color kSurface = Color(0xFF1A1208);
-const Color kCard = Color(0xFF211708);
-const Color kBorder = Color(0x22FFFFFF);
-const Color kAmber = Color(0xFFFBBF24);
-const Color kOrange = Color(0xFFF97316);
-const Color kTextDim = Color(0x99FFFFFF);
-const Color kTextMuted = Color(0x44FFFFFF);
-const Color kGreen = Color(0xFF22C55E);
-const Color kRed = Color(0xFFEF4444);
 
 class SettingsScreen extends StatefulWidget {
   final String serverUrl;
@@ -34,6 +26,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   late TextEditingController _serverUrlController;
   late TextEditingController _apiKeyController;
+  final _ownerNameController = TextEditingController();
   bool _saving = false;
   String? _pingResult;
   bool _pinging = false;
@@ -76,6 +69,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void dispose() {
     _serverUrlController.dispose();
     _apiKeyController.dispose();
+    _ownerNameController.dispose();
     _orKeyController.dispose();
     _geminiKeyController.dispose();
     _elKeyController.dispose();
@@ -88,6 +82,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _serverUrlController.text =
           prefs.getString('server_url') ?? widget.serverUrl;
       _apiKeyController.text = prefs.getString('api_key') ?? widget.apiKey;
+      _ownerNameController.text = prefs.getString('owner_name') ?? '';
     });
     _loadBYOKStatus();
   }
@@ -128,7 +123,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (res.statusCode == 200 && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('$provider key saved — you are now sovereign.'),
-          backgroundColor: kGreen,
+          backgroundColor: AppColors.green,
           behavior: SnackBarBehavior.floating,
         ));
         _loadBYOKStatus();
@@ -137,7 +132,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('Error: $e'),
-          backgroundColor: kRed,
+          backgroundColor: AppColors.red,
           behavior: SnackBarBehavior.floating,
         ));
       }
@@ -164,6 +159,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('server_url', _serverUrlController.text.trim());
     await prefs.setString('api_key', _apiKeyController.text.trim());
+    await prefs.setString('owner_name', _ownerNameController.text.trim());
     setState(() => _saving = false);
 
     widget.onSettingsChanged?.call(
@@ -175,7 +171,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Settings saved!'),
-        backgroundColor: kGreen,
+        backgroundColor: AppColors.green,
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -197,11 +193,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Text(
             'SETTINGS',
             style: TextStyle(
-              color: kAmber,
+              color: AppColors.amber,
               fontSize: 12,
               fontWeight: FontWeight.bold,
               letterSpacing: 1,
             ),
+          ),
+          const SizedBox(height: 16),
+
+          // Identity
+          _SettingsSection(
+            title: 'Your Profile',
+            children: [
+              _SettingsField(
+                controller: _ownerNameController,
+                label: 'Your Name',
+                hint: 'e.g. Steve',
+                icon: Icons.person_outline,
+              ),
+            ],
           ),
           const SizedBox(height: 16),
 
@@ -224,8 +234,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         : const Icon(Icons.wifi_find_outlined, size: 16),
                     label: Text(_pinging ? 'Testing…' : 'Test Connection'),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: kAmber,
-                      side: const BorderSide(color: kAmber),
+                      foregroundColor: AppColors.amber,
+                      side: const BorderSide(color: AppColors.amber),
                       padding: const EdgeInsets.symmetric(vertical: 10),
                     ),
                     onPressed: _pinging ? null : _testConnection,
@@ -239,13 +249,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     Icon(
                       _pingResult == 'Connected' ? Icons.check_circle_outline : Icons.error_outline,
                       size: 14,
-                      color: _pingResult == 'Connected' ? kGreen : kRed,
+                      color: _pingResult == 'Connected' ? AppColors.green : AppColors.red,
                     ),
                     const SizedBox(width: 6),
                     Expanded(child: Text(
                       _pingResult!,
                       style: TextStyle(
-                        color: _pingResult == 'Connected' ? kGreen : kRed,
+                        color: _pingResult == 'Connected' ? AppColors.green : AppColors.red,
                         fontSize: 12,
                       ),
                     )),
@@ -268,7 +278,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             width: double.infinity,
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: kAmber,
+                backgroundColor: AppColors.amber,
                 foregroundColor: Colors.black,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
@@ -302,7 +312,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const Text(
                     'SOVEREIGN ENGINE',
                     style: TextStyle(
-                      color: kTextDim,
+                      color: AppColors.textDim,
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
                     ),
@@ -311,12 +321,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
-                      color: kAmber.withValues(alpha: 0.15),
+                      color: AppColors.amber.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: const Text(
                       'BYOK',
-                      style: TextStyle(color: kAmber, fontSize: 10, fontWeight: FontWeight.bold),
+                      style: TextStyle(color: AppColors.amber, fontSize: 10, fontWeight: FontWeight.bold),
                     ),
                   ),
                 ],
@@ -324,18 +334,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 4),
               const Text(
                 'Use your own API keys. Your data, your keys, no cloud lock-in.',
-                style: TextStyle(color: kTextMuted, fontSize: 11),
+                style: TextStyle(color: AppColors.textMuted, fontSize: 11),
               ),
               const SizedBox(height: 10),
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: kCard,
+                  color: AppColors.card,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: kBorder),
+                  border: Border.all(color: AppColors.border),
                 ),
                 child: _byokLoading
-                    ? const Center(child: CircularProgressIndicator(color: kAmber))
+                    ? const Center(child: CircularProgressIndicator(color: AppColors.amber))
                     : Column(
                         children: [
                           _BYOKRow(
@@ -346,7 +356,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             onSave: () => _saveBYOKKey('openrouter', _orKeyController.text.trim()),
                             onClear: () => _clearBYOKKey('openrouter'),
                           ),
-                          const Divider(color: kBorder, height: 24),
+                          const Divider(color: AppColors.border, height: 24),
                           _BYOKRow(
                             provider: 'gemini',
                             label: 'Gemini',
@@ -355,7 +365,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             onSave: () => _saveBYOKKey('gemini', _geminiKeyController.text.trim()),
                             onClear: () => _clearBYOKKey('gemini'),
                           ),
-                          const Divider(color: kBorder, height: 24),
+                          const Divider(color: AppColors.border, height: 24),
                           _BYOKRow(
                             provider: 'elevenlabs',
                             label: 'ElevenLabs',
@@ -415,7 +425,7 @@ class _SettingsSection extends StatelessWidget {
         Text(
           title,
           style: const TextStyle(
-            color: kTextDim,
+            color: AppColors.textDim,
             fontSize: 12,
             fontWeight: FontWeight.bold,
           ),
@@ -424,9 +434,9 @@ class _SettingsSection extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: kCard,
+            color: AppColors.card,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: kBorder),
+            border: Border.all(color: AppColors.border),
           ),
           child: Column(children: children),
         ),
@@ -458,19 +468,19 @@ class _SettingsField extends StatelessWidget {
       style: const TextStyle(color: Colors.white),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: const TextStyle(color: kTextDim),
+        labelStyle: const TextStyle(color: AppColors.textDim),
         hintText: hint,
-        hintStyle: const TextStyle(color: kTextMuted),
-        prefixIcon: Icon(icon, color: kAmber, size: 20),
+        hintStyle: const TextStyle(color: AppColors.textMuted),
+        prefixIcon: Icon(icon, color: AppColors.amber, size: 20),
         filled: true,
-        fillColor: kSurface,
+        fillColor: AppColors.surface,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: kBorder),
+          borderSide: const BorderSide(color: AppColors.border),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: kBorder),
+          borderSide: const BorderSide(color: AppColors.border),
         ),
       ),
     );
@@ -503,14 +513,14 @@ class _BYOKRow extends StatelessWidget {
           children: [
             Icon(
               isConfigured ? Icons.verified : Icons.key_off_outlined,
-              color: isConfigured ? kGreen : kTextMuted,
+              color: isConfigured ? AppColors.green : AppColors.textMuted,
               size: 16,
             ),
             const SizedBox(width: 6),
             Text(
               label,
               style: TextStyle(
-                color: isConfigured ? kGreen : kTextDim,
+                color: isConfigured ? AppColors.green : AppColors.textDim,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -520,10 +530,10 @@ class _BYOKRow extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                 decoration: BoxDecoration(
-                  color: kGreen.withValues(alpha: 0.15),
+                  color: AppColors.green.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(4),
                 ),
-                child: const Text('SOVEREIGN', style: TextStyle(color: kGreen, fontSize: 9)),
+                child: const Text('SOVEREIGN', style: TextStyle(color: AppColors.green, fontSize: 9)),
               ),
           ],
         ),
@@ -537,17 +547,17 @@ class _BYOKRow extends StatelessWidget {
                 style: const TextStyle(color: Colors.white, fontSize: 12),
                 decoration: InputDecoration(
                   hintText: isConfigured ? '••••••• (replace to update)' : 'sk-or-v1-...',
-                  hintStyle: const TextStyle(color: kTextMuted, fontSize: 12),
+                  hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 12),
                   filled: true,
-                  fillColor: kSurface,
+                  fillColor: AppColors.surface,
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: kBorder),
+                    borderSide: const BorderSide(color: AppColors.border),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: kBorder),
+                    borderSide: const BorderSide(color: AppColors.border),
                   ),
                 ),
               ),
@@ -558,7 +568,7 @@ class _BYOKRow extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
-                  color: kAmber,
+                  color: AppColors.amber,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Text('Save', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 12)),
@@ -571,11 +581,11 @@ class _BYOKRow extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                   decoration: BoxDecoration(
-                    color: kRed.withValues(alpha: 0.15),
+                    color: AppColors.red.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: kRed.withValues(alpha: 0.3)),
+                    border: Border.all(color: AppColors.red.withValues(alpha: 0.3)),
                   ),
-                  child: const Icon(Icons.delete_outline, color: kRed, size: 16),
+                  child: const Icon(Icons.delete_outline, color: AppColors.red, size: 16),
                 ),
               ),
             ],
@@ -599,11 +609,11 @@ class _InfoRow extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: kTextDim, fontSize: 13)),
+          Text(label, style: const TextStyle(color: AppColors.textDim, fontSize: 13)),
           Text(
             value,
             style: const TextStyle(
-              color: kAmber,
+              color: AppColors.amber,
               fontSize: 13,
               fontWeight: FontWeight.w500,
             ),

@@ -16,8 +16,8 @@ const Color _kPrimary = Color(0xFFFFB300); // amber/gold
 const Color _kOrange = Color(0xFFF97316);
 const Color _kRed = Color(0xFFEF4444);
 const Color _kGreen = Color(0xFF22C55E);
-const Color _kDim = Color(0x99FFFFFF);
-const Color _kMuted = Color(0x44FFFFFF);
+const Color _kDim = Color(0xFFD4C4B4);
+const Color _kMuted = Color(0xFF9E8E7E);
 
 // ─────────────────────────────────────────────────────────────────────────────
 /// Entry point — picks the right initial state based on camera availability.

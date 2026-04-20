@@ -1,15 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import '../theme.dart';
 
 const Color kBg = Color(0xFF0D0A07);
-const Color kSurface = Color(0xFF1A1208);
-const Color kCard = Color(0xFF211708);
-const Color kBorder = Color(0x22FFFFFF);
-const Color kAmber = Color(0xFFFBBF24);
-const Color kOrange = Color(0xFFF97316);
-const Color kTextDim = Color(0x99FFFFFF);
-const Color kTextMuted = Color(0x44FFFFFF);
 
 class TwinChatScreen extends StatefulWidget {
   final String serverUrl;
@@ -120,14 +114,14 @@ class _TwinChatScreenState extends State<TwinChatScreen> {
                     width: 16,
                     height: 16,
                     child: CircularProgressIndicator(
-                      color: kAmber,
+                      color: AppColors.amber,
                       strokeWidth: 2,
                     ),
                   ),
                   SizedBox(width: 8),
                   Text(
                     'Pip is thinking...',
-                    style: TextStyle(color: kTextDim, fontSize: 12),
+                    style: TextStyle(color: AppColors.textDim, fontSize: 12),
                   ),
                 ],
               ),
@@ -135,8 +129,8 @@ class _TwinChatScreenState extends State<TwinChatScreen> {
           Container(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
             decoration: const BoxDecoration(
-              color: kSurface,
-              border: Border(top: BorderSide(color: kBorder)),
+              color: AppColors.surface,
+              border: Border(top: BorderSide(color: AppColors.border)),
             ),
             child: Row(
               children: [
@@ -148,24 +142,24 @@ class _TwinChatScreenState extends State<TwinChatScreen> {
                     onSubmitted: (_) => _send(),
                     decoration: InputDecoration(
                       hintText: 'Ask Pip anything...',
-                      hintStyle: const TextStyle(color: kTextMuted),
+                      hintStyle: const TextStyle(color: AppColors.textMuted),
                       filled: true,
-                      fillColor: kCard,
+                      fillColor: AppColors.card,
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 14,
                         vertical: 12,
                       ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: kBorder),
+                        borderSide: const BorderSide(color: AppColors.border),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: kBorder),
+                        borderSide: const BorderSide(color: AppColors.border),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: kAmber, width: 1.5),
+                        borderSide: const BorderSide(color: AppColors.amber, width: 1.5),
                       ),
                     ),
                   ),
@@ -180,14 +174,14 @@ class _TwinChatScreenState extends State<TwinChatScreen> {
                       gradient: _sending
                           ? null
                           : const LinearGradient(
-                              colors: [kOrange, Color(0xFFEA580C)],
+                              colors: [AppColors.orange, Color(0xFFEA580C)],
                             ),
-                      color: _sending ? kCard : null,
+                      color: _sending ? AppColors.card : null,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(
                       Icons.send_rounded,
-                      color: _sending ? kTextMuted : Colors.white,
+                      color: _sending ? AppColors.textMuted : Colors.white,
                       size: 18,
                     ),
                   ),
@@ -226,7 +220,7 @@ class _TwinChatScreenState extends State<TwinChatScreen> {
         const Center(
           child: Text(
             'Ask me anything about your inbox',
-            style: TextStyle(color: kTextDim, fontSize: 14),
+            style: TextStyle(color: AppColors.textDim, fontSize: 14),
           ),
         ),
         const SizedBox(height: 32),
@@ -240,21 +234,21 @@ class _TwinChatScreenState extends State<TwinChatScreen> {
               margin: const EdgeInsets.only(bottom: 10),
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: kCard,
+                color: AppColors.card,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: kBorder),
+                border: Border.all(color: AppColors.border),
               ),
               child: Row(
                 children: [
                   Expanded(
                     child: Text(
                       s,
-                      style: const TextStyle(color: kTextDim, fontSize: 13),
+                      style: const TextStyle(color: AppColors.textDim, fontSize: 13),
                     ),
                   ),
                   const Icon(
                     Icons.arrow_forward_ios,
-                    color: kTextMuted,
+                    color: AppColors.textMuted,
                     size: 12,
                   ),
                 ],
@@ -288,7 +282,7 @@ class _ChatBubble extends StatelessWidget {
               width: 28,
               height: 28,
               decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [kAmber, kOrange]),
+                gradient: const LinearGradient(colors: [AppColors.amber, AppColors.orange]),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Center(
@@ -308,7 +302,7 @@ class _ChatBubble extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                color: isUser ? kOrange.withAlpha(51) : kCard,
+                color: isUser ? AppColors.orange.withAlpha(51) : AppColors.card,
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(14),
                   topRight: const Radius.circular(14),
@@ -316,13 +310,13 @@ class _ChatBubble extends StatelessWidget {
                   bottomRight: Radius.circular(isUser ? 4 : 14),
                 ),
                 border: Border.all(
-                  color: isUser ? kOrange.withAlpha(76) : kBorder,
+                  color: isUser ? AppColors.orange.withAlpha(76) : AppColors.border,
                 ),
               ),
               child: Text(
                 msg['content'] ?? '',
                 style: TextStyle(
-                  color: isUser ? Colors.white : kTextDim,
+                  color: isUser ? Colors.white : AppColors.textDim,
                   fontSize: 13,
                   height: 1.5,
                 ),

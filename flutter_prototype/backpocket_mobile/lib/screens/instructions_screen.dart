@@ -1,17 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import '../theme.dart';
 
 const Color kBg = Color(0xFF0D0A07);
-const Color kSurface = Color(0xFF1A1208);
-const Color kCard = Color(0xFF211708);
-const Color kBorder = Color(0x22FFFFFF);
-const Color kAmber = Color(0xFFFBBF24);
-const Color kOrange = Color(0xFFF97316);
-const Color kGreen = Color(0xFF22C55E);
-const Color kRed = Color(0xFFEF4444);
-const Color kTextDim = Color(0x99FFFFFF);
-const Color kTextMuted = Color(0x44FFFFFF);
 
 class InstructionsScreen extends StatefulWidget {
   final String serverUrl;
@@ -101,7 +93,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
         ),
       ),
       child: _loading
-          ? const Center(child: CircularProgressIndicator(color: kAmber))
+          ? const Center(child: CircularProgressIndicator(color: AppColors.amber))
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
@@ -109,7 +101,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                 const Text(
                   'ADD INSTRUCTION',
                   style: TextStyle(
-                    color: kAmber,
+                    color: AppColors.amber,
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1,
@@ -119,9 +111,9 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: kCard,
+                    color: AppColors.card,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: kBorder),
+                    border: Border.all(color: AppColors.border),
                   ),
                   child: Column(
                     children: [
@@ -131,13 +123,13 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                         style: const TextStyle(color: Colors.white),
                         decoration: InputDecoration(
                           hintText:
-                              'Enter instruction (e.g., Always respond in Steve\'s voice...)',
-                          hintStyle: const TextStyle(color: kTextMuted),
+                              'Enter instruction (e.g., Always be concise and professional...)',
+                          hintStyle: const TextStyle(color: AppColors.textMuted),
                           filled: true,
-                          fillColor: kSurface,
+                          fillColor: AppColors.surface,
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: kBorder),
+                            borderSide: const BorderSide(color: AppColors.border),
                           ),
                         ),
                       ),
@@ -147,7 +139,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                           Expanded(
                             child: DropdownButton<String>(
                               value: _selectedCategory,
-                              dropdownColor: kCard,
+                              dropdownColor: AppColors.card,
                               style: const TextStyle(color: Colors.white),
                               items: const [
                                 DropdownMenuItem(
@@ -174,7 +166,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                           const SizedBox(width: 12),
                           ElevatedButton(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: kAmber,
+                              backgroundColor: AppColors.amber,
                               foregroundColor: Colors.black,
                             ),
                             onPressed: _addInstruction,
@@ -194,7 +186,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                 const Text(
                   'YOUR INSTRUCTIONS',
                   style: TextStyle(
-                    color: kAmber,
+                    color: AppColors.amber,
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1,
@@ -205,14 +197,14 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                   Container(
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
-                      color: kCard,
+                      color: AppColors.card,
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: kBorder),
+                      border: Border.all(color: AppColors.border),
                     ),
                     child: const Center(
                       child: Text(
                         'No instructions yet',
-                        style: TextStyle(color: kTextMuted),
+                        style: TextStyle(color: AppColors.textMuted),
                       ),
                     ),
                   )
@@ -261,9 +253,9 @@ class _InstructionCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: kCard,
+        color: AppColors.card,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: isActive ? kAmber.withAlpha(77) : kBorder),
+        border: Border.all(color: isActive ? AppColors.amber.withAlpha(77) : AppColors.border),
       ),
       child: Row(
         children: [
@@ -290,7 +282,7 @@ class _InstructionCard extends StatelessWidget {
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.delete_outline, color: kRed, size: 20),
+            icon: const Icon(Icons.delete_outline, color: AppColors.red, size: 20),
             onPressed: onDelete,
           ),
         ],
@@ -301,15 +293,15 @@ class _InstructionCard extends StatelessWidget {
   Color _getCategoryColor(String cat) {
     switch (cat) {
       case 'tone':
-        return kAmber;
+        return AppColors.amber;
       case 'priority':
-        return kOrange;
+        return AppColors.orange;
       case 'workflow':
-        return kGreen;
+        return AppColors.green;
       case 'safety':
-        return kRed;
+        return AppColors.red;
       default:
-        return kTextDim;
+        return AppColors.textDim;
     }
   }
 }

@@ -52,7 +52,7 @@ class VoiceConfirmationCard extends StatelessWidget {
                 if (onDismiss != null)
                   GestureDetector(
                     onTap: onDismiss,
-                    child: const Icon(Icons.close, color: Color(0x99FFFFFF), size: 18),
+                    child: const Icon(Icons.close, color: Color(0xFFD4C4B4), size: 18),
                   ),
               ],
             ),
@@ -82,7 +82,7 @@ class VoiceConfirmationCard extends StatelessWidget {
                     Expanded(
                       child: Text(
                         response.followUpPrompt!,
-                        style: const TextStyle(color: Color(0x99FFFFFF), fontSize: 13),
+                        style: const TextStyle(color: Color(0xFFD4C4B4), fontSize: 13),
                       ),
                     ),
                   ],
@@ -119,7 +119,7 @@ class VoiceConfirmationCard extends StatelessWidget {
           ),
           child: Text(
             '${_formatKey(e.key)}: ${e.value}',
-            style: const TextStyle(color: Color(0x99FFFFFF), fontSize: 11),
+            style: const TextStyle(color: Color(0xFFD4C4B4), fontSize: 11),
           ),
         );
       }).toList(),
@@ -133,7 +133,7 @@ class VoiceConfirmationCard extends StatelessWidget {
           child: OutlinedButton(
             onPressed: onCancel,
             style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0x99FFFFFF),
+              foregroundColor: const Color(0xFFD4C4B4),
               side: const BorderSide(color: Color(0x22FFFFFF)),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               padding: const EdgeInsets.symmetric(vertical: 12),

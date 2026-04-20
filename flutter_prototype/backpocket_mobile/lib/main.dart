@@ -51,15 +51,6 @@ class TwinController extends ChangeNotifier {
 
 // ─── Colours (5am warehouse aesthetic) ───────────────────────────────────────
 const Color kBg = Color(0xFF0D0A07);
-const Color kSurface = Color(0xFF1A1208);
-const Color kCard = Color(0xFF211708);
-const Color kBorder = Color(0x22FFFFFF);
-const Color kAmber = Color(0xFFFBBF24);
-const Color kOrange = Color(0xFFF97316);
-const Color kRed = Color(0xFFEF4444);
-const Color kGreen = Color(0xFF22C55E);
-const Color kTextDim = Color(0x99FFFFFF);
-const Color kTextMuted = Color(0x44FFFFFF);
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 void main() {
@@ -160,12 +151,39 @@ class _AppShellState extends State<AppShell> {
   bool _showVoiceOverlay = false;
   VoiceCommandResponse? _voiceResponse;
 
+  // Pages cached here — rebuilt only when serverUrl/apiKey change.
+  // IndexedStack keeps all live so tab switches preserve scroll/state.
+  late List<Widget> _pages;
+
   @override
   void initState() {
     super.initState();
     _tab = widget.initialTab;
+    _pages = _buildPages();
     _loadPrefs();
   }
+
+  List<Widget> _buildPages() => [
+    DashboardScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    InboxScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    TwinChatScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    DocumentsScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    MarketingScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    InstructionsScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    ConstructionScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    SettingsScreen(
+      serverUrl: _serverUrl,
+      apiKey: _apiKey,
+      onSettingsChanged: (url, key) {
+        setState(() {
+          _serverUrl = url;
+          _apiKey = key;
+          _voiceService = VoiceCommandService(baseUrl: url, apiKey: key);
+          _pages = _buildPages(); // rebuild with new connection params
+        });
+      },
+    ),
+  ];
 
   Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
@@ -173,6 +191,7 @@ class _AppShellState extends State<AppShell> {
       _serverUrl = prefs.getString('server_url') ?? 'http://127.0.0.1:8000';
       _apiKey = prefs.getString('api_key') ?? '';
       _voiceService = VoiceCommandService(baseUrl: _serverUrl, apiKey: _apiKey);
+      _pages = _buildPages();
     });
   }
 
@@ -236,7 +255,7 @@ class _AppShellState extends State<AppShell> {
                 ],
               ),
             ),
-            const Divider(color: kBorder, height: 1),
+            const Divider(color: AppColors.border, height: 1),
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.symmetric(vertical: 8),
@@ -258,7 +277,7 @@ class _AppShellState extends State<AppShell> {
                     child: Text(
                       'CHAT HISTORY',
                       style: TextStyle(
-                        color: kTextMuted,
+                        color: AppColors.textMuted,
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 1,
@@ -273,7 +292,7 @@ class _AppShellState extends State<AppShell> {
                       ),
                       child: Text(
                         'No recent chats',
-                        style: TextStyle(color: kTextMuted, fontSize: 12),
+                        style: TextStyle(color: AppColors.textMuted, fontSize: 12),
                       ),
                     )
                   else
@@ -290,7 +309,7 @@ class _AppShellState extends State<AppShell> {
                 ],
               ),
             ),
-            const Divider(color: kBorder, height: 1),
+            const Divider(color: AppColors.border, height: 1),
             Padding(
               padding: const EdgeInsets.all(16),
               child: _SidebarItem(
@@ -298,7 +317,7 @@ class _AppShellState extends State<AppShell> {
                 label: 'Settings',
                 isSelected: false,
                 onTap: () {
-                  setState(() => _tab = 6);
+                  setState(() => _tab = 7);
                   Navigator.pop(context);
                 },
               ),
@@ -310,6 +329,17 @@ class _AppShellState extends State<AppShell> {
   }
 
   static const _screenNames = ['dashboard', 'inbox', 'chat', 'documents', 'marketing', 'instructions', 'construction', 'settings'];
+
+  // Bottom nav: 0=Home(0), 1=Inbox(1), 2=Chat(2), 3=Jobs/Construction(6), 4=Settings(7)
+  static const _bottomNavToTab = [0, 1, 2, 6, 7];
+
+  int get _bottomNavIndex {
+    final idx = _bottomNavToTab.indexOf(_tab);
+    return idx >= 0 ? idx : 0;
+  }
+
+  void _onBottomNavTap(int navIndex) =>
+      setState(() => _tab = _bottomNavToTab[navIndex]);
 
   void _onVoiceFabTap() {
     _voiceService?.setScreenContext(_screenNames[_tab], tabIndex: _tab);
@@ -358,34 +388,19 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    final pages = [
-      DashboardScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-      InboxScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-      TwinChatScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-      DocumentsScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-      MarketingScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-      InstructionsScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-      ConstructionScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-    SettingsScreen(
-        serverUrl: _serverUrl,
-        apiKey: _apiKey,
-        onSettingsChanged: (url, key) {
-          setState(() {
-            _serverUrl = url;
-            _apiKey = key;
-          });
-        },
-      ),
-    ];
-
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: kSurface,
+        backgroundColor: AppColors.surface,
         elevation: 0,
         leading: Builder(
-          builder: (context) => IconButton(
-            icon: const Icon(Icons.menu, color: kAmber),
-            onPressed: () => Scaffold.of(context).openDrawer(),
+          builder: (context) => Semantics(
+            label: 'Open navigation menu',
+            button: true,
+            child: IconButton(
+              icon: const Icon(Icons.menu, color: AppColors.amber),
+              onPressed: () => Scaffold.of(context).openDrawer(),
+              tooltip: 'Open menu',
+            ),
           ),
         ),
         title: const Text(
@@ -393,26 +408,35 @@ class _AppShellState extends State<AppShell> {
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         actions: [
-          IconButton(
-            icon: Icon(
-              _magnifierMode ? Icons.zoom_in : Icons.zoom_in_outlined,
-              color: _magnifierMode ? AppColors.amber : kTextDim,
+          Semantics(
+            label: _magnifierMode ? 'Disable magnifier mode' : 'Enable magnifier mode',
+            button: true,
+            child: IconButton(
+              icon: Icon(
+                _magnifierMode ? Icons.zoom_in : Icons.zoom_in_outlined,
+                color: _magnifierMode ? AppColors.amber : AppColors.textDim,
+              ),
+              onPressed: () => setState(() => _magnifierMode = !_magnifierMode),
+              tooltip: 'Magnifier Mode',
             ),
-            onPressed: () => setState(() => _magnifierMode = !_magnifierMode),
-            tooltip: 'Magnifier Mode',
           ),
-          IconButton(
-            icon: const Icon(Icons.dashboard_outlined, color: kTextDim),
-            onPressed: () => setState(() => _tab = 0),
+          Semantics(
+            label: 'Go to dashboard',
+            button: true,
+            child: IconButton(
+              icon: const Icon(Icons.dashboard_outlined, color: AppColors.textDim),
+              onPressed: () => setState(() => _tab = 0),
+              tooltip: 'Dashboard',
+            ),
           ),
         ],
       ),
       drawer: _buildSidebar(),
       body: Stack(
         children: [
-          Transform.scale(
-            scale: _magnifierMode ? 1.1 : 1.0,
-            child: pages[_tab],
+          IndexedStack(
+            index: _tab,
+            children: _pages,
           ),
           if (_voiceResponse != null && (_voiceResponse!.needsConfirmation || _voiceResponse!.needsMoreInput))
             Positioned(
@@ -437,6 +461,24 @@ class _AppShellState extends State<AppShell> {
             ),
         ],
       ),
+      bottomNavigationBar: BottomNavigationBar(
+        // Maps bottom-nav index → tab index: Home=0, Inbox=1, Chat=2, Jobs=6, Settings=7
+        currentIndex: _bottomNavIndex,
+        onTap: _onBottomNavTap,
+        backgroundColor: AppColors.surface,
+        selectedItemColor: AppColors.amber,
+        unselectedItemColor: AppColors.textMuted,
+        type: BottomNavigationBarType.fixed,
+        selectedFontSize: 11,
+        unselectedFontSize: 11,
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.dashboard_outlined), label: 'Home'),
+          BottomNavigationBarItem(icon: Icon(Icons.inbox_outlined), label: 'Inbox'),
+          BottomNavigationBarItem(icon: Icon(Icons.psychology_outlined), label: 'Chat'),
+          BottomNavigationBarItem(icon: Icon(Icons.build_outlined), label: 'Jobs'),
+          BottomNavigationBarItem(icon: Icon(Icons.settings_outlined), label: 'Settings'),
+        ],
+      ),
       floatingActionButton: _voiceService != null
           ? VoiceFab(
               voiceService: _voiceService!,
@@ -444,6 +486,7 @@ class _AppShellState extends State<AppShell> {
               onLongPress: () => setState(() => _showVoiceOverlay = true),
             )
           : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 }
@@ -464,25 +507,30 @@ class _SidebarItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(
-        icon,
-        color: isSelected ? AppColors.amber : kTextMuted,
-        size: 22,
-      ),
-      title: Text(
-        label,
-        style: TextStyle(
-          color: isSelected ? AppColors.cream : kTextDim,
-          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-          fontSize: 14,
-        ),
-      ),
+    return Semantics(
+      label: '$label${isSelected ? ', currently selected' : ''}',
+      button: true,
       selected: isSelected,
-      selectedTileColor: AppColors.amber.withAlpha(26),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      onTap: onTap,
+      child: ListTile(
+        leading: Icon(
+          icon,
+          color: isSelected ? AppColors.amber : AppColors.textMuted,
+          size: 22,
+        ),
+        title: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? AppColors.cream : AppColors.textDim,
+            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+            fontSize: 14,
+          ),
+        ),
+        selected: isSelected,
+        selectedTileColor: AppColors.amber.withAlpha(26),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+        onTap: onTap,
+      ),
     );
   }
 }
@@ -502,16 +550,15 @@ class _ChatHistoryItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      dense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       leading: const Icon(
         Icons.chat_bubble_outline,
-        color: kTextMuted,
+        color: AppColors.textMuted,
         size: 16,
       ),
       title: Text(
         text.length > 30 ? '${text.substring(0, 30)}...' : text,
-        style: const TextStyle(color: kTextMuted, fontSize: 12),
+        style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),

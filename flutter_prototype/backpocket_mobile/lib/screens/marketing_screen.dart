@@ -2,17 +2,9 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import '../theme.dart';
 
 const Color kBg = Color(0xFF0D0A07);
-const Color kSurface = Color(0xFF1A1208);
-const Color kCard = Color(0xFF211708);
-const Color kBorder = Color(0x22FFFFFF);
-const Color kAmber = Color(0xFFFBBF24);
-const Color kOrange = Color(0xFFF97316);
-const Color kGreen = Color(0xFF22C55E);
-const Color kRed = Color(0xFFEF4444);
-const Color kTextDim = Color(0x99FFFFFF);
-const Color kTextMuted = Color(0x44FFFFFF);
 
 class MarketingScreen extends StatefulWidget {
   final String serverUrl;
@@ -235,7 +227,7 @@ class _MarketingScreenState extends State<MarketingScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor: isError ? kRed : kGreen,
+        backgroundColor: isError ? AppColors.red : AppColors.green,
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -252,7 +244,7 @@ class _MarketingScreenState extends State<MarketingScreen> {
         ),
       ),
       child: _loading
-          ? const Center(child: CircularProgressIndicator(color: kAmber))
+          ? const Center(child: CircularProgressIndicator(color: AppColors.amber))
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
@@ -260,7 +252,7 @@ class _MarketingScreenState extends State<MarketingScreen> {
                 const Text(
                   'GBP POST GENERATOR',
                   style: TextStyle(
-                    color: kAmber,
+                    color: AppColors.amber,
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1,
@@ -270,16 +262,16 @@ class _MarketingScreenState extends State<MarketingScreen> {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: kCard,
+                    color: AppColors.card,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: kBorder),
+                    border: Border.all(color: AppColors.border),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
                         'Draft a Google Business Profile post from a job',
-                        style: TextStyle(color: kTextDim, fontSize: 12),
+                        style: TextStyle(color: AppColors.textDim, fontSize: 12),
                       ),
                       const SizedBox(height: 12),
                       TextField(
@@ -288,12 +280,12 @@ class _MarketingScreenState extends State<MarketingScreen> {
                         decoration: InputDecoration(
                           hintText:
                               'Job description (e.g., Completed rewiring in Campbelltown)',
-                          hintStyle: const TextStyle(color: kTextMuted),
+                          hintStyle: const TextStyle(color: AppColors.textMuted),
                           filled: true,
-                          fillColor: kSurface,
+                          fillColor: AppColors.surface,
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: kBorder),
+                            borderSide: const BorderSide(color: AppColors.border),
                           ),
                         ),
                       ),
@@ -303,12 +295,12 @@ class _MarketingScreenState extends State<MarketingScreen> {
                         style: const TextStyle(color: Colors.white),
                         decoration: InputDecoration(
                           hintText: 'Suburb (e.g., Campbelltown)',
-                          hintStyle: const TextStyle(color: kTextMuted),
+                          hintStyle: const TextStyle(color: AppColors.textMuted),
                           filled: true,
-                          fillColor: kSurface,
+                          fillColor: AppColors.surface,
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: kBorder),
+                            borderSide: const BorderSide(color: AppColors.border),
                           ),
                         ),
                       ),
@@ -317,7 +309,7 @@ class _MarketingScreenState extends State<MarketingScreen> {
                         width: double.infinity,
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: kAmber,
+                            backgroundColor: AppColors.amber,
                             foregroundColor: Colors.black,
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
@@ -348,7 +340,7 @@ class _MarketingScreenState extends State<MarketingScreen> {
                 const Text(
                   'LOCAL SEO INSIGHTS',
                   style: TextStyle(
-                    color: kAmber,
+                    color: AppColors.amber,
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1,
@@ -362,7 +354,7 @@ class _MarketingScreenState extends State<MarketingScreen> {
                 const Text(
                   'SOCIAL MEDIA',
                   style: TextStyle(
-                    color: kAmber,
+                    color: AppColors.amber,
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1,
@@ -376,7 +368,7 @@ class _MarketingScreenState extends State<MarketingScreen> {
                 const Text(
                   'SUCCESS STORY',
                   style: TextStyle(
-                    color: kAmber,
+                    color: AppColors.amber,
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1,
@@ -390,7 +382,7 @@ class _MarketingScreenState extends State<MarketingScreen> {
                 const Text(
                   'RECENT ACTIVITY',
                   style: TextStyle(
-                    color: kAmber,
+                    color: AppColors.amber,
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1,
@@ -407,16 +399,16 @@ class _MarketingScreenState extends State<MarketingScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: kCard,
+        color: AppColors.card,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: kBorder),
+        border: Border.all(color: AppColors.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
             'Reuse job description + suburb from GBP section above',
-            style: TextStyle(color: kTextMuted, fontSize: 11),
+            style: TextStyle(color: AppColors.textMuted, fontSize: 11),
           ),
           const SizedBox(height: 12),
           Row(
@@ -481,16 +473,16 @@ class _MarketingScreenState extends State<MarketingScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: kCard,
+        color: AppColors.card,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: kBorder),
+        border: Border.all(color: AppColors.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
             'AI-crafted success story ready for your website or newsletter',
-            style: TextStyle(color: kTextDim, fontSize: 12),
+            style: TextStyle(color: AppColors.textDim, fontSize: 12),
           ),
           const SizedBox(height: 12),
           TextField(
@@ -498,26 +490,26 @@ class _MarketingScreenState extends State<MarketingScreen> {
             style: const TextStyle(color: Colors.white),
             decoration: InputDecoration(
               hintText: 'Business name (optional)',
-              hintStyle: const TextStyle(color: kTextMuted),
+              hintStyle: const TextStyle(color: AppColors.textMuted),
               filled: true,
-              fillColor: kSurface,
+              fillColor: AppColors.surface,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: kBorder),
+                borderSide: const BorderSide(color: AppColors.border),
               ),
             ),
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
             initialValue: _selectedTheme,
-            dropdownColor: kSurface,
+            dropdownColor: AppColors.surface,
             style: const TextStyle(color: Colors.white),
             decoration: InputDecoration(
               filled: true,
-              fillColor: kSurface,
+              fillColor: AppColors.surface,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: kBorder),
+                borderSide: const BorderSide(color: AppColors.border),
               ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             ),
@@ -538,7 +530,7 @@ class _MarketingScreenState extends State<MarketingScreen> {
                   : const Icon(Icons.auto_stories, size: 18),
               label: Text(_generatingStory ? 'Generating...' : 'Generate Success Story'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: kAmber,
+                backgroundColor: AppColors.amber,
                 foregroundColor: Colors.black,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -550,7 +542,7 @@ class _MarketingScreenState extends State<MarketingScreen> {
             const SizedBox(height: 16),
             _buildResultCard(
               icon: Icons.article,
-              color: kAmber,
+              color: AppColors.amber,
               label: _storyTitle ?? 'Success Story',
               content: _storyContent!,
             ),
@@ -622,9 +614,9 @@ class _MarketingScreenState extends State<MarketingScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: kCard,
+        color: AppColors.card,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: kBorder),
+        border: Border.all(color: AppColors.border),
       ),
       child: Column(
         children: [
@@ -633,14 +625,14 @@ class _MarketingScreenState extends State<MarketingScreen> {
             label: insights['local_search_impressions']?['label'] ?? 'Search',
             value: insights['local_search_impressions']?['value'] ?? '+22%',
           ),
-          const Divider(color: kBorder),
+          const Divider(color: AppColors.border),
           _InsightRow(
             icon: Icons.location_on,
             label: insights['maps_visibility']?['label'] ?? 'Maps',
             value: insights['maps_visibility']?['value'] ?? 'High',
             subtitle: insights['maps_visibility']?['area'],
           ),
-          const Divider(color: kBorder),
+          const Divider(color: AppColors.border),
           _InsightRow(
             icon: Icons.star,
             label: insights['pending_review_requests']?['label'] ?? 'Reviews',
@@ -656,14 +648,14 @@ class _MarketingScreenState extends State<MarketingScreen> {
       return Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          color: kCard,
+          color: AppColors.card,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: kBorder),
+          border: Border.all(color: AppColors.border),
         ),
         child: const Center(
           child: Text(
             'No marketing activity yet',
-            style: TextStyle(color: kTextMuted),
+            style: TextStyle(color: AppColors.textMuted),
           ),
         ),
       );
@@ -676,19 +668,19 @@ class _MarketingScreenState extends State<MarketingScreen> {
               margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: kCard,
+                color: AppColors.card,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: kBorder),
+                border: Border.all(color: AppColors.border),
               ),
               child: Row(
                 children: [
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: kAmber.withAlpha(26),
+                      color: AppColors.amber.withAlpha(26),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(Icons.campaign, color: kAmber, size: 16),
+                    child: const Icon(Icons.campaign, color: AppColors.amber, size: 16),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -705,7 +697,7 @@ class _MarketingScreenState extends State<MarketingScreen> {
                         Text(
                           item['created_at']?.toString().split('.').first ?? '',
                           style: const TextStyle(
-                            color: kTextMuted,
+                            color: AppColors.textMuted,
                             fontSize: 10,
                           ),
                         ),
@@ -718,12 +710,12 @@ class _MarketingScreenState extends State<MarketingScreen> {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: kGreen.withAlpha(26),
+                      color: AppColors.green.withAlpha(26),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
                       item['status'] ?? 'draft',
-                      style: const TextStyle(color: kGreen, fontSize: 10),
+                      style: const TextStyle(color: AppColors.green, fontSize: 10),
                     ),
                   ),
                 ],
@@ -758,10 +750,10 @@ class _InsightRow extends StatelessWidget {
             width: 36,
             height: 36,
             decoration: BoxDecoration(
-              color: kAmber.withAlpha(26),
+              color: AppColors.amber.withAlpha(26),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(icon, color: kAmber, size: 18),
+            child: Icon(icon, color: AppColors.amber, size: 18),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -770,19 +762,19 @@ class _InsightRow extends StatelessWidget {
               children: [
                 Text(
                   label,
-                  style: const TextStyle(color: kTextDim, fontSize: 12),
+                  style: const TextStyle(color: AppColors.textDim, fontSize: 12),
                 ),
                 if (subtitle != null)
                   Text(
                     subtitle!,
-                    style: const TextStyle(color: kTextMuted, fontSize: 10),
+                    style: const TextStyle(color: AppColors.textMuted, fontSize: 10),
                   ),
               ],
             ),
           ),
           Text(
             value,
-            style: const TextStyle(color: kAmber, fontWeight: FontWeight.bold),
+            style: const TextStyle(color: AppColors.amber, fontWeight: FontWeight.bold),
           ),
         ],
       ),

@@ -6,15 +6,15 @@
 description: BackPocket OS AI Twin Prompt Evaluation
 
 providers:
-  - id: openrouter:openai/gpt-4o
+  - id: openai:gpt-4o
     config:
-      apiKey: ${OPENROUTER_API_KEY}
       apiBaseUrl: https://openrouter.ai/api/v1
+      apiKeyEnvar: OPENROUTER_API_KEY
 
-  - id: openrouter:anthropic/claude-3.5-sonnet
+  - id: openai:anthropic/claude-3.5-sonnet
     config:
-      apiKey: ${OPENROUTER_API_KEY}
       apiBaseUrl: https://openrouter.ai/api/v1
+      apiKeyEnvar: OPENROUTER_API_KEY
 
 defaultTest:
   options:

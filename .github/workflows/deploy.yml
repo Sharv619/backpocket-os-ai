@@ -22,6 +22,11 @@ jobs:
       - name: Install deps
         run: pip install -r requirements.txt pytest pytest-asyncio httpx
 
+      - name: Lint with ruff
+        run: |
+          pip install ruff
+          ruff check .
+
       - name: Run tests
         run: pytest -q --tb=short
 

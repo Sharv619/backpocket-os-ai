@@ -2,17 +2,9 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import '../theme.dart';
 
 const Color kBg = Color(0xFF0D0A07);
-const Color kSurface = Color(0xFF1A1208);
-const Color kCard = Color(0xFF211708);
-const Color kBorder = Color(0x22FFFFFF);
-const Color kAmber = Color(0xFFFBBF24);
-const Color kOrange = Color(0xFFF97316);
-const Color kRed = Color(0xFFEF4444);
-const Color kGreen = Color(0xFF22C55E);
-const Color kTextDim = Color(0x99FFFFFF);
-const Color kTextMuted = Color(0x44FFFFFF);
 
 class DocumentsScreen extends StatefulWidget {
   final String serverUrl;
@@ -79,12 +71,12 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
             ),
             const SizedBox(height: 20),
             ListTile(
-              leading: const Icon(Icons.camera_alt, color: kAmber),
+              leading: const Icon(Icons.camera_alt, color: AppColors.amber),
               title: const Text('Camera'),
               onTap: () => Navigator.pop(context, ImageSource.camera),
             ),
             ListTile(
-              leading: const Icon(Icons.photo_library, color: kAmber),
+              leading: const Icon(Icons.photo_library, color: AppColors.amber),
               title: const Text('Gallery'),
               onTap: () => Navigator.pop(context, ImageSource.gallery),
             ),
@@ -186,7 +178,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor: isError ? kRed : kGreen,
+        backgroundColor: isError ? AppColors.red : AppColors.green,
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -203,7 +195,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
         ),
       ),
       child: _loading
-          ? const Center(child: CircularProgressIndicator(color: kAmber))
+          ? const Center(child: CircularProgressIndicator(color: AppColors.amber))
           : Column(
               children: [
                 // Upload button
@@ -218,11 +210,11 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                         gradient: _analyzing
                             ? null
                             : const LinearGradient(
-                                colors: [kOrange, Color(0xFFEA580C)],
+                                colors: [AppColors.orange, Color(0xFFEA580C)],
                               ),
-                        color: _analyzing ? kSurface : null,
+                        color: _analyzing ? AppColors.surface : null,
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: kBorder),
+                        border: Border.all(color: AppColors.border),
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -232,7 +224,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                               width: 20,
                               height: 20,
                               child: CircularProgressIndicator(
-                                color: kAmber,
+                                color: AppColors.amber,
                                 strokeWidth: 2,
                               ),
                             )
@@ -263,19 +255,19 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                             children: [
                               const Icon(
                                 Icons.folder_open,
-                                color: kTextMuted,
+                                color: AppColors.textMuted,
                                 size: 48,
                               ),
                               const SizedBox(height: 12),
                               const Text(
                                 'No documents yet',
-                                style: TextStyle(color: kTextDim),
+                                style: TextStyle(color: AppColors.textDim),
                               ),
                               const SizedBox(height: 4),
                               const Text(
                                 'Upload an image to analyze',
                                 style: TextStyle(
-                                  color: kTextMuted,
+                                  color: AppColors.textMuted,
                                   fontSize: 12,
                                 ),
                               ),
@@ -343,9 +335,9 @@ class _DocumentCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: kCard,
+        color: AppColors.card,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: kBorder),
+        border: Border.all(color: AppColors.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -355,10 +347,10 @@ class _DocumentCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: kAmber.withAlpha(26),
+                  color: AppColors.amber.withAlpha(26),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.description, color: kAmber, size: 20),
+                child: const Icon(Icons.description, color: AppColors.amber, size: 20),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -374,7 +366,7 @@ class _DocumentCard extends StatelessWidget {
                     ),
                     Text(
                       doc['created_at']?.toString().split('.').first ?? '',
-                      style: const TextStyle(color: kTextMuted, fontSize: 11),
+                      style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
                     ),
                   ],
                 ),
@@ -383,17 +375,17 @@ class _DocumentCard extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: hasAnalysis
-                      ? kGreen.withAlpha(26)
+                      ? AppColors.green.withAlpha(26)
                       : (status == 'analyzing'
-                            ? kAmber.withAlpha(26)
-                            : kSurface),
+                            ? AppColors.amber.withAlpha(26)
+                            : AppColors.surface),
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(
                     color: hasAnalysis
-                        ? kGreen.withAlpha(102)
+                        ? AppColors.green.withAlpha(102)
                         : (status == 'analyzing'
-                              ? kAmber.withAlpha(102)
-                              : kBorder),
+                              ? AppColors.amber.withAlpha(102)
+                              : AppColors.border),
                   ),
                 ),
                 child: Text(
@@ -402,8 +394,8 @@ class _DocumentCard extends StatelessWidget {
                       : (status == 'analyzing' ? 'Analyzing...' : 'Pending'),
                   style: TextStyle(
                     color: hasAnalysis
-                        ? kGreen
-                        : (status == 'analyzing' ? kAmber : kTextMuted),
+                        ? AppColors.green
+                        : (status == 'analyzing' ? AppColors.amber : AppColors.textMuted),
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
                   ),
@@ -416,13 +408,13 @@ class _DocumentCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: kSurface,
+                color: AppColors.surface,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
                 doc['ai_analysis'],
                 style: const TextStyle(
-                  color: kTextDim,
+                  color: AppColors.textDim,
                   fontSize: 12,
                   height: 1.5,
                 ),

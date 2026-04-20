@@ -98,20 +98,51 @@ async def mobile_approve(request: MobileApproveRequest):
         clean_subject = clean_subject[4:].strip()
 
     # AUTO-MATCH TOKEN based on delivered_to account
-    if "|" in delivered_to:
-        actual_alias, token_source = delivered_to.split("|", 1)
-    elif delivered_to:
-        actual_alias = delivered_to
-        if "yourwebaccountant" in delivered_to.lower():
-            token_source = "token_ywa.json"
-        elif "bigbossaccountants" in delivered_to.lower():
-            token_source = "token_imap_admin.json"
-        elif "bigbossgroup" in delivered_to.lower():
-            token_source = "token.json"
-        else:
-            token_source = "token.json"
+    import os
+
+# Whitelist of safe token filenames. Add any new token files here.
+ALLOWED_TOKEN_FILES = {
+    "token.json",
+    "token_imap_admin.json",
+    "token_ywa.json",
+}
+
+def _sanitize_token_file(name: str) -> str | None:
+    """Return a safe token filename or None if the name is not allowed.
+    Strips any directory components and enforces a known whitelist or the
+    "token_imap_*.json" pattern used for IMAP accounts.
+    """
+    # Remove any path traversal components
+    base = os.path.basename(name)
+    if base in ALLOWED_TOKEN_FILES:
+        return base
+    # Allow any token file that follows the "token_imap_*.json" convention
+    if base.startswith("token_imap_") and base.endswith(".json"):
+        return base
+    return None
+
+if "|" in delivered_to:
+    actual_alias, token_source = delivered_to.split("|", 1)
+elif delivered_to:
+    actual_alias = delivered_to
+    if "yourwebaccountant" in delivered_to.lower():
+        token_source = "token_ywa.json"
+    elif "bigbossaccountants" in delivered_to.lower():
+        token_source = "token_imap_admin.json"
+    elif "bigbossgroup" in delivered_to.lower():
+        token_source = "token.json"
     else:
-        actual_alias, token_source = None, "token.json"
+        token_source = "token.json"
+else:
+    actual_alias, token_source = None, "token.json"
+
+# Validate token_source against whitelist
+safe_token = _sanitize_token_file(token_source)
+if not safe_token:
+    logger.error(f"mobile_approve: unsafe token source '{token_source}' supplied")
+    return {"status": "error", "message": "Invalid token source"}
+# Use sanitized token filename for the rest of the flow
+token_source = safe_token
 
     try:
         if token_source.startswith("token_imap_"):

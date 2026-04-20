@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -23,11 +24,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Map<String, dynamic>? _currentStage;
   Map<String, dynamic>? _marketingInsights;
   bool _loading = true;
+  String _ownerName = '';
 
   @override
   void initState() {
     super.initState();
+    _loadOwnerName();
     _loadData();
+  }
+
+  Future<void> _loadOwnerName() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) setState(() => _ownerName = prefs.getString('owner_name') ?? '');
   }
 
   Future<void> _loadData() async {
@@ -54,7 +62,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } catch (e) {
       debugPrint('Dashboard load error: $e');
     }
-    setState(() => _loading = false);
+    if (mounted) setState(() => _loading = false);
   }
 
   String _getGreeting() {
@@ -90,7 +98,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 children: [
                   // Greeting
                   Text(
-                    '${_getGreeting()}, Steve.',
+                    _ownerName.isNotEmpty ? '${_getGreeting()}, $_ownerName.' : '${_getGreeting()}.',
                     style: const TextStyle(
                       fontSize: 28,
                       fontWeight: FontWeight.bold,
@@ -108,7 +116,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   const SizedBox(height: 12),
 
                   // Sovereign State badge
-                  Container(
+                  Semantics(
+                    label: privacyMode
+                        ? 'Privacy mode active. Data stays ${dataResidency.toLowerCase()}.'
+                        : 'Privacy mode off. Data may leave device.',
+                    child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
                       color: privacyMode
@@ -144,6 +156,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ],
                     ),
                   ),
+                  ), // end Semantics
                   const SizedBox(height: 16),
 
                   // Stats Row
@@ -400,30 +413,33 @@ class _StatPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: AppColors.card,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 20),
-            const SizedBox(height: 4),
-            Text(
-              '$count',
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
+      child: Semantics(
+        label: '$label: $count',
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, color: color, size: 20, semanticLabel: label),
+              const SizedBox(height: 4),
+              Text(
+                '$count',
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
               ),
-            ),
-            Text(
-              label,
-              style: const TextStyle(color: AppColors.textMuted, fontSize: 10),
-            ),
-          ],
+              Text(
+                label,
+                style: const TextStyle(color: AppColors.textMuted, fontSize: 10),
+              ),
+            ],
+          ),
         ),
       ),
     );
