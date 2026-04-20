@@ -38,6 +38,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Map<String, dynamic> _byokStatus = {};
   bool _byokLoading = false;
 
+  // Style Mimic
+  bool _styleExists = false;
+  Map<String, dynamic>? _styleScan;
+  bool _styleScanning = false;
+  String? _styleMessage;
+
   Future<void> _testConnection() async {
     final url = _serverUrlController.text.trim();
     setState(() { _pinging = true; _pingResult = null; });
@@ -85,6 +91,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _ownerNameController.text = prefs.getString('owner_name') ?? '';
     });
     _loadBYOKStatus();
+    _loadCurrentStyle();
   }
 
   Future<void> _loadBYOKStatus() async {
@@ -152,6 +159,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ).timeout(const Duration(seconds: 5));
       _loadBYOKStatus();
     } catch (_) {}
+  }
+
+  Future<void> _loadCurrentStyle() async {
+    try {
+      final url = _serverUrlController.text.trim();
+      final res = await http.get(
+        Uri.parse('$url/api/style/current'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (_apiKeyController.text.isNotEmpty) 'X-API-Key': _apiKeyController.text,
+        },
+      ).timeout(const Duration(seconds: 5));
+      if (res.statusCode == 200 && mounted) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        setState(() => _styleExists = data['status'] == 'success');
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _scanWritingStyle() async {
+    setState(() { _styleScanning = true; _styleMessage = null; });
+    try {
+      final url = _serverUrlController.text.trim();
+      final res = await http.post(
+        Uri.parse('$url/api/style/scan-sent'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (_apiKeyController.text.isNotEmpty) 'X-API-Key': _apiKeyController.text,
+        },
+        body: jsonEncode({'token_file': 'token.json'}),
+      ).timeout(const Duration(seconds: 120));
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      if (mounted) {
+        setState(() {
+          _styleScanning = false;
+          if (res.statusCode == 200 && data['status'] == 'success') {
+            _styleScan = data;
+            _styleExists = true;
+            _styleMessage = 'Style learned from ${data['emails_scanned'] ?? '?'} emails.';
+          } else {
+            _styleMessage = data['message'] as String? ?? 'Scan failed.';
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() { _styleScanning = false; _styleMessage = 'Error: $e'; });
+    }
   }
 
   Future<void> _saveSettings() async {
@@ -376,6 +430,116 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ],
                       ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 32),
+
+          // ── STYLE MIMIC ────────────────────────────────────────────────────
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Text(
+                    'STYLE MIMIC',
+                    style: TextStyle(
+                      color: AppColors.textDim,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.green.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'AI CONSCIOUSNESS',
+                      style: TextStyle(color: AppColors.green, fontSize: 10, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Scan your sent mail. Pip learns how you write — tone, vocabulary, patterns.',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 11),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_styleScan != null) ...[
+                      _InfoRow(
+                        label: 'Emails scanned',
+                        value: '${_styleScan!['emails_scanned'] ?? '—'}',
+                      ),
+                      _InfoRow(
+                        label: 'Inliers used',
+                        value: '${_styleScan!['inliers_used'] ?? '—'}',
+                      ),
+                      if ((_styleScan!['vocab_sample'] as Map?)?.containsKey('avg_length_words') == true)
+                        _InfoRow(
+                          label: 'Avg length',
+                          value: '${(_styleScan!['vocab_sample'] as Map)['avg_length_words']} words',
+                        ),
+                      const SizedBox(height: 12),
+                    ] else if (_styleExists)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 12),
+                        child: Text(
+                          'Style profile active. Rescan to refresh.',
+                          style: TextStyle(color: AppColors.green, fontSize: 12),
+                        ),
+                      )
+                    else
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 12),
+                        child: Text(
+                          'No style profile yet. Tap scan to begin.',
+                          style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                        ),
+                      ),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        icon: _styleScanning
+                            ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.green))
+                            : const Icon(Icons.auto_awesome, size: 16, color: AppColors.green),
+                        label: Text(
+                          _styleScanning ? 'Scanning sent mail…' : 'Scan Sent Mail',
+                          style: const TextStyle(color: AppColors.green),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: AppColors.green),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                        ),
+                        onPressed: _styleScanning ? null : _scanWritingStyle,
+                      ),
+                    ),
+                    if (_styleMessage != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          _styleMessage!,
+                          style: TextStyle(
+                            color: _styleMessage!.startsWith('Error') ? AppColors.red : AppColors.green,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ],
           ),
