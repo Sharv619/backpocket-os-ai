@@ -56,6 +56,36 @@ async def save_instruction(request: Request):
         return {"status": "error", "message": str(e)}
 
 
+@router.post("/api/instructions/promote")
+async def promote_instruction(request: Request):
+    """
+    Promotes a one-off correction or feedback into a permanent rule (Fixes Amnesia).
+    """
+    try:
+        from services.database import save_instruction
+
+        data = await request.json()
+        instruction_text = data.get("instruction_text")
+        
+        if not instruction_text:
+            return {"status": "error", "message": "Instruction text is required"}
+
+        # Promote it by saving it to the instructions table
+        result = save_instruction(
+            instruction_text=instruction_text,
+            category=data.get("category", "learned_pattern"),
+            target=data.get("ref_id", ""),
+            target_type="promotion",
+            is_critical=True, # Promoted rules from Steve are treated as critical
+            is_active=True,
+            description="Learned automatically from user feedback"
+        )
+        return {"status": "success", "message": "Instruction permanently promoted", "id": result}
+    except Exception as e:
+        logger.error(f"Promote instruction error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
 @router.put("/api/instructions/{instruction_id}")
 async def update_instruction(instruction_id: int, request: Request):
     try:
