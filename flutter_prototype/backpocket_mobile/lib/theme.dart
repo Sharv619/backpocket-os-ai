@@ -27,9 +27,11 @@ class AppColors {
   static const Color red = Color(0xFFEF4444);
   static const Color green = Color(0xFF22C55E);
 
-  // Text
-  static const Color textDim = Color(0x99FFFFFF);
-  static const Color textMuted = Color(0x44FFFFFF);
+  // Text — opaque warm tones; pass WCAG AA on all app surfaces
+  // textDim  ~11.9:1 on bgStart, ~9.2:1 on surface
+  // textMuted ~6.6:1 on bgStart, ~5.1:1 on surface (AA for small text)
+  static const Color textDim = Color(0xFFD4C4B4);
+  static const Color textMuted = Color(0xFF9E8E7E);
 
   // Tier tag colors — mirror --tag-*-text from CSS
   static const Color tagBlueBg = Color(0xFFE3EDFA);
@@ -71,7 +73,7 @@ class AppTheme {
       ),
     );
     return base.copyWith(
-      textTheme: GoogleFonts.outfitTextTheme(base.textTheme).apply(
+      textTheme: GoogleFonts.barlowTextTheme(base.textTheme).apply(
         bodyColor: AppColors.cream,
         displayColor: AppColors.cream,
       ),
@@ -91,7 +93,7 @@ class AppTheme {
           foregroundColor: AppColors.cream,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          textStyle: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+          textStyle: GoogleFonts.barlow(fontWeight: FontWeight.w600),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -177,40 +179,6 @@ class FrostedGlass extends StatelessWidget {
   }
 }
 
-class GlowBorder extends StatelessWidget {
-  final Widget child;
-  final Color glowColor;
-  final double glowRadius;
-  final bool isActive;
-
-  const GlowBorder({
-    super.key,
-    required this.child,
-    this.glowColor = AppColors.terracotta,
-    this.glowRadius = 8.0,
-    this.isActive = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: isActive
-          ? BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: glowColor.withAlpha(128),
-                  blurRadius: glowRadius,
-                  spreadRadius: 2,
-                ),
-              ],
-            )
-          : null,
-      child: child,
-    );
-  }
-}
-
 class StatsPill extends StatelessWidget {
   final String label;
   final String value;
@@ -271,9 +239,21 @@ class _BreathingAvatarState extends State<BreathingAvatar>
     _controller = AnimationController(
       duration: const Duration(seconds: 3),
       vsync: this,
-    )..repeat(reverse: true);
+    );
     _animation = Tween<double>(begin: 1.0, end: 1.08)
         .animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final reduce = MediaQuery.of(context).disableAnimations;
+    if (!reduce && !_controller.isAnimating) {
+      _controller.repeat(reverse: true);
+    } else if (reduce && _controller.isAnimating) {
+      _controller.stop();
+      _controller.reset();
+    }
   }
 
   @override
@@ -331,17 +311,22 @@ class GrainOverlay extends StatelessWidget {
 
 class _GrainPainter extends CustomPainter {
   final double opacity;
-  final List<Offset> _points = [];
 
-  _GrainPainter({required this.opacity}) {
-    final random = DateTime.now().millisecondsSinceEpoch;
+  static final List<Offset> _points = _buildPoints();
+
+  static List<Offset> _buildPoints() {
+    const seed = 31415926;
+    final pts = <Offset>[];
     for (int i = 0; i < 2000; i++) {
-      _points.add(Offset(
-        (random * (i + 1) * 17 % 1000) / 1000,
-        (random * (i + 1) * 23 % 1000) / 1000,
+      pts.add(Offset(
+        (seed * (i + 1) * 17 % 1000) / 1000,
+        (seed * (i + 1) * 23 % 1000) / 1000,
       ));
     }
+    return pts;
   }
+
+  const _GrainPainter({required this.opacity});
 
   @override
   void paint(Canvas canvas, Size size) {

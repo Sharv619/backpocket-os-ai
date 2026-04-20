@@ -53,35 +53,94 @@ _LAN_ORIGINS = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+):\d+$",
-    allow_origins=[o for o in _LAN_ORIGINS + [os.getenv("FRONTEND_ORIGIN", "")] if o],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# API Key Middleware
+# ── JWT / Auth Middleware ────────────────────────────────────────────────────
+# Routes that do NOT require authentication
+_PUBLIC_PATHS = {
+    "/",
+    "/health",
+    "/auth/register",
+    "/auth/token",
+    "/auth/me",         # handled by its own Depends
+    "/api/webhook",
+    "/api/billing/webhook",
+    "/test-sheets",
+    "/test-whatsapp",
+    "/self-check",
+}
+_PUBLIC_PREFIXES = ("/static/", "/app/", "/docs", "/openapi")
+
 _BP_API_KEY = os.getenv("BP_API_KEY", "")
 
 
-class APIKeyMiddleware(BaseHTTPMiddleware):
+class AuthMiddleware(BaseHTTPMiddleware):
+    """
+    JWT-based auth gate for all /api/* routes.
+    Bypass order:
+      1. Public paths / prefixes — pass through.
+      2. Supabase JWT present → verify + attach user to request state.
+      3. X-API-Key fallback (dev/demo, or Flutter before Supabase wired) — only when
+         SUPABASE_JWT_SECRET is unset. Removed once auth is fully live.
+    """
+
     async def dispatch(self, request: StarletteRequest, call_next):
-        if not _BP_API_KEY:
-            return await call_next(request)
         path = request.url.path
+
+        # Always pass public routes
+        if path in _PUBLIC_PATHS:
+            return await call_next(request)
+        for prefix in _PUBLIC_PREFIXES:
+            if path.startswith(prefix):
+                return await call_next(request)
+
+        # Only gate /api/* paths
         if not path.startswith("/api/"):
             return await call_next(request)
-        key = request.headers.get("x-api-key", "")
-        if key != _BP_API_KEY:
-            return StarletteResponse(
-                content='{"detail":"Invalid or missing X-API-Key"}',
-                status_code=401,
-                media_type="application/json",
-            )
-        return await call_next(request)
+
+        from services.auth import SUPABASE_JWT_SECRET, verify_jwt
+
+        # --- JWT path ---
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer ") and SUPABASE_JWT_SECRET:
+            token = auth_header[len("Bearer "):]
+            try:
+                payload = verify_jwt(token)
+                request.state.user_id = payload.get("sub", "")
+                request.state.user_email = payload.get("email", "")
+            except Exception:
+                return StarletteResponse(
+                    content='{"detail":"Invalid or expired token"}',
+                    status_code=401,
+                    media_type="application/json",
+                )
+            return await call_next(request)
+
+        # --- X-API-Key fallback (dev / pre-Supabase Flutter clients) ---
+        if _BP_API_KEY:
+            key = request.headers.get("x-api-key", "")
+            if key == _BP_API_KEY:
+                request.state.user_id = "api-key-user"
+                request.state.user_email = "apikey@backpocket.local"
+                return await call_next(request)
+
+        # --- No valid credential ---
+        # If neither Supabase nor API key is configured, allow (local dev, no .env)
+        if not SUPABASE_JWT_SECRET and not _BP_API_KEY:
+            return await call_next(request)
+
+        return StarletteResponse(
+            content='{"detail":"Authentication required"}',
+            status_code=401,
+            media_type="application/json",
+        )
 
 
-app.add_middleware(APIKeyMiddleware)
+app.add_middleware(AuthMiddleware)
 
 
 @app.exception_handler(Exception)
@@ -116,9 +175,24 @@ for _dir in ["static", "logs", "docs"]:
     if not os.path.exists(_dir):
         os.makedirs(_dir)
 
+@app.middleware("http")
+async def disable_cache(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/app"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
+# Flutter web app — built assets copied here by CI/CD
+import os as _os
+_flutter_dist = _os.path.join(_os.path.dirname(__file__), "static_flutter")
+if _os.path.isdir(_flutter_dist):
+    app.mount("/app", StaticFiles(directory=_flutter_dist, html=True), name="flutter")
 
 # Route registration
+from routes.auth import router as auth_router
 from routes.admin import router as admin_router
 from routes.voice import router as voice_router
 from routes.construction import router as construction_router
@@ -133,6 +207,10 @@ from routes.marketing import router as marketing_router
 from routes.utilities import router as utilities_router
 from routes.approvals import router as approvals_router
 from routes.webhook import router as webhook_router
+from routes.billing import router as billing_router
+from routes.compliance import router as compliance_router
+from routes.byok import router as byok_router
+from routes.ux_audit import router as ux_audit_router
 
 import routes.voice_handlers_dashboard
 import routes.voice_handlers_inbox
@@ -140,6 +218,7 @@ import routes.voice_handlers_construction
 import routes.voice_handlers_misc
 import routes.voice_handlers_cross
 
+app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(voice_router)
 app.include_router(construction_router)
@@ -154,11 +233,22 @@ app.include_router(marketing_router)
 app.include_router(utilities_router)
 app.include_router(approvals_router)
 app.include_router(webhook_router)
+app.include_router(billing_router)
+app.include_router(compliance_router)
+app.include_router(byok_router)
+app.include_router(ux_audit_router)
+
+
+@app.get("/api/health")
+async def health():
+    return {"status": "ok"}
 
 
 @app.on_event("startup")
 async def startup_event():
-    pass
+    from services.background import inbox_polling_loop
+    asyncio.create_task(inbox_polling_loop())
+    logger.info("🚀 Background polling loop started automatically")
 
 
 @app.get("/dashboard")

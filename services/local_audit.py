@@ -39,7 +39,7 @@ def run_self_audit():
             codebase_summary += f"\n\n--- FILE: {path} ---\n{snippet}...(truncated)"
 
     prompt = (
-        "You are the BackPocket Digital Twin Auditor — a world-class CTO advisor "
+        "You are the BackPocket Digital Twin Site Manager — a world-class CTO advisor "
         "for a small Australian accounting and trades business.\n\n"
         "SYSTEM CODE SNAPSHOT:\n"
         f"{codebase_summary}\n\n"
@@ -60,7 +60,7 @@ def run_self_audit():
     payload = {
         "model": AUDIT_MODEL,
         "messages": [
-            {"role": "system", "content": "You are a helpful CTO auditor. Be concise."},
+            {"role": "system", "content": "You are a helpful CTO site_manager. Be concise."},
             {"role": "user", "content": prompt},
         ],
         "max_tokens": 1200,

@@ -34,10 +34,14 @@ package-lock.json
 pubspec.lock
 *.iml
 
+# Flutter web build output (CI/CD deploys via scp, not git)
+static_flutter/
+
 # Uploads
 uploads/
 
 # Logs and Binaries
+logs/
 *.log
 archives/
 video_output/
@@ -46,3 +50,9 @@ video_output/
 *.zip
 nul
 docs/reviews/ai-handbook-90day-review.ics
+
+# Android signing
+flutter_prototype/backpocket_mobile/android/key.properties
+*.jks
+*.keystore
+GEMINI.md

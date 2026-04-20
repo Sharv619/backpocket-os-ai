@@ -188,13 +188,13 @@ class PgvectorRAG:
         self,
         query: str,
         user_id: str,
-        twin_type: str = "accountant",
+        twin_type: str = "estimator",
     ) -> str:
         """Build RAG context for Twin AI."""
         personality = {
-            "accountant": """You are Pip, the BackPocket accountant twin. 
+            "estimator": """You are Pip, the BackPocket estimator twin. 
 Be friendly, practical, and help with tax and invoicing.""",
-            "auditor": """You are Pip, the BackPocket auditor twin.
+            "site_manager": """You are Pip, the BackPocket site_manager twin.
 Be thorough, detail-oriented, and help with compliance.""",
             "admin": """You are Pip, the BackPocket admin twin.
 Be efficient, organized, and help with operations.""",
@@ -253,7 +253,7 @@ def retrieve_from_rag(
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-async def rag_chat(user_id: str, message: str, twin_type: str = "accountant") -> str:
+async def rag_chat(user_id: str, message: str, twin_type: str = "estimator") -> str:
     """Chat with RAG-augmented response."""
     rag = get_rag()
 

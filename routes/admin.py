@@ -1,7 +1,7 @@
 """Admin / Kanban route — read-only team activity board powered by the knowledge bank + construction tables."""
 import pathlib
 import sqlite3
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -107,3 +107,21 @@ async def kanban_data():
         }
     finally:
         con.close()
+
+
+@router.post("/api/migrate-to-postgres")
+async def migrate_to_postgres():
+    """Trigger SQLite → Postgres migration. Requires POSTGRES_DB_URL env var."""
+    try:
+        from services.db_router import run_migration, status as db_status
+        result = run_migration()
+        return {"db_status": db_status(), "migration": result}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/api/db-status")
+async def db_status_endpoint():
+    """Return current DB backend (sqlite vs postgres)."""
+    from services.db_router import status as db_status
+    return db_status()

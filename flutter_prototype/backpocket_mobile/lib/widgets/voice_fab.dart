@@ -36,9 +36,10 @@ class _VoiceFabState extends State<VoiceFab> with SingleTickerProviderStateMixin
 
   void _onStateChange() {
     final isActive = widget.voiceService.isActive;
-    if (isActive && !_pulseController.isAnimating) {
+    final reduce = mounted ? MediaQuery.of(context).disableAnimations : false;
+    if (isActive && !reduce && !_pulseController.isAnimating) {
       _pulseController.repeat(reverse: true);
-    } else if (!isActive && _pulseController.isAnimating) {
+    } else if ((!isActive || reduce) && _pulseController.isAnimating) {
       _pulseController.stop();
       _pulseController.reset();
     }
@@ -63,6 +64,8 @@ class _VoiceFabState extends State<VoiceFab> with SingleTickerProviderStateMixin
         return const Color(0xFF22C55E);
       case VoiceFlowState.error:
         return const Color(0xFFEF4444);
+      case VoiceFlowState.queuedOffline:
+        return const Color(0xFF6B7280); // Gray for offline
       case VoiceFlowState.idle:
         return const Color(0xFFF97316);
     }
@@ -79,6 +82,8 @@ class _VoiceFabState extends State<VoiceFab> with SingleTickerProviderStateMixin
         return Icons.volume_up_rounded;
       case VoiceFlowState.error:
         return Icons.error_outline_rounded;
+      case VoiceFlowState.queuedOffline:
+        return Icons.cloud_off_rounded;
       case VoiceFlowState.idle:
         return Icons.mic_rounded;
     }
@@ -96,6 +101,8 @@ class _VoiceFabState extends State<VoiceFab> with SingleTickerProviderStateMixin
         return 'Speaking...';
       case VoiceFlowState.error:
         return 'Error';
+      case VoiceFlowState.queuedOffline:
+        return 'Queued (Offline)';
       case VoiceFlowState.idle:
         return null;
     }
@@ -124,31 +131,36 @@ class _VoiceFabState extends State<VoiceFab> with SingleTickerProviderStateMixin
               style: TextStyle(color: _fabColor(), fontSize: 12, fontWeight: FontWeight.w600),
             ),
           ),
-        AnimatedBuilder(
-          animation: _pulseAnimation,
-          builder: (context, child) {
-            return Transform.scale(
-              scale: widget.voiceService.isActive ? _pulseAnimation.value : 1.0,
-              child: child,
-            );
-          },
-          child: GestureDetector(
-            onLongPress: widget.onLongPress,
-            child: FloatingActionButton(
-            heroTag: 'voice_fab',
-            onPressed: widget.onTap,
-            backgroundColor: _fabColor(),
-            elevation: 6,
-            child: isProcessing
-                ? SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      color: Colors.white,
-                    ),
-                  )
-                : Icon(_fabIcon(), color: Colors.white, size: 28),
+        Semantics(
+          label: label ?? 'Activate voice command',
+          hint: 'Double-tap to activate. Long-press to open full voice screen.',
+          button: true,
+          child: AnimatedBuilder(
+            animation: _pulseAnimation,
+            builder: (context, child) {
+              return Transform.scale(
+                scale: widget.voiceService.isActive ? _pulseAnimation.value : 1.0,
+                child: child,
+              );
+            },
+            child: GestureDetector(
+              onLongPress: widget.onLongPress,
+              child: FloatingActionButton(
+                heroTag: 'voice_fab',
+                onPressed: widget.onTap,
+                backgroundColor: _fabColor(),
+                elevation: 6,
+                child: isProcessing
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Icon(_fabIcon(), color: Colors.white, size: 28),
+              ),
             ),
           ),
         ),

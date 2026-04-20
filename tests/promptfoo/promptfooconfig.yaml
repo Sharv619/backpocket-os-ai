@@ -1,0 +1,172 @@
+# BackPocket OS — PromptFoo Eval Suite
+# Tests: Lead Extraction, Twin Email Draft, Tradie Follow-up, UX Audit
+# Run: npx promptfoo eval --config tests/promptfoo/promptfooconfig.yaml
+# CI:  npx promptfoo eval --ci (fails on threshold breach)
+
+description: BackPocket OS AI Twin Prompt Evaluation
+
+providers:
+  - id: openai:gpt-4o
+    config:
+      apiBaseUrl: https://openrouter.ai/api/v1
+      apiKeyEnvar: OPENROUTER_API_KEY
+
+  - id: openai:anthropic/claude-3.5-sonnet
+    config:
+      apiBaseUrl: https://openrouter.ai/api/v1
+      apiKeyEnvar: OPENROUTER_API_KEY
+
+defaultTest:
+  options:
+    provider: openrouter:openai/gpt-4o
+
+# ── TEST SUITE 1: Lead Extraction ─────────────────────────────────────────────
+prompts:
+  - id: lead_extraction
+    raw: |
+      You are an AI lead extraction assistant for an Australian tradie business.
+      Extract the following fields from this customer email as JSON:
+      {client_name, job_type, location, urgency (low/medium/high), estimated_budget_aud}
+      Return ONLY valid JSON. No explanation.
+
+      EMAIL:
+      Subject: {{subject}}
+      Body: {{body}}
+
+  - id: email_draft
+    raw: |
+      You are {{owner_name}}, founder of BackPocket OS — an AI Business Operating System.
+      Rewrite this email AS IF YOU wrote it.
+      RULES: Max 4 sentences. End with "Thanks, {{owner_name}}" or "Talk soon, {{owner_name}}".
+      No AI mention. First person only.
+
+      Subject: {{subject}}
+      Body: {{body}}
+
+      Rewrite {{owner_name}}'s reply:
+
+  - id: tradie_followup
+    raw: |
+      Write a friendly (not corporate) tradie follow-up message for this job quote.
+      Max 60 words. Australian casual tone.
+
+      Client: {{client_name}}
+      Job: {{job_type}}
+      Quote amount: ${{amount}} AUD
+      Location: {{location}}
+
+tests:
+  # Lead Extraction Tests
+  - description: "Extract plumbing lead from clear email"
+    prompts: [lead_extraction]
+    vars:
+      subject: "Leaking tap needs fixing urgently"
+      body: "Hi, I have a leaking tap at my house in Parramatta. Need it fixed ASAP. Budget around $200. My name is John Smith."
+    assert:
+      - type: is-json
+      - type: javascript
+        value: |
+          JSON.parse(output).job_type?.toLowerCase().includes('plumb') ||
+          JSON.parse(output).job_type?.toLowerCase().includes('tap') ||
+          JSON.parse(output).job_type?.toLowerCase().includes('leak')
+        threshold: 1
+      - type: javascript
+        value: "JSON.parse(output).location?.toLowerCase().includes('parramatta')"
+        threshold: 1
+      - type: javascript
+        value: "JSON.parse(output).client_name?.toLowerCase().includes('john')"
+        threshold: 1
+      - type: javascript
+        value: "JSON.parse(output).urgency === 'high'"
+        threshold: 1
+
+  - description: "Extract renovation lead with budget"
+    prompts: [lead_extraction]
+    vars:
+      subject: "Kitchen renovation quote needed"
+      body: "Looking to renovate my kitchen in Bondi. Budget is around 15k. Not urgent, planning for next month. Sarah Jones."
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).estimated_budget_aud >= 10000"
+        threshold: 1
+      - type: javascript
+        value: "JSON.parse(output).urgency === 'low' || JSON.parse(output).urgency === 'medium'"
+        threshold: 1
+
+  - description: "No hallucination on vague email"
+    prompts: [lead_extraction]
+    vars:
+      subject: "Hi"
+      body: "Just checking if you do work in the area."
+    assert:
+      - type: is-json
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          !d.estimated_budget_aud || d.estimated_budget_aud === null || d.estimated_budget_aud === 0
+        threshold: 1
+
+  # Email Draft Tests
+  - description: "Draft stays first-person, no AI mention"
+    prompts: [email_draft]
+    vars:
+      owner_name: "the founder"
+      subject: "Quote follow up"
+      body: "Hi, just checking on the quote you sent last week?"
+    assert:
+      - type: not-contains
+        value: "BackPocket Twin"
+      - type: not-contains
+        value: "AI assistant"
+      - type: not-contains
+        value: "As an AI"
+      - type: contains
+        value: "Thanks"
+      - type: javascript
+        value: "output.split(' ').length <= 80"
+        threshold: 1
+
+  - description: "Draft signs off correctly"
+    prompts: [email_draft]
+    vars:
+      owner_name: "Steve"
+      subject: "Invoice payment"
+      body: "The invoice for the kitchen job is now 2 weeks overdue."
+    assert:
+      - type: regex
+        value: "(Thanks, Steve|Talk soon, Steve)"
+
+  # Tradie Follow-up Tests
+  - description: "Follow-up under 60 words"
+    prompts: [tradie_followup]
+    vars:
+      client_name: "John"
+      job_type: "Bathroom renovation"
+      amount: "4500"
+      location: "Penrith"
+    assert:
+      - type: javascript
+        value: "output.split(' ').length <= 65"
+        threshold: 1
+      - type: not-contains
+        value: "pursuant"
+      - type: not-contains
+        value: "kindly find"
+      - type: not-contains
+        value: "as per"
+
+  - description: "Follow-up includes quote amount"
+    prompts: [tradie_followup]
+    vars:
+      client_name: "Sarah"
+      job_type: "Roof repair"
+      amount: "2200"
+      location: "Wollongong"
+    assert:
+      - type: contains
+        value: "2200"
+
+outputPath: tests/promptfoo/results.json
+
+sharing: false

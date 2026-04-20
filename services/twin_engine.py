@@ -2,7 +2,7 @@
 Twin Engine — Agentic RAG system for BackPocket.
 Ported from backpocket-os/agents/twin_system.py.
 Uses ChromaDB for vector RAG + Gemini as the LLM (Ollama fallback).
-Three specialized twins: Accountant, Auditor, Admin.
+Three specialized twins: Estimator, Site Manager, Admin.
 """
 
 from __future__ import annotations
@@ -28,29 +28,27 @@ CHROMADB_DIR.mkdir(parents=True, exist_ok=True)
 # ── Twin types ─────────────────────────────────────────────────────────────────
 
 class TwinType(Enum):
-    ACCOUNTANT = "accountant"
-    AUDITOR    = "auditor"
+    ACCOUNTANT = "estimator"
+    AUDITOR    = "site_manager"
     ADMIN      = "admin"
 
 
 PERSONALITIES: dict[TwinType, dict] = {
     TwinType.ACCOUNTANT: {
-        "name": "Accountant Twin",
-        "description": "Handles invoicing, BAS preparation, ATO compliance, and tax",
-        "system_prompt": """You are the Accountant Twin for a sole trader business in Australia.
-You handle: invoicing, expense tracking, BAS preparation, ATO compliance, GST (10%), tax advice.
-You know: ATO invoicing requirements, BAS reporting cycles, Single Touch Payroll, sole trader deductions.
-Be accurate, compliant, practical. Use AUD. Recommend a registered tax agent when uncertain.""",
-        "capabilities": ["invoices", "expenses", "bas", "tax", "gst", "financial_reports"],
+        "name": "Estimator Twin",
+        "description": "Handles Measurements, parsing Construction Leads, and calculating Quotes/Payments.",
+        "system_prompt": """You are the Estimator Twin for a sole trader construction business in Australia.
+You handle: Measurements, parsing Construction Leads, and calculating Quotes/Payments.
+Be accurate, compliant, practical. Use AUD.""",
+        "capabilities": ["leads", "quotes", "payments", "measurements"],
     },
     TwinType.AUDITOR: {
-        "name": "Auditor Twin",
-        "description": "Reviews documents, verifies accuracy, ensures ATO/Fair Work compliance",
-        "system_prompt": """You are the Auditor Twin for a sole trader business in Australia.
-You handle: document review, ATO compliance checks, invoice verification, quality assurance.
-You know: ATO document requirements, Fair Work standards, contract review basics, common errors.
-Be thorough and constructive. Point out issues clearly with specific corrections.""",
-        "capabilities": ["document_review", "compliance_check", "quality_assurance", "verification"],
+        "name": "Site Manager Twin",
+        "description": "Handles Documents (OCR scanning of receipts/materials) and pushes Marketing posts.",
+        "system_prompt": """You are the Site Manager Twin for a sole trader construction business in Australia.
+You handle: Documents (OCR scanning of receipts/materials) and pushing Marketing posts from completed jobs.
+Be thorough and organized.""",
+        "capabilities": ["documents", "ocr", "marketing", "materials"],
     },
     TwinType.ADMIN: {
         "name": "Admin Twin",
@@ -104,14 +102,21 @@ class RAGContextBuilder:
             return False
 
     def retrieve(self, twin_type: TwinType, query: str, n: int = 5) -> list[str]:
-        """Retrieve relevant chunks for a query."""
+        """Retrieve relevant chunks for a query, then IF-filter before returning."""
         client = self._get_client()
         if not client:
             return []
         try:
             collection = client.get_or_create_collection(name=twin_type.value)
-            results = collection.query(query_texts=[query], n_results=n)
-            return results.get("documents", [[]])[0]
+            # Fetch 2× requested so IF has enough to filter from
+            results = collection.query(query_texts=[query], n_results=n * 2)
+            chunks = results.get("documents", [[]])[0]
+            if not chunks:
+                return []
+            from services.if_filter import IFFilter
+            clean, diag = IFFilter.filter_rag_chunks(chunks, query=query, top_n=n)
+            logger.debug(f"RAG IF: {diag}")
+            return clean
         except Exception as e:
             logger.warning(f"RAG retrieval failed: {e}")
             return []
@@ -158,7 +163,7 @@ def _call_llm(system_context: str, messages: list[dict]) -> str:
     try:
         import ollama as _ollama
         msgs = [{"role": "system", "content": system_context}] + messages
-        resp = _ollama.chat(model=os.getenv("OLLAMA_MODEL", "gemma4:4b"), messages=msgs)
+        resp = _ollama.chat(model=os.getenv("OLLAMA_MODEL", "all-minilm:l6-v2"), messages=msgs)
         return resp["message"]["content"]
     except Exception as e:
         logger.warning(f"Ollama failed in twin engine: {e}")

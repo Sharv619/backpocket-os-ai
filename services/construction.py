@@ -86,14 +86,24 @@ class ConstructionManager:
 
     # ===== QUOTES =====
 
-    def create_quote(self, lead_id: int, client_name: str, job_type: str,
-                    materials_cost: float, labor_cost: float,
+    def create_quote(self, lead_id: int, client_name: str = None, job_type: str = None,
+                    materials_cost: float = 0, labor_cost: float = 0,
                     markup_percent: float = 20) -> Dict:
-        """Generate a quote for a lead"""
-        total = (materials_cost + labor_cost) * (1 + markup_percent/100)
-
+        """Generate a quote for a lead. Inherits client_name/job_type from lead if not provided."""
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
+
+        # Auto-inherit contact data from lead record
+        if lead_id:
+            cursor.execute("SELECT client_name, job_type FROM leads WHERE id = ?", (lead_id,))
+            row = cursor.fetchone()
+            if row:
+                client_name = client_name or row[0]
+                job_type = job_type or row[1]
+
+        client_name = client_name or "Unknown Client"
+        job_type = job_type or "General"
+        total = (materials_cost + labor_cost) * (1 + markup_percent / 100)
 
         cursor.execute("""
             INSERT INTO quotes

@@ -13,8 +13,20 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ── Owner persona — configurable, not hardcoded ───────────────────────────────
+# Set BP_OWNER_NAME in .env to personalise all AI responses.
+# NSW Govt / investor demo: set to "the founder" or a role title.
+OWNER_NAME      = os.getenv("BP_OWNER_NAME", "the founder")
+BUSINESS_SECTOR = os.getenv("BP_BUSINESS_TYPE", "business")  # e.g. "construction", "NSW Govt"
+
 # ---- In-memory whitelist cache (refreshed every 5 minutes) ----
+_last_thought_log: str = ""
 _client_whitelist_cache = set()
+
+
+def get_last_thought_log() -> str:
+    """Return current value of agent thinking log. Use this — never import the var directly."""
+    return _last_thought_log
 _domain_whitelist_cache = set()
 _priority_list_cache = {}
 _cache_last_loaded = None
@@ -157,17 +169,26 @@ def get_ollama_response(prompt, json_mode=False):
     import re
 
     try:
-        model = os.getenv("OLLAMA_MODEL", "llama3.2:latest")
-        url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/api/generate")
+        model = os.getenv("OLLAMA_MODEL", "llama3.2:1b")  # Default to llama3.2:1b for local drafts
+        url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/api/chat")
 
-        payload = {"model": model, "prompt": prompt, "stream": False}
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False
+        }
         if json_mode:
             payload["format"] = "json"
 
         response = requests.post(url, json=payload, timeout=180)
         if response.status_code == 200:
-            raw_text = response.json().get("response", "")
-            # Strip any thinking tags if present
+            raw_text = response.json().get("message", {}).get("content", "")
+            # Capture thinking block before stripping
+            global _last_thought_log
+            thinking_match = re.search(r"<think>(.*?)</think>", raw_text, flags=re.DOTALL)
+            if thinking_match:
+                _last_thought_log = thinking_match.group(1).strip()
+                logger.info(f"[AGENT THINKING] {_last_thought_log}")
             clean_text = re.sub(
                 r"<think>.*?</think>", "", raw_text, flags=re.DOTALL
             ).strip()
@@ -224,8 +245,13 @@ def get_openrouter_response(
     model="openai/gpt-4o",
     sys_prompt="You are a helpful assistant.",
     json_mode=False,
+    user_id: str = "",
 ):
-    """Call AI: local server first (private), OpenRouter as fallback."""
+    """Call AI: local server first (private), OpenRouter as fallback.
+
+    If user_id is set and a BYOK openrouter key is stored, use that key
+    instead of the server-level key (data sovereignty).
+    """
     # 1. Try local AI first (private, on-prem)
     local_result = get_local_ai_response(
         prompt, sys_prompt=sys_prompt, json_mode=json_mode
@@ -234,8 +260,18 @@ def get_openrouter_response(
         logger.info("Using local AI server (private mode).")
         return local_result
 
-    # 2. Fallback to OpenRouter (cloud)
-    api_key = os.getenv("OPENROUTER_API_KEY")
+    # 2. BYOK key takes priority over server key
+    api_key = ""
+    if user_id:
+        try:
+            from services.byok import get_effective_key
+            api_key = get_effective_key(user_id, "openrouter")
+            if api_key:
+                logger.info(f"SOVEREIGN: using BYOK OpenRouter key for user {user_id[:8]}...")
+        except Exception:
+            pass
+    if not api_key:
+        api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
         logger.warning(
             "LOCAL_AI_URL not set and OPENROUTER_API_KEY missing — Coach unavailable."
@@ -277,7 +313,7 @@ def analyze_draft_with_coach(email_content, draft_response):
     Passes the draft to GPT-4o via OpenRouter to act as a Communication Coach.
     Returns confidence score, feedback, and a Power Version.
     """
-    sys_prompt = "You are Steve's Communication Coach (GPT-4o). Your job is to analyze her email drafts."
+    sys_prompt = f"You are {OWNER_NAME}'s Communication Coach (GPT-4o). Your job is to analyze email drafts."
     prompt = f"""
 Please analyze this drafted email reply to a client.
 
@@ -364,8 +400,8 @@ def pre_triage_rules(email_content):
             "needs_hitl_check": False,
         }
 
-    # 🏢 Suitedash Portal Updates (MUST CHECK BEFORE whitelist - emails come FROM cherry@yourwebaccountant.com)
-    if "cherry@yourwebaccountant.com" in sender_email:
+    # 🏢 Suitedash Portal Updates (MUST CHECK BEFORE whitelist - emails come FROM cherry@yourwebestimator.com)
+    if "cherry@yourwebestimator.com" in sender_email:
         portal_keywords = [
             "project",
             "portal",
@@ -441,9 +477,9 @@ def pre_triage_rules(email_content):
     tier_2_overrides = [
         "ato.gov.au",
         "asic.gov.au",
-        "auditorsinstitute.com",
-        "auditorsintitute.com",
-        "publicaccountants.org.au",
+        "site_managersinstitute.com",
+        "site_managersintitute.com",
+        "publicestimators.org.au",
         "ifpa.com.au",
         "ndiscommission.gov.au",
         "stripe.com",
@@ -494,8 +530,8 @@ def pre_triage_rules(email_content):
             "needs_hitl_check": False,
         }
 
-    # 🆕 Suitedash New Client Registrations (cherry@yourwebaccountant.com) - ONLY for registration emails
-    if "cherry@yourwebaccountant.com" in sender_email and (
+    # 🆕 Suitedash New Client Registrations (cherry@yourwebestimator.com) - ONLY for registration emails
+    if "cherry@yourwebestimator.com" in sender_email and (
         "registration" in subject.lower()
         or "new user" in subject.lower()
         or "welcome" in subject.lower()
@@ -509,7 +545,7 @@ def pre_triage_rules(email_content):
             "needs_hitl_check": False,
         }
 
-    # 🏢 Suitedash Portal Digests (Big Boss Accountants :: Planning - Daily Digest)
+    # 🏢 Suitedash Portal Digests (Big Boss Estimators :: Planning - Daily Digest)
     if (
         "planning - daily digest" in subject.lower()
         or "planning daily digest" in subject.lower()
@@ -545,11 +581,18 @@ def pre_triage_rules(email_content):
         }
 
     if tier_override:
+        reason_map = {
+            1: "Priority access client with history of high-value projects.",
+            2: "Critical regulatory or compliance communication from a trusted authority.",
+            3: "Established supplier or technology partner with active service contracts."
+        }
+        base_reason = reason_map.get(tier_override, "Recognized business contact.")
+        
         return {
             "tier": tier_override,
-            "reason": f"Whitelist Override: Known {'Email' if sender_email in whitelist_emails else 'Company Domain'} — Action Queue Guaranteed.",
-            "actionable_items": "Review and respond to this client email.",
-            "is_expense": False,
+            "reason": f"{base_reason} (Validated via Sovereign Whitelist)",
+            "actionable_items": "Review and respond to this recognized priority sender.",
+            "is_expense": tier_override == 3,
             "is_portal_update": False,
             "needs_hitl_check": False,
             "whitelist_override": True,
@@ -750,7 +793,7 @@ def _draft_response_openrouter(
     except Exception:
         pass
 
-    prompt = f"""You are a professional email assistant for an Australian tradie/accounting business.
+    prompt = f"""You are a professional email assistant for an Australian {BUSINESS_SECTOR}.
 Generate a brief, professional response to this email. Be friendly, direct, Australian-casual.
 
 Subject: {subject}
@@ -761,7 +804,7 @@ Message snippet: {snippet}
 {f"Historical context: {historical_context[:300]}" if historical_context else ""}
 {f"Client info: {client_info}" if client_info else ""}
 
-Generate a concise (2-4 sentences), professional response draft. Sign off as Steve."""
+Generate a concise (2-4 sentences), professional response draft. Sign off as {OWNER_NAME}."""
 
     try:
         response = requests.post(
@@ -811,23 +854,23 @@ def draft_response(email_content, tier, historical_context="", client_info=None)
         subject = email_content.get("subject", "")
         return f"Thanks for reaching out. I'll review this and get back to you shortly."
 
-    # Try OpenRouter first (better quota)
-    openrouter_draft = _draft_response_openrouter(
-        email_content, tier, historical_context, client_info
-    )
-    if openrouter_draft:
-        return openrouter_draft
-
-    # Fall back to Ollama (local, no quota)
+    # Try Ollama first (local, cheap) – note that this uses the generic prompt (subject + snippet).
     try:
         ollama_res = get_ollama_response(
             email_content.get("subject", "") + " " + email_content.get("snippet", "")
         )
         if ollama_res and ollama_res != "Error generating draft.":
-            logger.info("💾 Used Ollama for draft (local)")
+            logger.info("💾 Used Ollama for draft (local) before OpenRouter")
             return ollama_res
     except Exception as e:
         logger.warning(f"Ollama failed: {e}")
+
+    # Fallback to OpenRouter if Ollama didn't produce a draft.
+    openrouter_draft = _draft_response_openrouter(
+        email_content, tier, historical_context, client_info
+    )
+    if openrouter_draft:
+        return openrouter_draft
 
     # Fall back to Gemini (may be rate limited)
     try:
@@ -946,31 +989,32 @@ def draft_response(email_content, tier, historical_context="", client_info=None)
                 )
 
         prompt = f"""
-        You are Steve, founder of BackPocket. Rewrite this email AS IF YOU wrote it.
-        
+        You are {OWNER_NAME}, founder of BackPocket OS — an AI Business Operating System.
+        Rewrite this email AS IF YOU wrote it.
+
         MANDATORY SELF-CHECK RULES:
         - Only write facts from the email, don't hallucinate
         - If unsure about something, ask the user
         - Don't make up dates, prices, or details
         - Cite "the email says..." when referring to specific info
-        
+
         MANDATORY WRITING RULES (follow exactly):
         1. ALWAYS personalize with first name: Start with "Hi {sender_name}," if you know their name
         2. Start with actual message - NO "Subject:", NO intro like "Thanks for..."
-        3. Use FIRST PERSON: "I" or "We" - NEVER "Steve finds", NEVER "BackPocket Twin"  
+        3. Use FIRST PERSON: "I" or "We" - NEVER "{OWNER_NAME} finds", NEVER "BackPocket Twin"
         4. Maximum 4 sentences
-        5. END with EXACTLY: "Talk soon, Steve" or "Thanks, Steve" (pick one based on tone)
+        5. END with EXACTLY: "Talk soon, {OWNER_NAME}" or "Thanks, {OWNER_NAME}" (pick one based on tone)
         6. NO other signature, NO title, NO "AI", NO robot mention
-        
+
         {corrections_context}
         {sender_instructions}
-        
+
         ORIGINAL EMAIL:
         Subject: {email_content.get("subject")}
         From: {email_content.get("sender", "")}
         Body: {email_content.get("snippet")}
-        
-        Rewrite Steve's reply (use their first name if known):
+
+        Rewrite {OWNER_NAME}'s reply (use their first name if known):
         """
 
         response = client.models.generate_content(
@@ -1022,11 +1066,11 @@ def refine_draft(email_content, original_draft, feedback):
             pass
 
         prompt = f"""
-        Refine this email draft based on feedback. Fix it to sound like Steve wrote it.
-        
+        Refine this email draft based on feedback. Fix it to sound like {OWNER_NAME} wrote it.
+
         MANDATORY RULES:
-        - Use "I" or "We" - NEVER "BackPocket Twin" or "Steve finds"
-        - End with EXACTLY: "Talk soon, Steve" or "Thanks, Steve"
+        - Use "I" or "We" - NEVER "BackPocket Twin" or "{OWNER_NAME} finds"
+        - End with EXACTLY: "Talk soon, {OWNER_NAME}" or "Thanks, {OWNER_NAME}"
         - No extra signatures or titles
         - Personalize with recipient's first name if you know it
         
@@ -1106,22 +1150,25 @@ def batch_triage_emails(emails_list: list):
         You MUST return a JSON object where each key is the MESSAGE_ID provided above.
         The value for each key must be the triage data object.
         
+        "reason" field must be a short, professional explanation of WHY this tier was chosen (e.g., "Regular supplier invoice requiring payment" or "High-value lead from potential new client").
+        
         Example:
         {{
           "msg_id_abc": {{
             "tier": 1, 
-            "reason": "...", 
-            "actionable_items": "...",
+            "reason": "Direct inquiry from active client regarding new project.", 
+            "action_plan": "Draft response and schedule site visit",
+            "is_urgent": false,
             "is_expense": false,
             "is_portal_update": false
           }}
         }}
         """
 
-        # Use OpenRouter with gemini-2.5-flash-exp:free to avoid deprecation
+        # Use OpenRouter with gemini-2.5-flash
         or_response = get_openrouter_response(
             prompt,
-            model="google/gemini-2.5-flash-exp:free",
+            model="google/gemini-2.5-flash",
             sys_prompt="You are a batch email triage AI. Return only valid JSON.",
             json_mode=True,
         )
@@ -1158,7 +1205,7 @@ def batch_triage_emails(emails_list: list):
             
             TIERS (CHERRY'S HANDWRITTEN MAP):
             Tier 1: Active Clients.
-            Tier 2: Govt / Assoc (ATO, ASIC, IPA, IPFA, Auditors Institute).
+            Tier 2: Govt / Assoc (ATO, ASIC, IPA, IPFA, Site Managers Institute).
             Tier 3: Suppliers / General (Stripe, Hubspot, Google, Intuit, Xero).
             Tier 4: Portals / Updates (Daily Digest, Business 1300).
             Tier 5: Spam.

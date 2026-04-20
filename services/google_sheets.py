@@ -64,7 +64,7 @@ def ensure_sheets_exist():
         # Standard Schemas (Aligned with Steve's Diagram)
         # ---- Steve's System Map (v2.2) ----
         REQUIRED_SHEETS = {
-            "Clients_Master": ["First Name", "Last Name", "Primary Email", "Client Status", "Accountant/Auditor", "Mobile", "Birthdate", "Background Info", "Date Registered"],
+            "Clients_Master": ["First Name", "Last Name", "Primary Email", "Client Status", "Estimator/Site Manager", "Mobile", "Birthdate", "Background Info", "Date Registered"],
             "Leads_Capture": ["First Name", "Last Name", "Primary Email", "Status", "Subject", "Snippet", "Actionable Items", "Date", "Decision"],
             "Action_Log": ["Name", "From Email", "To Email", "Subject", "Body Snippet", "Actionable Items", "Date Lodged", "Status", "Tier"],
             "Portal_Updates": ["Name", "Email", "Subject", "Activity Summary", "Tier", "Status", "Date"],
@@ -228,7 +228,7 @@ def check_client_identity(email):
                     "last_name": full_row[1] if len(full_row) > 1 else '',
                     "email": full_row[2] if len(full_row) > 2 else '',
                     "status": full_row[3] if len(full_row) > 3 else '',
-                    "accountant_auditor": full_row[4] if len(full_row) > 4 else '',
+                    "estimator_site_manager": full_row[4] if len(full_row) > 4 else '',
                     "mobile": full_row[5] if len(full_row) > 5 else '',
                     "birthdate": full_row[6] if len(full_row) > 6 else '',
                     "background_info": full_row[7] if len(full_row) > 7 else 'No background info.',
@@ -274,13 +274,13 @@ def add_new_client_to_master(data):
         email = data.get('email_address', '')
         mobile = data.get('mobile', '')
         client_status = data.get('client_status', 'Active')
-        accountant_or_auditor = data.get('accountant_or_auditor', '')
+        estimator_or_site_manager = data.get('estimator_or_site_manager', '')
         birthdate = data.get('birthdate', '')
         background = data.get('background_info', '')
         
         # 1. 📂 CLIENTS MASTER (The House)
-        # [First, Last, Email, Status, Auditor, Mobile, Bday, BG, Date]
-        values_master = [[first, last, email, client_status, accountant_or_auditor, mobile, birthdate, background, now]]
+        # [First, Last, Email, Status, Site Manager, Mobile, Bday, BG, Date]
+        values_master = [[first, last, email, client_status, estimator_or_site_manager, mobile, birthdate, background, now]]
         service.spreadsheets().values().append(
             spreadsheetId=spreadsheet_id, range="Clients_Master!A:I",
             valueInputOption="USER_ENTERED", body={'values': values_master}

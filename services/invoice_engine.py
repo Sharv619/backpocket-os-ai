@@ -17,6 +17,8 @@ INVOICE_DIR.mkdir(parents=True, exist_ok=True)
 
 GST_RATE = 0.1  # 10% Australian GST
 
+from services.abn_validator import validate_abn, format_abn
+
 
 def _biz(key: str, fallback: str = "") -> str:
     return os.getenv(key, fallback)
@@ -58,8 +60,10 @@ def generate_invoice_pdf(invoice_data: dict, client_data: dict) -> str:
     pdf.set_text_color(30, 30, 30)
     pdf.cell(0, 7, _biz("BUSINESS_NAME", "Your Business"), new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 10)
-    if _biz("BUSINESS_ABN"):
-        pdf.cell(0, 5, f"ABN: {_biz('BUSINESS_ABN')}", new_x="LMARGIN", new_y="NEXT")
+    raw_abn = _biz("BUSINESS_ABN")
+    if raw_abn:
+        display_abn = format_abn(raw_abn) if validate_abn(raw_abn) else raw_abn
+        pdf.cell(0, 5, f"ABN: {display_abn}", new_x="LMARGIN", new_y="NEXT")
     if _biz("BUSINESS_EMAIL"):
         pdf.cell(0, 5, _biz("BUSINESS_EMAIL"), new_x="LMARGIN", new_y="NEXT")
     if _biz("BUSINESS_PHONE"):

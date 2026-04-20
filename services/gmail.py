@@ -23,6 +23,25 @@ load_dotenv()
 # If modifying these scopes, delete the file token.json.
 SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
 
+# Optional at-rest encryption for token files. Requires BP_ENCRYPTION_KEY env var.
+def _try_encrypt(text: str) -> str:
+    try:
+        from services.crypto import encrypt_str, is_encrypted
+        if not is_encrypted(text):
+            return encrypt_str(text)
+    except Exception:
+        pass
+    return text
+
+def _try_decrypt(text: str) -> str:
+    try:
+        from services.crypto import decrypt_str, is_encrypted
+        if is_encrypted(text):
+            return decrypt_str(text)
+    except Exception:
+        pass
+    return text
+
 logging.basicConfig(level=logging.INFO, encoding='utf-8')
 logger = logging.getLogger(__name__)
 
@@ -30,7 +49,9 @@ def get_gmail_service(token_file='token.json'):
     """Builds and returns the Gmail API service object for a specific token."""
     creds = None
     if os.path.exists(token_file):
-        creds = Credentials.from_authorized_user_file(token_file, SCOPES)
+        with open(token_file, 'r') as f:
+            raw = _try_decrypt(f.read().strip())
+        creds = Credentials.from_authorized_user_info(json.loads(raw), SCOPES)
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
@@ -55,7 +76,7 @@ def get_gmail_service(token_file='token.json'):
                 return None
 
         with open(token_file, 'w') as token:
-            token.write(creds.to_json())
+            token.write(_try_encrypt(creds.to_json()))
 
     return build('gmail', 'v1', credentials=creds)
 

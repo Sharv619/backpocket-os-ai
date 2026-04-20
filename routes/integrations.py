@@ -1,3 +1,5 @@
+import asyncio
+import functools
 import os
 import logging
 from fastapi import APIRouter
@@ -93,6 +95,38 @@ async def get_client_master():
         return {"status": "success", "clients": clients, "count": len(clients)}
     except Exception as e:
         logger.error(f"Client master error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@router.post("/api/style/scan-sent")
+async def scan_sent_style(data: dict = {}):
+    """Scan sent emails to learn writing style, update CHERRY_STYLE.txt."""
+    try:
+        from services.style_scanner import scan_sent_for_style
+
+        token_file = data.get("token_file", "token.json")
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            functools.partial(scan_sent_for_style, token_file=token_file),
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Style scan error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@router.get("/api/style/current")
+async def get_current_style():
+    """Return current CHERRY_STYLE.txt contents."""
+    try:
+        style_path = "docs/CHERRY_STYLE.txt"
+        if not os.path.exists(style_path):
+            return {"status": "not_found", "message": "Style file not found"}
+        with open(style_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        return {"status": "success", "content": content, "file": style_path}
+    except Exception as e:
         return {"status": "error", "message": str(e)}
 
 

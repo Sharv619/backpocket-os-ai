@@ -9,13 +9,13 @@ import '../models/payment.dart';
 
 class ApiClient {
   static ApiClient? _instance;
-  static String _baseUrl = 'http://192.168.1.147:8000';
+  static String _baseUrl = 'http://127.0.0.1:8000';
   static String _apiKey = '';
 
   static Future<ApiClient> getInstance() async {
     if (_instance != null) return _instance!;
     final prefs = await SharedPreferences.getInstance();
-    _baseUrl = prefs.getString('server_url') ?? 'http://192.168.1.147:8000';
+    _baseUrl = prefs.getString('server_url') ?? 'http://127.0.0.1:8000';
     _apiKey = prefs.getString('api_key') ?? '';
     _instance = ApiClient._();
     return _instance!;

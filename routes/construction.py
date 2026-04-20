@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Request, HTTPException
+import asyncio
+import functools
 import logging
 import os
 import requests
@@ -224,20 +226,15 @@ Body: {email_body}
 Return ONLY the JSON object, no other text or markdown."""
 
         api_key = os.getenv("OPENROUTER_API_KEY")
-        response = requests.post(
+        loop = asyncio.get_event_loop()
+        _req = functools.partial(
+            requests.post,
             "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "HTTP-Referer": "backpocket.ai",
-            },
-            json={
-                "model": "openrouter/auto",
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.3,
-                "max_tokens": 300,
-            },
-            timeout=10,
+            headers={"Authorization": f"Bearer {api_key}", "HTTP-Referer": "backpocket.ai"},
+            json={"model": "openrouter/auto", "messages": [{"role": "user", "content": prompt}], "temperature": 0.3, "max_tokens": 300},
+            timeout=15,
         )
+        response = await loop.run_in_executor(None, _req)
 
         if response.status_code == 200:
             result = response.json()
@@ -303,20 +300,15 @@ Constraints:
 Generate ONLY the message text, nothing else."""
 
         api_key = os.getenv("OPENROUTER_API_KEY")
-        response = requests.post(
+        loop = asyncio.get_event_loop()
+        _req = functools.partial(
+            requests.post,
             "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "HTTP-Referer": "backpocket.ai",
-            },
-            json={
-                "model": "openrouter/auto",
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.7,
-                "max_tokens": 150,
-            },
-            timeout=10,
+            headers={"Authorization": f"Bearer {api_key}", "HTTP-Referer": "backpocket.ai"},
+            json={"model": "openrouter/auto", "messages": [{"role": "user", "content": prompt}], "temperature": 0.7, "max_tokens": 150},
+            timeout=15,
         )
+        response = await loop.run_in_executor(None, _req)
 
         if response.status_code == 200:
             result = response.json()

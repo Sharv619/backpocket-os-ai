@@ -211,7 +211,7 @@ async def mobile_chat(request: MobileChatRequest):
         from google.genai import types as genai_types
 
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.0-flash-exp",
             contents=request.message,
             config=genai_types.GenerateContentConfig(system_instruction=system_prompt),
         )

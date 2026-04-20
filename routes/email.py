@@ -91,9 +91,9 @@ async def get_email_rules():
         tier_2_senders = [
             "ato.gov.au",
             "asic.gov.au",
-            "auditorsinstitute.com",
-            "auditorsintitute.com",
-            "publicaccountants.org.au",
+            "site_managersinstitute.com",
+            "site_managersintitute.com",
+            "publicestimators.org.au",
             "ifpa.com.au",
             "ndiscommission.gov.au",
             "stripe.com",

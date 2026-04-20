@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -23,11 +24,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Map<String, dynamic>? _currentStage;
   Map<String, dynamic>? _marketingInsights;
   bool _loading = true;
+  String _ownerName = '';
 
   @override
   void initState() {
     super.initState();
+    _loadOwnerName();
     _loadData();
+  }
+
+  Future<void> _loadOwnerName() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) setState(() => _ownerName = prefs.getString('owner_name') ?? '');
   }
 
   Future<void> _loadData() async {
@@ -36,39 +44,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
       'Content-Type': 'application/json',
       if (widget.apiKey.isNotEmpty) 'X-API-Key': widget.apiKey,
     };
+    const tFast = Duration(seconds: 10);
+    const tAI   = Duration(seconds: 30);
 
     try {
-      // Load status
-      final statusRes = await http.get(
-        Uri.parse('${widget.serverUrl}/api/status'),
-        headers: headers,
-      );
-      _status = jsonDecode(statusRes.body);
+      final results = await Future.wait([
+        http.get(Uri.parse('${widget.serverUrl}/api/status'), headers: headers).timeout(tFast),
+        http.get(Uri.parse('${widget.serverUrl}/api/workflow/stages'), headers: headers).timeout(tFast),
+        http.get(Uri.parse('${widget.serverUrl}/api/workflow/current'), headers: headers).timeout(tFast),
+        http.get(Uri.parse('${widget.serverUrl}/api/marketing/insights'), headers: headers).timeout(tAI),
+      ]);
 
-      // Load workflow stages
-      final stagesRes = await http.get(
-        Uri.parse('${widget.serverUrl}/api/workflow/stages'),
-        headers: headers,
-      );
-      _workflowStages = jsonDecode(stagesRes.body)['stages'] ?? [];
-
-      // Load current stage
-      final currentRes = await http.get(
-        Uri.parse('${widget.serverUrl}/api/workflow/current'),
-        headers: headers,
-      );
-      _currentStage = jsonDecode(currentRes.body);
-
-      // Load marketing insights
-      final insightsRes = await http.get(
-        Uri.parse('${widget.serverUrl}/api/marketing/insights'),
-        headers: headers,
-      );
-      _marketingInsights = jsonDecode(insightsRes.body);
+      _status           = jsonDecode(results[0].body) as Map<String, dynamic>?;
+      _workflowStages   = (jsonDecode(results[1].body) as Map)['stages'] ?? [];
+      _currentStage     = jsonDecode(results[2].body) as Map<String, dynamic>?;
+      _marketingInsights = jsonDecode(results[3].body) as Map<String, dynamic>?;
     } catch (e) {
       debugPrint('Dashboard load error: $e');
     }
-    setState(() => _loading = false);
+    if (mounted) setState(() => _loading = false);
   }
 
   String _getGreeting() {
@@ -80,7 +74,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final pendingCount = _status?['pending_count'] ?? 0;
+    final pendingCount  = _status?['pending_count'] ?? 0;
+    final privacyMode   = _status?['privacy_mode']  == true;
+    final dataResidency = _status?['data_residency'] as String? ?? 'local';
 
     return Container(
       decoration: const BoxDecoration(
@@ -102,7 +98,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 children: [
                   // Greeting
                   Text(
-                    '${_getGreeting()}, Steve.',
+                    _ownerName.isNotEmpty ? '${_getGreeting()}, $_ownerName.' : '${_getGreeting()}.',
                     style: const TextStyle(
                       fontSize: 28,
                       fontWeight: FontWeight.bold,
@@ -117,7 +113,51 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       fontSize: 14,
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 12),
+
+                  // Sovereign State badge
+                  Semantics(
+                    label: privacyMode
+                        ? 'Privacy mode active. Data stays ${dataResidency.toLowerCase()}.'
+                        : 'Privacy mode off. Data may leave device.',
+                    child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: privacyMode
+                          ? AppColors.green.withAlpha(26)
+                          : Colors.red.withAlpha(26),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: privacyMode
+                            ? AppColors.green.withAlpha(128)
+                            : Colors.red.withAlpha(128),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          privacyMode ? Icons.lock : Icons.lock_open,
+                          color: privacyMode ? AppColors.green : Colors.red,
+                          size: 14,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          privacyMode
+                              ? 'PRIVACY MODE · DATA STAYS ${dataResidency.toUpperCase()}'
+                              : 'PRIVACY MODE OFF',
+                          style: TextStyle(
+                            color: privacyMode ? AppColors.green : Colors.red,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  ), // end Semantics
+                  const SizedBox(height: 16),
 
                   // Stats Row
                   _buildStatsRow(),
@@ -156,36 +196,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildStatsRow() {
-    final pendingCount = _status?['pending_count'] ?? 0;
+    final pendingCount  = _status?['pending_count']    ?? 0;
+    final totalQuotes   = (_marketingInsights?['total_quotes']  ?? 0) as int;
+    final postCount     = (_marketingInsights?['post_count']    ?? 0) as int;
 
     return Row(
       children: [
         _StatPill(
           icon: Icons.email_outlined,
           label: 'Emails',
-          count: pendingCount,
+          count: pendingCount as int,
           color: AppColors.amber,
         ),
         const SizedBox(width: 8),
         _StatPill(
-          icon: Icons.description_outlined,
-          label: 'Docs',
-          count: 0,
+          icon: Icons.request_quote_outlined,
+          label: 'Quotes',
+          count: totalQuotes,
           color: AppColors.orange,
         ),
         const SizedBox(width: 8),
         _StatPill(
           icon: Icons.campaign_outlined,
           label: 'Posts',
-          count: 0,
+          count: postCount,
           color: AppColors.green,
         ),
         const SizedBox(width: 8),
         _StatPill(
-          icon: Icons.check_circle_outline,
-          label: 'Tasks',
-          count: 0,
-          color: Colors.purple,
+          icon: Icons.shield_outlined,
+          label: 'Sovereign',
+          count: _status?['privacy_mode'] == true ? 1 : 0,
+          color: _status?['privacy_mode'] == true ? AppColors.green : Colors.red,
         ),
       ],
     );
@@ -371,30 +413,33 @@ class _StatPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: AppColors.card,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 20),
-            const SizedBox(height: 4),
-            Text(
-              '$count',
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
+      child: Semantics(
+        label: '$label: $count',
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, color: color, size: 20, semanticLabel: label),
+              const SizedBox(height: 4),
+              Text(
+                '$count',
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
               ),
-            ),
-            Text(
-              label,
-              style: const TextStyle(color: AppColors.textMuted, fontSize: 10),
-            ),
-          ],
+              Text(
+                label,
+                style: const TextStyle(color: AppColors.textMuted, fontSize: 10),
+              ),
+            ],
+          ),
         ),
       ),
     );

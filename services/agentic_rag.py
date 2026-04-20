@@ -1,7 +1,7 @@
 """
 Agentic RAG System for BackPocket.
 
-Orchestrates multiple specialized agents (Accountant, Auditor, Admin Twins)
+Orchestrates multiple specialized agents (Estimator, Site Manager, Admin Twins)
 with retrieval-augmented generation (RAG) to handle complex email responses
 and autonomous business automation.
 
@@ -20,6 +20,12 @@ import json
 
 logger = logging.getLogger(__name__)
 
+PRIVACY_FOOTER = (
+    "\n\n[PRIVACY MODE: ACTIVE] All reasoning stays local. "
+    "Do not suggest sending data to external services without explicit user approval. "
+    "Flag any action that would transmit client data off-device."
+)
+
 
 class AgenticRAG:
     """Orchestrates twin agents with RAG context."""
@@ -37,7 +43,7 @@ class AgenticRAG:
             self.personalities = PERSONALITIES
             self.twin_types = TwinType
 
-            logger.info("✓ Agentic RAG initialized with 3 twins (Accountant, Auditor, Admin)")
+            logger.info("✓ Agentic RAG initialized with 3 twins (Estimator, Site Manager, Admin)")
         except Exception as e:
             logger.error(f"Failed to initialize Agentic RAG: {e}")
             self.personalities = {}
@@ -56,18 +62,36 @@ class AgenticRAG:
             subject = email_content.get("subject", "")
             snippet = email_content.get("snippet", "")
 
-            # Get learned patterns from corrections history
+            # Get learned patterns — fetch more, IF-filter to best signal
             learned_patterns = get_learned_patterns(
-                sender_email=sender, subject=subject, limit=5
+                sender_email=sender, subject=subject, limit=12
             ) or []
+            if len(learned_patterns) >= 6:
+                from services.if_filter import IFFilter
+                query_hint = f"{subject} {snippet}"
+                learned_patterns, _diag = IFFilter.filter_dicts(
+                    learned_patterns,
+                    text_key="feedback",
+                    query=query_hint,
+                    top_n=5,
+                )
+                logger.debug(f"Learned patterns IF: {_diag}")
 
             # Get sender history
             historical = get_historical_context(sender, max_results=3) or ""
 
-            # Get recent corrections for learning
-            recent_corrections = get_corrections(limit=3) or []
+            # Get recent corrections — IF-filter noise before injecting into prompt
+            recent_corrections = get_corrections(limit=8) or []
+            if len(recent_corrections) >= 6:
+                from services.if_filter import IFFilter
+                recent_corrections, _diag = IFFilter.filter_dicts(
+                    recent_corrections,
+                    text_key="correction_note",
+                    top_n=3,
+                )
+                logger.debug(f"Corrections IF: {_diag}")
 
-            return {
+            ctx = {
                 "learned_patterns": learned_patterns,
                 "historical_context": historical,
                 "recent_corrections": recent_corrections,
@@ -75,6 +99,8 @@ class AgenticRAG:
                 "subject": subject,
                 "tier": tier,
             }
+            from services.openviking_context import enrich_rag_context
+            return enrich_rag_context(ctx, f"{subject} {snippet}")
         except Exception as e:
             logger.error(f"Error getting context: {e}")
             import traceback
@@ -89,12 +115,17 @@ class AgenticRAG:
         """Delegate to the best twin based on email content."""
         subject = email_content.get("subject", "").lower()
         sender = email_content.get("sender", "").lower()
+        # Also check snippet/body so routing isn't defeated by vague subject lines
+        body_hint = (email_content.get("snippet", "") + " " + email_content.get("body", ""))[:500].lower()
+        full_text = subject + " " + body_hint
 
-        # Heuristic routing
-        if any(x in subject for x in ["invoice", "tax", "bas", "ato", "gst", "expense"]):
-            return "accountant"
-        elif any(x in subject for x in ["audit", "compliance", "review", "verify", "check"]):
-            return "auditor"
+        ACCOUNTANT_KEYWORDS = ["invoice", "tax", "bas", "ato", "gst", "expense", "abn", "acn", "receipt", "payment", "quote", "budget"]
+        AUDITOR_KEYWORDS    = ["audit", "compliance", "review", "verify", "check", "discrepancy", "dispute", "incorrect"]
+
+        if any(x in full_text for x in ACCOUNTANT_KEYWORDS):
+            return "estimator"
+        elif any(x in full_text for x in AUDITOR_KEYWORDS):
+            return "site_manager"
         else:
             return "admin"
 
@@ -105,12 +136,15 @@ class AgenticRAG:
         context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Generate response using agentic reasoning + RAG context."""
+        # DeepMind‑style reasoning logs
+        logger.info(f"[AGENTIC REASONING]: Generating response for email subject '{email_content.get('subject','')[:30]}' (tier={tier})")
 
         if not context:
             context = self.get_context_for_email(email_content, tier)
 
         # Select appropriate twin
         best_twin = self.select_best_twin(email_content, tier)
+        logger.info(f"[AGENTIC REASONING]: Selected twin '{best_twin}' for subject '{email_content.get('subject','')[:30]}'")
         logger.info(f"🤖 Using {best_twin} twin for: {email_content.get('subject', '')[:50]}")
 
         # Build agentic prompt with learned patterns
@@ -124,12 +158,13 @@ class AgenticRAG:
 
         # Get system prompt for the twin
         twin_prompts = {
-            "accountant": "You are the Accountant Twin. Handle: invoicing, expense tracking, BAS preparation, ATO compliance, GST (10%), tax advice.",
-            "auditor": "You are the Auditor Twin. Handle: document review, ATO compliance checks, invoice verification, quality assurance.",
+            "estimator": "You are the Estimator Twin. Handle: Measurements, parsing Construction Leads, and calculating Quotes/Payments.",
+            "site_manager": "You are the Site Manager Twin. Handle: Documents (OCR scanning of receipts/materials) and pushing Marketing posts from completed jobs.",
             "admin": "You are the Admin Twin. Handle: email triage, scheduling, client follow-ups, reminders, admin automation."
         }
 
         system_prompt = twin_prompts.get(best_twin, f"You are the {best_twin} assistant for BackPocket OS.")
+        system_prompt += PRIVACY_FOOTER
 
         # Construct agentic response
         response = {
@@ -145,6 +180,7 @@ class AgenticRAG:
             "timestamp": datetime.now().isoformat(),
         }
 
+        logger.info("[AGENTIC REASONING]: Response assembled, returning.")
         return response
 
     def ingest_document_to_rag(
@@ -224,7 +260,7 @@ Write an evocative, narrative blog post that feels like a premium storytelling e
                         "temperature": 0.85,
                         "max_tokens": 500,
                     },
-                    timeout=15,
+                    timeout=45,
                 )
                 response.raise_for_status()
                 content = response.json()["choices"][0]["message"]["content"]

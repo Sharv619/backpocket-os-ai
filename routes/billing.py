@@ -1,43 +1,61 @@
-# Generated routes/billing.py
-
-from fastapi import APIRouter, Request, status, Depends
+"""Billing routes — Stripe checkout, webhook, subscription status."""
+from fastapi import APIRouter, Request, HTTPException, status
 from pydantic import BaseModel
-from services.stripe import create_checkout_session, handle_webhook
+from services.stripe import (
+    create_checkout_session,
+    handle_webhook,
+    get_subscription_status,
+    init_billing_table,
+    PILOT_PRICE_AUD_CENTS,
+)
 
-router = APIRouter()
+router = APIRouter(prefix="/api/billing", tags=["billing"])
 
-# Checkou session request model
+try:
+    init_billing_table()
+except Exception:
+    pass
+
+
 class CheckoutRequest(BaseModel):
-    amount: float
-    success_url: str = 'https://yourdomain.com/success'
-    cancel_url: str = 'https://yourdomain.com/cancel'
+    customer_email: str | None = None
+    success_url: str = "https://backpocketsystem.io/success"
+    cancel_url: str = "https://backpocketsystem.io/pricing"
 
-# Create checkout session endpoint
-@router.post('/create-checkout-session')
-async def create_session(request: CheckoutRequest):
+
+@router.post("/checkout")
+async def create_session(body: CheckoutRequest):
+    """Create a $199 AUD Stripe Checkout session."""
     try:
-        session = await create_checkout_session(
-            amount=request.amount,  # Convert to cents in frontend
-            success_url=request.success_url,
-            cancel_url=request.cancel_url
+        return await create_checkout_session(
+            amount=PILOT_PRICE_AUD_CENTS,
+            success_url=body.success_url,
+            cancel_url=body.cancel_url,
+            customer_email=body.customer_email,
         )
-        return {
-            "url": session.url,
-            "id": session.id
-        }
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
-        return {
-            "error": str(e)
-        }, status.HTTP_500_INTERNAL_SERVER_ERROR
+        raise HTTPException(status_code=500, detail=str(e))
 
-# Webhook endpoint
-@router.post('/webhook', status_code=status.HTTP_200_OK)
-async def webhook(request: Request):
-    # Extract signature from headers
-    signature = request.headers.get('STRIPE_SIGNATURE')
-    event_data = await request.json()
+
+@router.post("/webhook")
+async def stripe_webhook(request: Request):
+    """Handle Stripe webhook events (payment success, failure)."""
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature", "")
     try:
-        result = await handle_webhook(event_data, signature)
-        return {"status": "success"}
+        result = await handle_webhook(payload, sig_header)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
-        return {"error": str(e)}, status.HTTP_400_BAD_REQUEST
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/status")
+async def billing_status(email: str | None = None):
+    """Return current billing/subscription status."""
+    return get_subscription_status(customer_email=email)

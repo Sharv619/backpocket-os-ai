@@ -94,6 +94,9 @@ class _VoiceRecordingOverlayState extends State<VoiceRecordingOverlay>
       case VoiceFlowState.error:
         label = widget.voiceService.errorMessage ?? 'Error';
         color = const Color(0xFFEF4444);
+      case VoiceFlowState.queuedOffline:
+        label = 'Saved Offline';
+        color = const Color(0xFF6B7280);
       case VoiceFlowState.idle:
         label = 'Tap mic or type a command';
         color = const Color(0xFFF97316);
@@ -206,7 +209,7 @@ class _VoiceRecordingOverlayState extends State<VoiceRecordingOverlay>
         style: const TextStyle(color: Colors.white),
         decoration: InputDecoration(
           hintText: 'Type a command...',
-          hintStyle: const TextStyle(color: Color(0x44FFFFFF)),
+          hintStyle: const TextStyle(color: Color(0xFF9E8E7E)),
           filled: true,
           fillColor: const Color(0xFF211708),
           border: OutlineInputBorder(
@@ -238,7 +241,7 @@ class _VoiceRecordingOverlayState extends State<VoiceRecordingOverlay>
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         IconButton(
-          icon: const Icon(Icons.keyboard_rounded, color: Color(0x99FFFFFF), size: 28),
+          icon: const Icon(Icons.keyboard_rounded, color: Color(0xFFD4C4B4), size: 28),
           onPressed: () => setState(() => _showTextInput = !_showTextInput),
           tooltip: 'Type instead',
         ),

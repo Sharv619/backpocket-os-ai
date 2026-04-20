@@ -10,6 +10,11 @@ import 'screens/dashboard_screen.dart';
 import 'screens/documents_screen.dart';
 import 'screens/marketing_screen.dart';
 import 'screens/instructions_screen.dart';
+import 'screens/sops_screen.dart';
+import 'screens/agentic_rag_screen.dart';
+import 'screens/blog_screen.dart';
+import 'screens/drive_screen.dart';
+import 'screens/client_crm_screen.dart';
 import 'screens/construction_screen.dart';
 import 'screens/settings_screen.dart';
 import 'services/voice_command_service.dart';
@@ -51,15 +56,6 @@ class TwinController extends ChangeNotifier {
 
 // ─── Colours (5am warehouse aesthetic) ───────────────────────────────────────
 const Color kBg = Color(0xFF0D0A07);
-const Color kSurface = Color(0xFF1A1208);
-const Color kCard = Color(0xFF211708);
-const Color kBorder = Color(0x22FFFFFF);
-const Color kAmber = Color(0xFFFBBF24);
-const Color kOrange = Color(0xFFF97316);
-const Color kRed = Color(0xFFEF4444);
-const Color kGreen = Color(0xFF22C55E);
-const Color kTextDim = Color(0x99FFFFFF);
-const Color kTextMuted = Color(0x44FFFFFF);
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 void main() {
@@ -107,19 +103,39 @@ class _BackPocketAppState extends State<BackPocketApp> {
         ),
         GoRoute(
           path: '/marketing',
-          builder: (context, state) => AppShell(initialTab: 4),
-        ),
-        GoRoute(
-          path: '/instructions',
           builder: (context, state) => AppShell(initialTab: 5),
         ),
         GoRoute(
-          path: '/construction',
+          path: '/agentic-rag',
           builder: (context, state) => AppShell(initialTab: 6),
         ),
         GoRoute(
-          path: '/settings',
+          path: '/blog',
           builder: (context, state) => AppShell(initialTab: 7),
+        ),
+        GoRoute(
+          path: '/drive',
+          builder: (context, state) => AppShell(initialTab: 8),
+        ),
+        GoRoute(
+          path: '/clients',
+          builder: (context, state) => AppShell(initialTab: 9),
+        ),
+        GoRoute(
+          path: '/instructions',
+          builder: (context, state) => AppShell(initialTab: 10),
+        ),
+        GoRoute(
+          path: '/sops',
+          builder: (context, state) => AppShell(initialTab: 4),
+        ),
+        GoRoute(
+          path: '/construction',
+          builder: (context, state) => AppShell(initialTab: 11),
+        ),
+        GoRoute(
+          path: '/settings',
+          builder: (context, state) => AppShell(initialTab: 12),
         ),
       ],
     );
@@ -153,26 +169,59 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   late int _tab;
-  String _serverUrl = 'http://192.168.1.147:8000';
+  String _serverUrl = 'http://127.0.0.1:8000';
   String _apiKey = '';
   bool _magnifierMode = false;
   VoiceCommandService? _voiceService;
   bool _showVoiceOverlay = false;
   VoiceCommandResponse? _voiceResponse;
 
+  // Pages cached here — rebuilt only when serverUrl/apiKey change.
+  // IndexedStack keeps all live so tab switches preserve scroll/state.
+  late List<Widget> _pages;
+
   @override
   void initState() {
     super.initState();
     _tab = widget.initialTab;
+    _pages = _buildPages();
     _loadPrefs();
   }
+
+  List<Widget> _buildPages() => [
+    DashboardScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    InboxScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    TwinChatScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    DocumentsScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    SopsScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    MarketingScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    AgenticRagScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    BlogScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    DriveScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    ClientCrmScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    InstructionsScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    ConstructionScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    SettingsScreen(
+      serverUrl: _serverUrl,
+      apiKey: _apiKey,
+      onSettingsChanged: (url, key) {
+        setState(() {
+          _serverUrl = url;
+          _apiKey = key;
+          _voiceService = VoiceCommandService(baseUrl: url, apiKey: key);
+          _pages = _buildPages(); // rebuild with new connection params
+        });
+      },
+    ),
+  ];
 
   Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _serverUrl = prefs.getString('server_url') ?? 'http://192.168.1.147:8000';
+      _serverUrl = prefs.getString('server_url') ?? 'http://127.0.0.1:8000';
       _apiKey = prefs.getString('api_key') ?? '';
       _voiceService = VoiceCommandService(baseUrl: _serverUrl, apiKey: _apiKey);
+      _pages = _buildPages();
     });
   }
 
@@ -184,10 +233,15 @@ class _AppShellState extends State<AppShell> {
       {'icon': Icons.inbox_outlined, 'label': 'Inbox', 'tab': 1},
       {'icon': Icons.psychology_outlined, 'label': 'Pip Chat', 'tab': 2},
       {'icon': Icons.description_outlined, 'label': 'Documents', 'tab': 3},
-      {'icon': Icons.campaign_outlined, 'label': 'Marketing', 'tab': 4},
-      {'icon': Icons.rule_outlined, 'label': 'Instructions', 'tab': 5},
-      {'icon': Icons.build_outlined, 'label': 'Construction', 'tab': 6},
-      {'icon': Icons.settings_outlined, 'label': 'Settings', 'tab': 7},
+      {'icon': Icons.list_alt_outlined, 'label': 'SOPs', 'tab': 4},
+      {'icon': Icons.campaign_outlined, 'label': 'Marketing', 'tab': 5},
+      {'icon': Icons.psychology_outlined, 'label': 'AI RAG', 'tab': 6},
+      {'icon': Icons.edit_note_outlined, 'label': 'Blog', 'tab': 7},
+      {'icon': Icons.folder_outlined, 'label': 'Drive', 'tab': 8},
+      {'icon': Icons.people_outline, 'label': 'Clients', 'tab': 9},
+      {'icon': Icons.rule_outlined, 'label': 'Instructions', 'tab': 10},
+      {'icon': Icons.build_outlined, 'label': 'Construction', 'tab': 11},
+      {'icon': Icons.settings_outlined, 'label': 'Settings', 'tab': 12},
     ];
     final chatHistory = twinController.messages
         .where((m) => m['role'] == 'user')
@@ -236,7 +290,7 @@ class _AppShellState extends State<AppShell> {
                 ],
               ),
             ),
-            const Divider(color: kBorder, height: 1),
+            const Divider(color: AppColors.border, height: 1),
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.symmetric(vertical: 8),
@@ -258,7 +312,7 @@ class _AppShellState extends State<AppShell> {
                     child: Text(
                       'CHAT HISTORY',
                       style: TextStyle(
-                        color: kTextMuted,
+                        color: AppColors.textMuted,
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 1,
@@ -273,7 +327,7 @@ class _AppShellState extends State<AppShell> {
                       ),
                       child: Text(
                         'No recent chats',
-                        style: TextStyle(color: kTextMuted, fontSize: 12),
+                        style: TextStyle(color: AppColors.textMuted, fontSize: 12),
                       ),
                     )
                   else
@@ -290,26 +344,32 @@ class _AppShellState extends State<AppShell> {
                 ],
               ),
             ),
-            const Divider(color: kBorder, height: 1),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: _SidebarItem(
-                icon: Icons.settings_outlined,
-                label: 'Settings',
-                isSelected: false,
-                onTap: () {
-                  setState(() => _tab = 6);
-                  Navigator.pop(context);
-                },
-              ),
-            ),
+            const Divider(color: AppColors.border, height: 1),
+            // Removed duplicate Settings entry – already included in navItems list above.
+            // The Settings item is now only present once in the drawer navigation.
+            // This ensures a single source of truth for its routing and selection state.
           ],
         ),
       ),
     );
   }
 
-  static const _screenNames = ['dashboard', 'inbox', 'chat', 'documents', 'marketing', 'instructions', 'construction', 'settings'];
+  static const _screenNames = [
+    'dashboard', 'inbox', 'chat', 'documents', 'sops',
+    'marketing', 'agentic_rag', 'blog', 'drive', 'client_crm',
+    'instructions', 'construction', 'settings'
+  ];
+
+  // Bottom nav: Home(0), Inbox(1), Chat(2), Jobs(11=Construction), Settings(12)
+  static const _bottomNavToTab = [0, 1, 2, 11, 12];
+
+  int get _bottomNavIndex {
+    final idx = _bottomNavToTab.indexOf(_tab);
+    return idx >= 0 ? idx : 0;
+  }
+
+  void _onBottomNavTap(int navIndex) =>
+      setState(() => _tab = _bottomNavToTab[navIndex]);
 
   void _onVoiceFabTap() {
     _voiceService?.setScreenContext(_screenNames[_tab], tabIndex: _tab);
@@ -358,34 +418,19 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    final pages = [
-      DashboardScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-      InboxScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-      TwinChatScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-      DocumentsScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-      MarketingScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-      InstructionsScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-      ConstructionScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-    SettingsScreen(
-        serverUrl: _serverUrl,
-        apiKey: _apiKey,
-        onSettingsChanged: (url, key) {
-          setState(() {
-            _serverUrl = url;
-            _apiKey = key;
-          });
-        },
-      ),
-    ];
-
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: kSurface,
+        backgroundColor: AppColors.surface,
         elevation: 0,
         leading: Builder(
-          builder: (context) => IconButton(
-            icon: const Icon(Icons.menu, color: kAmber),
-            onPressed: () => Scaffold.of(context).openDrawer(),
+          builder: (context) => Semantics(
+            label: 'Open navigation menu',
+            button: true,
+            child: IconButton(
+              icon: const Icon(Icons.menu, color: AppColors.amber),
+              onPressed: () => Scaffold.of(context).openDrawer(),
+              tooltip: 'Open menu',
+            ),
           ),
         ),
         title: const Text(
@@ -393,26 +438,35 @@ class _AppShellState extends State<AppShell> {
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         actions: [
-          IconButton(
-            icon: Icon(
-              _magnifierMode ? Icons.zoom_in : Icons.zoom_in_outlined,
-              color: _magnifierMode ? AppColors.amber : kTextDim,
+          Semantics(
+            label: _magnifierMode ? 'Disable magnifier mode' : 'Enable magnifier mode',
+            button: true,
+            child: IconButton(
+              icon: Icon(
+                _magnifierMode ? Icons.zoom_in : Icons.zoom_in_outlined,
+                color: _magnifierMode ? AppColors.amber : AppColors.textDim,
+              ),
+              onPressed: () => setState(() => _magnifierMode = !_magnifierMode),
+              tooltip: 'Magnifier Mode',
             ),
-            onPressed: () => setState(() => _magnifierMode = !_magnifierMode),
-            tooltip: 'Magnifier Mode',
           ),
-          IconButton(
-            icon: const Icon(Icons.dashboard_outlined, color: kTextDim),
-            onPressed: () => setState(() => _tab = 0),
+          Semantics(
+            label: 'Go to dashboard',
+            button: true,
+            child: IconButton(
+              icon: const Icon(Icons.dashboard_outlined, color: AppColors.textDim),
+              onPressed: () => setState(() => _tab = 0),
+              tooltip: 'Dashboard',
+            ),
           ),
         ],
       ),
       drawer: _buildSidebar(),
       body: Stack(
         children: [
-          Transform.scale(
-            scale: _magnifierMode ? 1.1 : 1.0,
-            child: pages[_tab],
+          IndexedStack(
+            index: _tab,
+            children: _pages,
           ),
           if (_voiceResponse != null && (_voiceResponse!.needsConfirmation || _voiceResponse!.needsMoreInput))
             Positioned(
@@ -437,6 +491,24 @@ class _AppShellState extends State<AppShell> {
             ),
         ],
       ),
+      bottomNavigationBar: BottomNavigationBar(
+        // Maps bottom-nav index → tab index: Home=0, Inbox=1, Chat=2, Jobs=6, Settings=7
+        currentIndex: _bottomNavIndex,
+        onTap: _onBottomNavTap,
+        backgroundColor: AppColors.surface,
+        selectedItemColor: AppColors.amber,
+        unselectedItemColor: AppColors.textMuted,
+        type: BottomNavigationBarType.fixed,
+        selectedFontSize: 11,
+        unselectedFontSize: 11,
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.dashboard_outlined), label: 'Home'),
+          BottomNavigationBarItem(icon: Icon(Icons.inbox_outlined), label: 'Inbox'),
+          BottomNavigationBarItem(icon: Icon(Icons.psychology_outlined), label: 'Chat'),
+          BottomNavigationBarItem(icon: Icon(Icons.build_outlined), label: 'Jobs'),
+          BottomNavigationBarItem(icon: Icon(Icons.settings_outlined), label: 'Settings'),
+        ],
+      ),
       floatingActionButton: _voiceService != null
           ? VoiceFab(
               voiceService: _voiceService!,
@@ -444,6 +516,7 @@ class _AppShellState extends State<AppShell> {
               onLongPress: () => setState(() => _showVoiceOverlay = true),
             )
           : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 }
@@ -464,25 +537,30 @@ class _SidebarItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(
-        icon,
-        color: isSelected ? AppColors.amber : kTextMuted,
-        size: 22,
-      ),
-      title: Text(
-        label,
-        style: TextStyle(
-          color: isSelected ? AppColors.cream : kTextDim,
-          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-          fontSize: 14,
-        ),
-      ),
+    return Semantics(
+      label: '$label${isSelected ? ', currently selected' : ''}',
+      button: true,
       selected: isSelected,
-      selectedTileColor: AppColors.amber.withAlpha(26),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      onTap: onTap,
+      child: ListTile(
+        leading: Icon(
+          icon,
+          color: isSelected ? AppColors.amber : AppColors.textMuted,
+          size: 22,
+        ),
+        title: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? AppColors.cream : AppColors.textDim,
+            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+            fontSize: 14,
+          ),
+        ),
+        selected: isSelected,
+        selectedTileColor: AppColors.amber.withAlpha(26),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+        onTap: onTap,
+      ),
     );
   }
 }
@@ -502,16 +580,15 @@ class _ChatHistoryItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      dense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       leading: const Icon(
         Icons.chat_bubble_outline,
-        color: kTextMuted,
+        color: AppColors.textMuted,
         size: 16,
       ),
       title: Text(
         text.length > 30 ? '${text.substring(0, 30)}...' : text,
-        style: const TextStyle(color: kTextMuted, fontSize: 12),
+        style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
