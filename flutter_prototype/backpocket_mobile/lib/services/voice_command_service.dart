@@ -138,6 +138,42 @@ class VoiceCommandService extends ChangeNotifier {
     return sendTranscript(transcript);
   }
 
+  /// Web-safe: upload raw bytes (from blob URL) instead of a file path.
+  Future<VoiceCommandResponse?> processAudioBytes(
+    Uint8List bytes,
+    String filename,
+  ) async {
+    _state = VoiceFlowState.transcribing;
+    notifyListeners();
+
+    try {
+      final uri = Uri.parse('$baseUrl/api/voice/transcribe');
+      final request = http.MultipartRequest('POST', uri)
+        ..files.add(http.MultipartFile.fromBytes('audio', bytes, filename: filename));
+      if (apiKey.isNotEmpty) request.headers['X-API-Key'] = apiKey;
+
+      final streamed = await request.send();
+      final body = await streamed.stream.bytesToString();
+
+      if (streamed.statusCode == 200) {
+        final data = jsonDecode(body);
+        final transcript = data['transcript'] as String?;
+        if (transcript != null && transcript.isNotEmpty) {
+          return sendTranscript(transcript);
+        }
+        _errorMessage = data['error'] ?? 'Empty transcription';
+      } else {
+        _errorMessage = 'Transcription failed: ${streamed.statusCode}';
+      }
+    } catch (e) {
+      _errorMessage = 'Transcription error: $e';
+    }
+
+    _state = VoiceFlowState.error;
+    notifyListeners();
+    return null;
+  }
+
   Future<VoiceCommandResponse?> sendConfirmation(String response) async {
     if (_sessionId == null) return null;
 

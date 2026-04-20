@@ -232,6 +232,11 @@ app.include_router(byok_router)
 app.include_router(ux_audit_router)
 
 
+@app.get("/api/health")
+async def health():
+    return {"status": "ok"}
+
+
 @app.on_event("startup")
 async def startup_event():
     pass

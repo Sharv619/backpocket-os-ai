@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:math';
-import 'dart:io';
+// dart:io is stubbed on Flutter web — safe to import, guarded at runtime via kIsWeb
+import 'dart:io'; // ignore: dart_io_import
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
@@ -111,10 +113,14 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
       return;
     }
 
-    final dir = await getTemporaryDirectory();
-    final path = '${dir.path}/voice_cmd_${DateTime.now().millisecondsSinceEpoch}.m4a';
-
-    await _recorder.start(const RecordConfig(encoder: AudioEncoder.aacLc), path: path);
+    if (kIsWeb) {
+      // Web: path is ignored by the web impl; blob URL returned from stop()
+      await _recorder.start(const RecordConfig(encoder: AudioEncoder.wav), path: '');
+    } else {
+      final dir = await getTemporaryDirectory();
+      final path = '${dir.path}/voice_cmd_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      await _recorder.start(const RecordConfig(encoder: AudioEncoder.aacLc), path: path);
+    }
     if (mounted) setState(() => _isRecording = true);
   }
 
@@ -122,21 +128,35 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
     final path = await _recorder.stop();
     if (mounted) setState(() { _isRecording = false; _isProcessing = true; });
 
-    if (path == null) {
-      if (mounted) setState(() => _isProcessing = false);
-      return;
+    VoiceCommandResponse? response;
+
+    if (kIsWeb) {
+      // record v5 web: stop() returns a blob URL — fetch bytes then upload
+      if (path != null && path.isNotEmpty) {
+        try {
+          final blobRes = await http.get(Uri.parse(path));
+          response = await _voiceService.processAudioBytes(blobRes.bodyBytes, 'recording.wav');
+        } catch (_) {}
+      }
+    } else {
+      if (path == null) {
+        if (mounted) setState(() => _isProcessing = false);
+        return;
+      }
+      response = await _voiceService.processAudio(path);
+      try { File(path).deleteSync(); } catch (_) {}
     }
-
-    final response = await _voiceService.processAudio(path);
-
-    // Clean up temp file
-    try { File(path).deleteSync(); } catch (_) {}
 
     if (mounted) {
       setState(() {
         _isProcessing = false;
         if (response != null) {
           _response = response;
+          final transcript = _voiceService.lastTranscript;
+          if (transcript != null && transcript.isNotEmpty) {
+            _lastTranscript = transcript;
+            _conversation.add(_ConversationEntry(text: transcript, isUser: true));
+          }
           if (response.speechResponse.isNotEmpty) {
             _conversation.add(_ConversationEntry(
               text: response.speechResponse,

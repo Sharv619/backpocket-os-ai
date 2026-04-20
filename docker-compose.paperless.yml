@@ -1,0 +1,68 @@
+version: "3.8"
+
+# Paperless-ngx document management stack
+# Run alongside the main BackPocket FastAPI server:
+#   docker-compose -f docker-compose.paperless.yml up -d
+#
+# First-run setup:
+#   docker-compose -f docker-compose.paperless.yml run --rm webserver createsuperuser
+# Then get an API token:
+#   docker-compose -f docker-compose.paperless.yml exec webserver python manage.py drf_create_token admin
+# Copy that token → PAPERLESS_TOKEN in .env
+
+services:
+  broker:
+    image: docker.io/library/redis:7
+    restart: unless-stopped
+    volumes:
+      - paperless_redis:/data
+
+  paperless_db:
+    image: docker.io/library/postgres:16-alpine
+    restart: unless-stopped
+    volumes:
+      - paperless_pg:/var/lib/postgresql/data/
+    environment:
+      POSTGRES_DB: paperless
+      POSTGRES_USER: paperless
+      POSTGRES_PASSWORD: paperless
+
+  webserver:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    restart: unless-stopped
+    depends_on:
+      - paperless_db
+      - broker
+    ports:
+      - "8010:8000"
+    volumes:
+      - paperless_data:/usr/src/paperless/data
+      - paperless_media:/usr/src/paperless/media
+      - ./paperless_export:/usr/src/paperless/export
+      - ./paperless_consume:/usr/src/paperless/consume
+    environment:
+      PAPERLESS_REDIS: redis://broker:6379
+      PAPERLESS_DBHOST: paperless_db
+      PAPERLESS_DBNAME: paperless
+      PAPERLESS_DBUSER: paperless
+      PAPERLESS_DBPASS: paperless
+      PAPERLESS_SECRET_KEY: ${PAPERLESS_SECRET_KEY:-backpocket-paperless-secret-change-in-prod}
+      PAPERLESS_OCR_LANGUAGE: eng
+      PAPERLESS_OCR_MODE: skip_noarchive
+      PAPERLESS_CONSUMER_POLLING: 60
+      PAPERLESS_FILENAME_FORMAT: "{document_type}/{correspondent}/{created}-{title}"
+      # Auto-tag tradie document types
+      PAPERLESS_DATE_ORDER: DMY
+      PAPERLESS_TIME_ZONE: Australia/Sydney
+      PAPERLESS_ALLOWED_HOSTS: "*"
+      PAPERLESS_CORS_ALLOWED_HOSTS: "http://localhost:8000,http://127.0.0.1:8000"
+      # Admin created on first run via createsuperuser or PAPERLESS_ADMIN_USER
+      PAPERLESS_ADMIN_USER: ${PAPERLESS_ADMIN_USER:-admin}
+      PAPERLESS_ADMIN_PASSWORD: ${PAPERLESS_ADMIN_PASSWORD:-backpocket123}
+      PAPERLESS_ADMIN_MAIL: ${PAPERLESS_ADMIN_MAIL:-admin@backpocket.local}
+
+volumes:
+  paperless_redis:
+  paperless_pg:
+  paperless_data:
+  paperless_media:
