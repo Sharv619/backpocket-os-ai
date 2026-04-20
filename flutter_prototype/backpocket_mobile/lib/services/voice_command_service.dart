@@ -3,13 +3,15 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/voice_command_response.dart';
 import 'tts_service.dart';
+import 'offline_queue_service.dart';
 
-enum VoiceFlowState { idle, recording, transcribing, processing, speaking, error }
+enum VoiceFlowState { idle, recording, transcribing, processing, speaking, error, queuedOffline }
 
 class VoiceCommandService extends ChangeNotifier {
   final String baseUrl;
   final String apiKey;
   late final TtsService _tts;
+  final OfflineQueueService _queueService = OfflineQueueService();
 
   VoiceFlowState _state = VoiceFlowState.idle;
   String? _sessionId;
@@ -29,7 +31,7 @@ class VoiceCommandService extends ChangeNotifier {
   String? get lastTranscript => _lastTranscript;
   String? get errorMessage => _errorMessage;
   String? get sessionId => _sessionId;
-  bool get isActive => _state != VoiceFlowState.idle;
+  bool get isActive => _state != VoiceFlowState.idle && _state != VoiceFlowState.queuedOffline;
   bool get isCollecting => _lastResponse?.sessionState?.isCollecting ?? false;
   bool get isConfirming => _lastResponse?.sessionState?.isConfirming ?? false;
   String? get followUpPrompt => _lastResponse?.followUpPrompt;
@@ -52,6 +54,22 @@ class VoiceCommandService extends ChangeNotifier {
     _lastTranscript = transcript;
     _errorMessage = null;
     notifyListeners();
+
+    if (!await _queueService.hasInternet()) {
+      await _queueService.queueVoiceCommand(
+        transcript: transcript,
+        screenContext: _currentScreen,
+        sessionId: _sessionId,
+        metadata: {
+          'selected_item_id': _selectedItemId,
+          'tab_index': _tabIndex,
+        },
+      );
+      _errorMessage = 'No reception. Pip saved your command and will process it when online.';
+      _state = VoiceFlowState.queuedOffline;
+      notifyListeners();
+      return null;
+    }
 
     try {
       final resp = await http.post(
@@ -101,6 +119,23 @@ class VoiceCommandService extends ChangeNotifier {
   Future<String?> transcribeAudio(String audioPath) async {
     _state = VoiceFlowState.transcribing;
     notifyListeners();
+
+    if (!await _queueService.hasInternet()) {
+      await _queueService.queueVoiceCommand(
+        transcript: "Pending transcription...",
+        screenContext: _currentScreen,
+        sessionId: _sessionId,
+        metadata: {
+          'selected_item_id': _selectedItemId,
+          'tab_index': _tabIndex,
+        },
+        audioPath: audioPath,
+      );
+      _errorMessage = 'No reception. Pip saved your recording and will transcribe it when online.';
+      _state = VoiceFlowState.queuedOffline;
+      notifyListeners();
+      return null;
+    }
 
     try {
       final uri = Uri.parse('$baseUrl/api/voice/transcribe');

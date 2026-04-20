@@ -64,6 +64,8 @@ class _VoiceFabState extends State<VoiceFab> with SingleTickerProviderStateMixin
         return const Color(0xFF22C55E);
       case VoiceFlowState.error:
         return const Color(0xFFEF4444);
+      case VoiceFlowState.queuedOffline:
+        return const Color(0xFF6B7280); // Gray for offline
       case VoiceFlowState.idle:
         return const Color(0xFFF97316);
     }
@@ -80,6 +82,8 @@ class _VoiceFabState extends State<VoiceFab> with SingleTickerProviderStateMixin
         return Icons.volume_up_rounded;
       case VoiceFlowState.error:
         return Icons.error_outline_rounded;
+      case VoiceFlowState.queuedOffline:
+        return Icons.cloud_off_rounded;
       case VoiceFlowState.idle:
         return Icons.mic_rounded;
     }
@@ -97,6 +101,8 @@ class _VoiceFabState extends State<VoiceFab> with SingleTickerProviderStateMixin
         return 'Speaking...';
       case VoiceFlowState.error:
         return 'Error';
+      case VoiceFlowState.queuedOffline:
+        return 'Queued (Offline)';
       case VoiceFlowState.idle:
         return null;
     }

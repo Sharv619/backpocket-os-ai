@@ -94,6 +94,9 @@ class _VoiceRecordingOverlayState extends State<VoiceRecordingOverlay>
       case VoiceFlowState.error:
         label = widget.voiceService.errorMessage ?? 'Error';
         color = const Color(0xFFEF4444);
+      case VoiceFlowState.queuedOffline:
+        label = 'Saved Offline';
+        color = const Color(0xFF6B7280);
       case VoiceFlowState.idle:
         label = 'Tap mic or type a command';
         color = const Color(0xFFF97316);

@@ -401,6 +401,24 @@ class ApiService {
     return await _handleResponse(res);
   }
 
+  // ── Permanent Memory ──────────────────────────────────────────────────────
+  Future<Map<String, dynamic>> promoteInstruction({
+    required String text,
+    required String category,
+    required String refId,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/instructions/promote'),
+      headers: _headers,
+      body: jsonEncode({
+        'instruction_text': text,
+        'category': category,
+        'ref_id': refId,
+      }),
+    );
+    return await _handleResponse(res);
+  }
+
   // ── Voice Commands ────────────────────────────────────────────────────────
   Future<Map<String, dynamic>> sendVoiceCommand({
     required String transcript,
