@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter
 import logging
 import os
 import asyncio
 from datetime import datetime
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional
 import services.database as db
 from services.gmail import send_email
 
@@ -13,6 +13,33 @@ logger = logging.getLogger(__name__)
 
 _TIER_LABELS = {"1": "URGENT", "2": "HIGH", "3": "MEDIUM", "4": "LOW", "5": "SPAM"}
 
+# ── Path-traversal guard ──────────────────────────────────────────────────────
+# Only these filenames may be used as OAuth token sources. Any value coming
+# from the database (delivered_to field) is validated here before touching
+# the filesystem.
+_ALLOWED_TOKEN_FILES = frozenset({
+    "token.json",
+    "token_imap_admin.json",
+    "token_ywa.json",
+})
+
+
+def _sanitize_token_file(name: str) -> str | None:
+    """Return a safe token filename or None if the name is not whitelisted.
+
+    Strips directory components (blocks ../../../etc/passwd style attacks)
+    and enforces a strict allowlist plus the token_imap_*.json convention.
+    """
+    base = os.path.basename(name)
+    if base in _ALLOWED_TOKEN_FILES:
+        return base
+    # Allow dynamically-created IMAP account tokens following this pattern
+    if base.startswith("token_imap_") and base.endswith(".json") and "/" not in base and "\\" not in base:
+        return base
+    return None
+
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("/pending")
 async def mobile_pending():
@@ -72,16 +99,13 @@ async def mobile_approve(request: MobileApproveRequest):
     tier = info.get("tier", "3")
 
     if os.getenv("DEMO_MODE", "0") == "1":
-        db.log_action(
-            ref_id, "approved_demo", tier, request.note or "mobile approve (demo)"
-        )
+        db.log_action(ref_id, "approved_demo", tier, request.note or "mobile approve (demo)")
         return {
             "status": "demo",
             "ref_id": ref_id,
             "message": f"DEMO MODE: would have sent draft to {sender}",
         }
 
-    # Real mode: mirror the desktop /api/approve logic exactly
     email_addr = sender.strip()
     draft = info.get("draft_body", "")
     delivered_to = info.get("delivered_to", "")
@@ -97,52 +121,28 @@ async def mobile_approve(request: MobileApproveRequest):
     elif clean_subject.lower().startswith("re:"):
         clean_subject = clean_subject[4:].strip()
 
-    # AUTO-MATCH TOKEN based on delivered_to account
-    import os
-
-# Whitelist of safe token filenames. Add any new token files here.
-ALLOWED_TOKEN_FILES = {
-    "token.json",
-    "token_imap_admin.json",
-    "token_ywa.json",
-}
-
-def _sanitize_token_file(name: str) -> str | None:
-    """Return a safe token filename or None if the name is not allowed.
-    Strips any directory components and enforces a known whitelist or the
-    "token_imap_*.json" pattern used for IMAP accounts.
-    """
-    # Remove any path traversal components
-    base = os.path.basename(name)
-    if base in ALLOWED_TOKEN_FILES:
-        return base
-    # Allow any token file that follows the "token_imap_*.json" convention
-    if base.startswith("token_imap_") and base.endswith(".json"):
-        return base
-    return None
-
-if "|" in delivered_to:
-    actual_alias, token_source = delivered_to.split("|", 1)
-elif delivered_to:
-    actual_alias = delivered_to
-    if "yourwebaccountant" in delivered_to.lower():
-        token_source = "token_ywa.json"
-    elif "bigbossaccountants" in delivered_to.lower():
-        token_source = "token_imap_admin.json"
-    elif "bigbossgroup" in delivered_to.lower():
-        token_source = "token.json"
+    # Resolve token file from delivered_to field
+    if "|" in delivered_to:
+        actual_alias, token_source = delivered_to.split("|", 1)
+    elif delivered_to:
+        actual_alias = delivered_to
+        if "yourwebaccountant" in delivered_to.lower():
+            token_source = "token_ywa.json"
+        elif "bigbossaccountants" in delivered_to.lower():
+            token_source = "token_imap_admin.json"
+        elif "bigbossgroup" in delivered_to.lower():
+            token_source = "token.json"
+        else:
+            token_source = "token.json"
     else:
-        token_source = "token.json"
-else:
-    actual_alias, token_source = None, "token.json"
+        actual_alias, token_source = None, "token.json"
 
-# Validate token_source against whitelist
-safe_token = _sanitize_token_file(token_source)
-if not safe_token:
-    logger.error(f"mobile_approve: unsafe token source '{token_source}' supplied")
-    return {"status": "error", "message": "Invalid token source"}
-# Use sanitized token filename for the rest of the flow
-token_source = safe_token
+    # SECURITY: validate token filename — blocks path traversal attacks
+    safe_token = _sanitize_token_file(token_source)
+    if not safe_token:
+        logger.error(f"mobile_approve: rejected unsafe token source '{token_source}' for ref {ref_id}")
+        return {"status": "error", "message": "Invalid token source"}
+    token_source = safe_token
 
     try:
         if token_source.startswith("token_imap_"):
@@ -168,9 +168,7 @@ token_source = safe_token
             )
 
         if result.get("status") == "success":
-            db.log_action(
-                ref_id, "approved_mobile", tier, request.note or "mobile approve"
-            )
+            db.log_action(ref_id, "approved_mobile", tier, request.note or "mobile approve")
             db.save_correction(
                 ref_id,
                 "approve",
@@ -200,7 +198,6 @@ token_source = safe_token
 
             db.delete_pending_approval(ref_id)
 
-            # WhatsApp notification
             try:
                 from services.whapi import send_whatsapp_message
 
@@ -252,9 +249,8 @@ async def mobile_chat(request: MobileChatRequest):
         except Exception:
             pass
 
-        import os as _os
-        _owner = _os.getenv("BP_OWNER_NAME", "the founder")
-        _sector = _os.getenv("BP_BUSINESS_TYPE", "business")
+        _owner = os.getenv("BP_OWNER_NAME", "the founder")
+        _sector = os.getenv("BP_BUSINESS_TYPE", "business")
         system_prompt = (
             f"You are BackPocket OS — an AI Business Operating System for {_owner}. "
             f"You help run a {_sector} by automating emails, quotes, leads, and decisions. "
