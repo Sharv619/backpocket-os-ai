@@ -41,6 +41,7 @@ static_flutter/
 uploads/
 
 # Logs and Binaries
+logs/
 *.log
 archives/
 video_output/
