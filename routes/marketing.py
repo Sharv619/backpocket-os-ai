@@ -48,18 +48,61 @@ class SocialPostRequest(BaseModel):
     before_after: bool = False
 
 
+def _fetch_past_gbp_posts(job_description: str, suburb: str, n: int = 3) -> list[dict]:
+    """Pull recent successful GBP posts as few-shot examples.
+
+    Prefers posts from the same suburb, falls back to any recent posts.
+    No embeddings needed at this scale — SQL is sufficient.
+    """
+    try:
+        conn = sqlite3.connect(DB)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        # Try suburb match first
+        cur.execute(
+            """SELECT job_description, suburb, generated_post FROM marketing_activity
+               WHERE platform = 'gbp' AND generated_post IS NOT NULL
+               AND suburb LIKE ? ORDER BY created_at DESC LIMIT ?""",
+            (f"%{suburb}%", n),
+        )
+        rows = cur.fetchall()
+        if len(rows) < n:
+            # Pad with any recent posts
+            cur.execute(
+                """SELECT job_description, suburb, generated_post FROM marketing_activity
+                   WHERE platform = 'gbp' AND generated_post IS NOT NULL
+                   ORDER BY created_at DESC LIMIT ?""",
+                (n,),
+            )
+            rows = cur.fetchall()
+        conn.close()
+        return [dict(r) for r in rows[:n]]
+    except Exception:
+        return []
+
+
 @router.post("/api/marketing/gbp-post")
 async def create_gbp_post(request: GBPPostRequest):
     try:
         from services.gemini import get_openrouter_response, get_gemini_client
+
+        # Few-shot: pull past posts as examples so AI matches proven style
+        examples = _fetch_past_gbp_posts(request.job_description, request.suburb)
+        few_shot = ""
+        if examples:
+            few_shot = "\n\nHere are examples of past posts that performed well:\n"
+            for ex in examples:
+                few_shot += f'- Job: {ex["job_description"]}, Suburb: {ex["suburb"]}\n  Post: {ex["generated_post"]}\n'
+            few_shot += "\nMatch the tone, length, and local feel of those examples.\n"
 
         prompt = (
             f"Write a 2-sentence Google Business Profile post for a tradie business "
             f"in {request.suburb}, Australia. "
             f"The job was: {request.job_description}. "
             f"Tone: friendly, local, professional. Mention the suburb. "
-            f"End with a call-to-action like 'Call us for a free quote!' "
-            f"Return ONLY the post text, no quotes or labels."
+            f"End with a call-to-action like 'Call us for a free quote!'"
+            f"{few_shot}"
+            f"\nReturn ONLY the post text, no quotes or labels."
         )
 
         post_text = None
