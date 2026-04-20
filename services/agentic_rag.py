@@ -91,7 +91,7 @@ class AgenticRAG:
                 )
                 logger.debug(f"Corrections IF: {_diag}")
 
-            return {
+            ctx = {
                 "learned_patterns": learned_patterns,
                 "historical_context": historical,
                 "recent_corrections": recent_corrections,
@@ -99,6 +99,8 @@ class AgenticRAG:
                 "subject": subject,
                 "tier": tier,
             }
+            from services.openviking_context import enrich_rag_context
+            return enrich_rag_context(ctx, f"{subject} {snippet}")
         except Exception as e:
             logger.error(f"Error getting context: {e}")
             import traceback
