@@ -457,58 +457,6 @@ class ApiService {
     return await _handleResponse(res);
   }
 
-  // ── SOVEREIGN ENGINE — Bring Your Own Key (BYOK) ──────────────────────────
-  Future<Map<String, dynamic>> setBYOKKey({
-    required String provider,
-    required String apiKey,
-    String? voiceId,
-  }) async {
-    final res = await http.post(
-      Uri.parse('$baseUrl/api/settings/byok'),
-      headers: _headers,
-      body: jsonEncode({
-        'provider': provider,
-        'api_key': apiKey,
-        if (voiceId != null) 'voice_id': voiceId,
-      }),
-    );
-    return await _handleResponse(res);
-  }
-
-  Future<Map<String, dynamic>> getBYOKStatus() async {
-    final res = await http.get(
-      Uri.parse('$baseUrl/api/settings/byok-status'),
-      headers: _headers,
-    );
-    return await _handleResponse(res);
-  }
-
-  Future<Map<String, dynamic>> clearBYOKKey(String provider) async {
-    final res = await http.delete(
-      Uri.parse('$baseUrl/api/settings/byok/$provider'),
-      headers: _headers,
-    );
-    return await _handleResponse(res);
-  }
-
-  // ── Style Scanner ──────────────────────────────────────────────────────────
-  Future<Map<String, dynamic>> scanWritingStyle({String tokenFile = 'token.json'}) async {
-    final res = await http.post(
-      Uri.parse('$baseUrl/api/style/scan-sent'),
-      headers: _headers,
-      body: jsonEncode({'token_file': tokenFile}),
-    ).timeout(_tAI);
-    return await _handleResponse(res);
-  }
-
-  Future<Map<String, dynamic>> getCurrentStyle() async {
-    final res = await http.get(
-      Uri.parse('$baseUrl/api/style/current'),
-      headers: _headers,
-    );
-    return await _handleResponse(res);
-  }
-
   // ── Material Vision Analysis ───────────────────────────────────────────────
   Future<Map<String, dynamic>> analyzeMaterialImage({
     required String imageBase64,
@@ -522,6 +470,224 @@ class ApiService {
         'analysis_type': analysisType,
       }),
     ).timeout(_tVision);
+    return await _handleResponse(res);
+  }
+
+  // ── Email Draft + Archive ─────────────────────────────────────────────────
+  Future<Map<String, dynamic>> getDraft(String refId) async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/draft/$refId'),
+      headers: _headers,
+    ).timeout(_tFast);
+    return await _handleResponse(res);
+  }
+
+  Future<Map<String, dynamic>> archiveEmail(String refId) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/archive'),
+      headers: _headers,
+      body: jsonEncode({'ref_id': refId}),
+    ).timeout(_tFast);
+    return await _handleResponse(res);
+  }
+
+  Future<Map<String, dynamic>> reviseDraftWithBody(
+    String refId,
+    String newDraft, {
+    String feedback = 'Edited in app',
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/revise'),
+      headers: _headers,
+      body: jsonEncode({
+        'ref_id': refId,
+        'new_draft': newDraft,
+        'feedback': feedback,
+      }),
+    ).timeout(_tFast);
+    return await _handleResponse(res);
+  }
+
+  Future<Map<String, dynamic>> approveAndSend(String refId) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/approve'),
+      headers: _headers,
+      body: jsonEncode({'ref_id': refId}),
+    ).timeout(_tAI);
+    return await _handleResponse(res);
+  }
+
+  // ── SOPs ──────────────────────────────────────────────────────────────────
+  Future<Map<String, dynamic>> getSops() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/sops'),
+      headers: _headers,
+    ).timeout(_tFast);
+    return await _handleResponse(res);
+  }
+
+  // ── Email Rules ───────────────────────────────────────────────────────────
+  Future<Map<String, dynamic>> getEmailRules() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/email-rules'),
+      headers: _headers,
+    ).timeout(_tFast);
+    return await _handleResponse(res);
+  }
+
+  // ── Sender Instructions ───────────────────────────────────────────────────
+  Future<Map<String, dynamic>> getSenderInstructions() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/sender-instructions'),
+      headers: _headers,
+    ).timeout(_tFast);
+    return await _handleResponse(res);
+  }
+
+  Future<Map<String, dynamic>> addSenderInstruction(
+    String email,
+    String instructions,
+    String category,
+  ) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/sender-instructions'),
+      headers: _headers,
+      body: jsonEncode({
+        'sender_email': email,
+        'instructions': instructions,
+        'category': category,
+      }),
+    ).timeout(_tFast);
+    return await _handleResponse(res);
+  }
+
+  Future<Map<String, dynamic>> deleteSenderInstruction(String email) async {
+    final res = await http.delete(
+      Uri.parse('$baseUrl/api/sender-instructions/${Uri.encodeComponent(email)}'),
+      headers: _headers,
+    ).timeout(_tFast);
+    return await _handleResponse(res);
+  }
+
+  // ── Instruction CRUD (update + delete) ────────────────────────────────────
+  Future<Map<String, dynamic>> updateInstruction(
+    int id, {
+    required String text,
+    required String category,
+    bool isActive = true,
+    bool isCritical = false,
+  }) async {
+    final res = await http.put(
+      Uri.parse('$baseUrl/api/instructions/$id'),
+      headers: _headers,
+      body: jsonEncode({
+        'instruction_text': text,
+        'category': category,
+        'is_active': isActive,
+        'is_critical': isCritical,
+      }),
+    ).timeout(_tFast);
+    return await _handleResponse(res);
+  }
+
+  Future<Map<String, dynamic>> deleteInstruction(int id) async {
+    final res = await http.delete(
+      Uri.parse('$baseUrl/api/instructions/$id'),
+      headers: _headers,
+    ).timeout(_tFast);
+    return await _handleResponse(res);
+  }
+
+  // ── Agentic RAG ───────────────────────────────────────────────────────────
+  Future<Map<String, dynamic>> getAgenticRagContext(String refId) async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/agentic-rag/context/$refId'),
+      headers: _headers,
+    ).timeout(_tAI);
+    return await _handleResponse(res);
+  }
+
+  // ── Blog & Content ────────────────────────────────────────────────────────
+  Future<Map<String, dynamic>> generateBlogPost(String title, String theme) async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/blog/generate?title=${Uri.encodeComponent(title)}&theme=${Uri.encodeComponent(theme)}'),
+      headers: _headers,
+    ).timeout(_tAI);
+    return await _handleResponse(res);
+  }
+
+  Future<Map<String, dynamic>> generateStartupStory(
+    String companyName, {
+    String theme = 'entrepreneurship',
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/blog/startup-story'),
+      headers: _headers,
+      body: jsonEncode({'company_name': companyName, 'theme': theme}),
+    ).timeout(_tAI);
+    return await _handleResponse(res);
+  }
+
+  // ── Drive Integration ─────────────────────────────────────────────────────
+  Future<Map<String, dynamic>> syncDriveToRag(
+    String folderId, {
+    String twinType = 'admin',
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/drive/sync-to-rag'),
+      headers: _headers,
+      body: jsonEncode({'folder_id': folderId, 'twin_type': twinType}),
+    ).timeout(_tAI);
+    return await _handleResponse(res);
+  }
+
+  // ── Client Master (Google Sheets CRM) ─────────────────────────────────────
+  Future<Map<String, dynamic>> getClientMaster() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/client-master'),
+      headers: _headers,
+    ).timeout(_tFast);
+    return await _handleResponse(res);
+  }
+
+  // ── Invoice PDF Generation ────────────────────────────────────────────────
+  Future<List<int>> generateInvoicePdf({
+    required String clientName,
+    String clientEmail = '',
+    required List<Map<String, dynamic>> items,
+    String notes = '',
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/invoice/generate'),
+      headers: _headers,
+      body: jsonEncode({
+        'client_name': clientName,
+        'client_email': clientEmail,
+        'items': items,
+        'notes': notes,
+      }),
+    ).timeout(_tAI);
+    if (res.statusCode != 200) {
+      throw ApiException('Invoice generation failed', statusCode: res.statusCode);
+    }
+    return res.bodyBytes;
+  }
+
+  // ── Marketing Activity (full stats) ───────────────────────────────────────
+  Future<Map<String, dynamic>> getMarketingActivityFull() async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/marketing/activity'),
+      headers: _headers,
+    ).timeout(_tFast);
+    return await _handleResponse(res);
+  }
+
+  // ── Search Gmail ──────────────────────────────────────────────────────────
+  Future<Map<String, dynamic>> searchGmail(String query, {int maxResults = 10}) async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/search-gmail?q=${Uri.encodeComponent(query)}&max_results=$maxResults'),
+      headers: _headers,
+    ).timeout(_tFast);
     return await _handleResponse(res);
   }
 }
