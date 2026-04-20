@@ -1,5 +1,5 @@
 """
-UX Auditor — AI-powered heuristic evaluation endpoint.
+UX Site Manager — AI-powered heuristic evaluation endpoint.
 
 POST /api/ux/audit
   - Accepts a screen description (text) or image_base64

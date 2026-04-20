@@ -71,9 +71,9 @@ async def api_approve(request: ApproveRequest):
         actual_alias, token_source = delivered_to.split("|", 1)
     elif delivered_to:
         actual_alias = delivered_to
-        if "yourwebaccountant" in delivered_to.lower():
+        if "yourwebestimator" in delivered_to.lower():
             token_source = "token_ywa.json"
-        elif "bigbossaccountants" in delivered_to.lower():
+        elif "bigbossestimators" in delivered_to.lower():
             token_source = "token_imap_admin.json"
         elif "bigbossgroup" in delivered_to.lower():
             token_source = "token.json"
@@ -395,7 +395,7 @@ Return this exact JSON format:
   "email": "Their email address from signature",
   "mobile": "PHONE NUMBER with format 0412 345 678",
   "client_status": "New",
-  "accountant_or_auditor": "",
+  "estimator_or_site_manager": "",
   "birthdate": "",
   "background_info": "2-3 sentences about who they are"
 }}
@@ -457,7 +457,7 @@ Extract all details - especially look for phone numbers in signature blocks!"""
         "email_address": client_info.get("email", info.get("sender", "")),
         "mobile": formatted_mobile,
         "client_status": client_info.get("client_status", "New"),
-        "accountant_or_auditor": client_info.get("accountant_or_auditor", ""),
+        "estimator_or_site_manager": client_info.get("estimator_or_site_manager", ""),
         "birthdate": formatted_bday,
         "background_info": client_info.get(
             "background_info", f"Added from Ref #{ref_id}"

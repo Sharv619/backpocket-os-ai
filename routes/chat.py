@@ -9,7 +9,7 @@ router = APIRouter()
 async def twins_ingest(request: Request):
     try:
         data = await request.json()
-        twin_type = data.get("twin_type", "accountant")
+        twin_type = data.get("twin_type", "estimator")
         doc_id = data.get("doc_id", str(__import__("uuid").uuid4()))
         text = data.get("text", "")
         metadata = data.get("metadata", {})

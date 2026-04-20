@@ -367,13 +367,32 @@ async def get_workflow_stages():
 
 @router.get("/api/workflow/current")
 async def get_current_workflow_stage():
+    """Return the current workflow stage based on the most recent pending approval.
+    This function now executes DB queries in a background thread to avoid blocking the event loop.
+    """
     try:
-        return {
-            "status": "success",
-            "current_stage": "1",
-            "stage_title": "Client Inquiry / Call for Quote",
-        }
+        import sqlite3, asyncio
+        # Run the DB logic in a thread pool
+        def _query():
+            conn = sqlite3.connect(db.DB_PATH)
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT workflow_stage FROM pending_approvals WHERE workflow_stage IS NOT NULL ORDER BY created_at DESC LIMIT 1"
+            )
+            row = cur.fetchone()
+            current = row["workflow_stage"] if row else "1"
+            cur.execute(
+                "SELECT title FROM workflow_stages WHERE stage_number = ?", (current,)
+            )
+            title_row = cur.fetchone()
+            title = title_row["title"] if title_row else "Client Inquiry / Call for Quote"
+            conn.close()
+            return str(current), title
+        current_stage, title = await asyncio.to_thread(_query)
+        return {"status": "success", "current_stage": current_stage, "stage_title": title}
     except Exception as e:
+        logger.error(f"[WORKFLOW] get_current_workflow_stage error: {e}")
         return {"status": "error", "message": str(e)}
 
 

@@ -151,9 +151,9 @@ async def mobile_approve(request: MobileApproveRequest):
         actual_alias, token_source = delivered_to.split("|", 1)
     elif delivered_to:
         actual_alias = delivered_to
-        if "yourwebaccountant" in delivered_to.lower():
+        if "yourwebestimator" in delivered_to.lower():
             token_source = "token_ywa.json"
-        elif "bigbossaccountants" in delivered_to.lower():
+        elif "bigbossestimators" in delivered_to.lower():
             token_source = "token_imap_admin.json"
         elif "bigbossgroup" in delivered_to.lower():
             token_source = "token.json"

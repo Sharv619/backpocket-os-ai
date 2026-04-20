@@ -1,7 +1,7 @@
 """
 Agentic RAG System for BackPocket.
 
-Orchestrates multiple specialized agents (Accountant, Auditor, Admin Twins)
+Orchestrates multiple specialized agents (Estimator, Site Manager, Admin Twins)
 with retrieval-augmented generation (RAG) to handle complex email responses
 and autonomous business automation.
 
@@ -43,7 +43,7 @@ class AgenticRAG:
             self.personalities = PERSONALITIES
             self.twin_types = TwinType
 
-            logger.info("✓ Agentic RAG initialized with 3 twins (Accountant, Auditor, Admin)")
+            logger.info("✓ Agentic RAG initialized with 3 twins (Estimator, Site Manager, Admin)")
         except Exception as e:
             logger.error(f"Failed to initialize Agentic RAG: {e}")
             self.personalities = {}
@@ -123,18 +123,20 @@ class AgenticRAG:
         AUDITOR_KEYWORDS    = ["audit", "compliance", "review", "verify", "check", "discrepancy", "dispute", "incorrect"]
 
         if any(x in full_text for x in ACCOUNTANT_KEYWORDS):
-            return "accountant"
+            return "estimator"
         elif any(x in full_text for x in AUDITOR_KEYWORDS):
-            return "auditor"
+            return "site_manager"
         else:
             return "admin"
 
-    def generate_agentic_response(
-        self,
-        email_content: Dict[str, Any],
-        tier: int = 1,
-        context: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+def generate_agentic_response(
+    self,
+    email_content: Dict[str, Any],
+    tier: int = 1,
+    context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+        # DeepMind‑style reasoning logs
+        logger.info(f"[AGENTIC REASONING]: Generating response for email subject '{email_content.get('subject','')[:30]}' (tier={tier})")
         """Generate response using agentic reasoning + RAG context."""
 
         if not context:
@@ -142,6 +144,7 @@ class AgenticRAG:
 
         # Select appropriate twin
         best_twin = self.select_best_twin(email_content, tier)
+        logger.info(f"[AGENTIC REASONING]: Selected twin '{best_twin}' for subject '{email_content.get('subject','')[:30]}'")
         logger.info(f"🤖 Using {best_twin} twin for: {email_content.get('subject', '')[:50]}")
 
         # Build agentic prompt with learned patterns
@@ -155,8 +158,8 @@ class AgenticRAG:
 
         # Get system prompt for the twin
         twin_prompts = {
-            "accountant": "You are the Accountant Twin. Handle: invoicing, expense tracking, BAS preparation, ATO compliance, GST (10%), tax advice.",
-            "auditor": "You are the Auditor Twin. Handle: document review, ATO compliance checks, invoice verification, quality assurance.",
+            "estimator": "You are the Estimator Twin. Handle: Measurements, parsing Construction Leads, and calculating Quotes/Payments.",
+            "site_manager": "You are the Site Manager Twin. Handle: Documents (OCR scanning of receipts/materials) and pushing Marketing posts from completed jobs.",
             "admin": "You are the Admin Twin. Handle: email triage, scheduling, client follow-ups, reminders, admin automation."
         }
 
@@ -177,6 +180,7 @@ class AgenticRAG:
             "timestamp": datetime.now().isoformat(),
         }
 
+        logger.info("[AGENTIC REASONING]: Response assembled, returning.")
         return response
 
     def ingest_document_to_rag(
