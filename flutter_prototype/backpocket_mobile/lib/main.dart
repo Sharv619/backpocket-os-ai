@@ -10,6 +10,11 @@ import 'screens/dashboard_screen.dart';
 import 'screens/documents_screen.dart';
 import 'screens/marketing_screen.dart';
 import 'screens/instructions_screen.dart';
+import 'screens/sops_screen.dart';
+import 'screens/agentic_rag_screen.dart';
+import 'screens/blog_screen.dart';
+import 'screens/drive_screen.dart';
+import 'screens/client_crm_screen.dart';
 import 'screens/construction_screen.dart';
 import 'screens/settings_screen.dart';
 import 'services/voice_command_service.dart';
@@ -98,19 +103,39 @@ class _BackPocketAppState extends State<BackPocketApp> {
         ),
         GoRoute(
           path: '/marketing',
-          builder: (context, state) => AppShell(initialTab: 4),
-        ),
-        GoRoute(
-          path: '/instructions',
           builder: (context, state) => AppShell(initialTab: 5),
         ),
         GoRoute(
-          path: '/construction',
+          path: '/agentic-rag',
           builder: (context, state) => AppShell(initialTab: 6),
         ),
         GoRoute(
-          path: '/settings',
+          path: '/blog',
           builder: (context, state) => AppShell(initialTab: 7),
+        ),
+        GoRoute(
+          path: '/drive',
+          builder: (context, state) => AppShell(initialTab: 8),
+        ),
+        GoRoute(
+          path: '/clients',
+          builder: (context, state) => AppShell(initialTab: 9),
+        ),
+        GoRoute(
+          path: '/instructions',
+          builder: (context, state) => AppShell(initialTab: 10),
+        ),
+        GoRoute(
+          path: '/sops',
+          builder: (context, state) => AppShell(initialTab: 4),
+        ),
+        GoRoute(
+          path: '/construction',
+          builder: (context, state) => AppShell(initialTab: 11),
+        ),
+        GoRoute(
+          path: '/settings',
+          builder: (context, state) => AppShell(initialTab: 12),
         ),
       ],
     );
@@ -168,7 +193,12 @@ class _AppShellState extends State<AppShell> {
     InboxScreen(serverUrl: _serverUrl, apiKey: _apiKey),
     TwinChatScreen(serverUrl: _serverUrl, apiKey: _apiKey),
     DocumentsScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    SopsScreen(serverUrl: _serverUrl, apiKey: _apiKey),
     MarketingScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    AgenticRagScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    BlogScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    DriveScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    ClientCrmScreen(serverUrl: _serverUrl, apiKey: _apiKey),
     InstructionsScreen(serverUrl: _serverUrl, apiKey: _apiKey),
     ConstructionScreen(serverUrl: _serverUrl, apiKey: _apiKey),
     SettingsScreen(
@@ -203,10 +233,15 @@ class _AppShellState extends State<AppShell> {
       {'icon': Icons.inbox_outlined, 'label': 'Inbox', 'tab': 1},
       {'icon': Icons.psychology_outlined, 'label': 'Pip Chat', 'tab': 2},
       {'icon': Icons.description_outlined, 'label': 'Documents', 'tab': 3},
-      {'icon': Icons.campaign_outlined, 'label': 'Marketing', 'tab': 4},
-      {'icon': Icons.rule_outlined, 'label': 'Instructions', 'tab': 5},
-      {'icon': Icons.build_outlined, 'label': 'Construction', 'tab': 6},
-      {'icon': Icons.settings_outlined, 'label': 'Settings', 'tab': 7},
+      {'icon': Icons.list_alt_outlined, 'label': 'SOPs', 'tab': 4},
+      {'icon': Icons.campaign_outlined, 'label': 'Marketing', 'tab': 5},
+      {'icon': Icons.psychology_outlined, 'label': 'AI RAG', 'tab': 6},
+      {'icon': Icons.edit_note_outlined, 'label': 'Blog', 'tab': 7},
+      {'icon': Icons.folder_outlined, 'label': 'Drive', 'tab': 8},
+      {'icon': Icons.people_outline, 'label': 'Clients', 'tab': 9},
+      {'icon': Icons.rule_outlined, 'label': 'Instructions', 'tab': 10},
+      {'icon': Icons.build_outlined, 'label': 'Construction', 'tab': 11},
+      {'icon': Icons.settings_outlined, 'label': 'Settings', 'tab': 12},
     ];
     final chatHistory = twinController.messages
         .where((m) => m['role'] == 'user')
@@ -310,28 +345,23 @@ class _AppShellState extends State<AppShell> {
               ),
             ),
             const Divider(color: AppColors.border, height: 1),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: _SidebarItem(
-                icon: Icons.settings_outlined,
-                label: 'Settings',
-                isSelected: false,
-                onTap: () {
-                  setState(() => _tab = 7);
-                  Navigator.pop(context);
-                },
-              ),
-            ),
+            // Removed duplicate Settings entry – already included in navItems list above.
+            // The Settings item is now only present once in the drawer navigation.
+            // This ensures a single source of truth for its routing and selection state.
           ],
         ),
       ),
     );
   }
 
-  static const _screenNames = ['dashboard', 'inbox', 'chat', 'documents', 'marketing', 'instructions', 'construction', 'settings'];
+  static const _screenNames = [
+    'dashboard', 'inbox', 'chat', 'documents', 'sops',
+    'marketing', 'agentic_rag', 'blog', 'drive', 'client_crm',
+    'instructions', 'construction', 'settings'
+  ];
 
-  // Bottom nav: 0=Home(0), 1=Inbox(1), 2=Chat(2), 3=Jobs/Construction(6), 4=Settings(7)
-  static const _bottomNavToTab = [0, 1, 2, 6, 7];
+  // Bottom nav: Home(0), Inbox(1), Chat(2), Jobs(11=Construction), Settings(12)
+  static const _bottomNavToTab = [0, 1, 2, 11, 12];
 
   int get _bottomNavIndex {
     final idx = _bottomNavToTab.indexOf(_tab);

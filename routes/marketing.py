@@ -109,7 +109,7 @@ async def create_gbp_post(request: GBPPostRequest):
 
         post_text = get_openrouter_response(
             prompt,
-            model="google/gemma-3-27b-it:free",
+            model="google/gemini-2.5-flash",
             sys_prompt="You are a local tradie marketing assistant. Write punchy, local GBP posts.",
         )
 
@@ -196,7 +196,7 @@ async def get_marketing_insights():
 def _ai_generate(prompt: str, sys_prompt: str, fallback: str) -> str:
     """Shared AI generation with OpenRouter → Gemini → static fallback."""
     from services.gemini import get_openrouter_response, get_gemini_client
-    text = get_openrouter_response(prompt, model="google/gemma-3-27b-it:free", sys_prompt=sys_prompt)
+    text = get_openrouter_response(prompt, model="google/gemini-2.5-flash", sys_prompt=sys_prompt)
     if not text:
         client = get_gemini_client()
         if client:

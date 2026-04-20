@@ -50,6 +50,13 @@ def init_db():
     except sqlite3.OperationalError:
         pass  # already exists
 
+    try:
+        cursor.execute("ALTER TABLE pending_approvals ADD COLUMN ai_reasoning TEXT")
+        cursor.execute("ALTER TABLE pending_approvals ADD COLUMN suggested_actions TEXT")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # already exists
+
     # Migration: Add workflow_stage to pending_approvals
     try:
         cursor.execute("ALTER TABLE pending_approvals ADD COLUMN workflow_stage TEXT DEFAULT 'triage'")
@@ -302,8 +309,8 @@ def save_pending_approval(ref_id, data):
     try:
         cursor.execute('''
             INSERT OR REPLACE INTO pending_approvals
-            (ref_id, message_id, thread_id, sender, subject, draft_body, delivered_to, tier, workflow_stage)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (ref_id, message_id, thread_id, sender, subject, draft_body, delivered_to, tier, workflow_stage, ai_reasoning, suggested_actions)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             ref_id,
             data['message_id'],
@@ -314,6 +321,8 @@ def save_pending_approval(ref_id, data):
             data['delivered_to'],
             data['tier'],
             data.get('workflow_stage', 'draft'),
+            data.get('ai_reasoning', ''),
+            data.get('suggested_actions', ''),
         ))
         conn.commit()
         conn.close()
@@ -345,6 +354,23 @@ def update_draft_body(ref_id, draft_body):
     conn.close()
     return affected > 0
 
+def update_workflow_stage(ref_id: str, stage: str) -> bool:
+    """Set the workflow_stage for a pending_approval record. Returns success flag."""
+    conn = sqlite3.connect(DB_PATH, timeout=20)
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE pending_approvals SET workflow_stage = ? WHERE ref_id = ?",
+            (stage, ref_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        logger.error(f"❌ Error updating workflow_stage for {ref_id}: {e}")
+        return False
+    finally:
+        conn.close()
+
 def delete_pending_approval(ref_id):
     """Remove from waitlist after it is sent."""
     conn = sqlite3.connect(DB_PATH, timeout=20)
@@ -370,14 +396,31 @@ def get_stale_approvals(hours=4):
     # We nudge if it's > X hours old AND (never nudged OR last nudge was > X hours ago)
     interval = f"-{int(hours)} hours"
     cursor.execute("""
-        SELECT * FROM pending_approvals
-        WHERE status = 'pending'
-        AND created_at <= datetime('now', ?)
-        AND (last_nudge_at IS NULL OR last_nudge_at <= datetime('now', ?))
+    SELECT * FROM pending_approvals
+    WHERE status = 'pending'
+    AND created_at <= datetime('now', ?)
+    AND (last_nudge_at IS NULL OR last_nudge_at <= datetime('now', ?))
     """, (interval, interval))
     rows = cursor.fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+def update_extracted_data(doc_id: int, json_str: str) -> bool:
+    """Store extracted JSON data for a document (construction entities)."""
+    conn = sqlite3.connect(DB_PATH, timeout=20)
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE documents SET extracted_data = ? WHERE id = ?",
+            (json_str, doc_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        logger.error(f"❌ Error updating extracted_data for doc {doc_id}: {e}")
+        return False
+    finally:
+        conn.close()
 
 def mark_nudged(ref_id):
     """Updates the timestamp of the last nudge to prevent spam."""
@@ -743,8 +786,8 @@ def seed_default_categories():
         ("Document - Routing", "Where to save or send documents"),
         ("Google Sheets - Input", "Logging rules for incoming data"),
         ("Google Sheets - Output", "Reporting and export rules"),
-        ("Agents - Accountant", "Instructions for Senior Accountant agent"),
-        ("Agents - Auditor", "Instructions for Senior Auditor agent"),
+        ("Agents - Estimator", "Instructions for Senior Estimator agent"),
+        ("Agents - Site Manager", "Instructions for Senior Site Manager agent"),
         ("Agents - Admin", "Instructions for Admin Assistant agent"),
         ("Agents - Coach", "Instructions for Communication Coach agent"),
         ("Agents - Marketing", "Instructions for Marketing agent"),

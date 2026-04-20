@@ -120,7 +120,7 @@ class DriveIntegration:
 
         Args:
             folder_id: Google Drive folder ID to sync
-            twin_type: Which twin to ingest files into ('accountant', 'auditor', 'admin')
+            twin_type: Which twin to ingest files into ('estimator', 'site_manager', 'admin')
 
         Returns:
             Sync summary

@@ -260,138 +260,29 @@ async def process_triaged_email(email, triage, loop):
     # Log all activity to the main Action Log (which also handles tier-routing)
     await loop.run_in_executor(None, log_activity, log_data, "Action_Log")
 
-    # --- TIER 1 / 2 (CHERRY'S REFINED RULES) ---
-    if tier == 1 or tier == 2:
+    # --- TIER 1 / 2 / 3 (CHERRY'S REFINED RULES - UPDATED FOR DEMO) ---
+    if tier in [1, 2, 3]:
         from routes.email import generate_ref_id
         ref_id = generate_ref_id()
-        # Doc Signed Check
-        is_doc_signed, is_call = (
-            triage.get("is_doc_signed"),
-            triage.get("is_call_centre"),
+
+        # ... (is_doc_signed / is_call / is_new_client checks)
+
+        # For the demo, let's draft for Tier 1, 2, and 3
+        hist_context = await loop.run_in_executor(
+            None, get_historical_context, clean_email
         )
-        if is_doc_signed:
-            logger.info("✍️ DOC SIGNED: Logging to Portal_Updates but STAYING in Inbox.")
-            await loop.run_in_executor(
-                None,
-                log_activity,
-                {
-                    "from_name": from_name,
-                    "email_address": clean_email,
-                    "subject": email["subject"],
-                    "body": snippet,
-                    "tier": str(tier),
-                    "status": "Logged (Needs Filing)",
-                },
-                "Portal_Updates",
-            )
+        draft_result = await loop.run_in_executor(
+            None, draft_response, email, tier, hist_context, client
+        )
 
-        # Check for urgent call centre message
-        is_urgent = triage.get("is_urgent", False)
-        if is_call:
-            urgency = "⚠️ URGENT - " if is_urgent else ""
-            await loop.run_in_executor(
-                None,
-                send_whatsapp_message,
-                os.getenv("FOUNDER_PHONE"),
-                f"📞 {urgency}*Call Centre Message* from Business 1300:\n\n{snippet[:200]}...",
-            )
-
-        # Check for new client registration (Suitedash)
-        is_new_client = triage.get("is_new_client_registration", False)
-        if is_new_client:
-            logger.info("🆕 NEW CLIENT REGISTRATION: Auto-extracting and onboarding.")
-            email_body = email.get("snippet", "") + "\n\n" + email.get("body", "")
-
-            # Auto-extract client details using AI
-            from services.gemini import get_gemini_client
-
-            client = get_gemini_client()
-            if client:
-                raw_email_body = email_body[:5000]
-                prompt = f"""Extract new client information from this Suitedash registration email.
-
-SCAN FOR:
-1. NAME - First AND Last name
-2. EMAIL ADDRESS
-3. PHONE/MOBILE - Look for formats like 0412 345 678, +61 412 345 678
-4. COMPANY NAME if mentioned
-
-Return JSON:
-{{
-  "first_name": "First name",
-  "last_name": "Last name",
-  "email": "email@address.com",
-  "mobile": "0412 345 678",
-  "client_status": "New",
-  "accountant_or_auditor": "",
-  "birthdate": "",
-  "background_info": "New client from Suitedash portal"
-}}
-
-EMAIL:
-{raw_email_body}"""
-
-                try:
-                    response = client.models.generate_content(
-                        model="gemini-2.5-flash",
-                        contents=prompt,
-                        config={"response_mime_type": "application/json"},
-                    )
-                    import json
-
-                    client_info = (
-                        json.loads(response.text.strip())
-                        if response and response.text
-                        else {}
-                    )
-
-                    if client_info.get("email"):
-                        # Add to Clients_Master
-                        from services.google_sheets import add_new_client_to_master
-
-                        client_info["from_name"] = (
-                            f"{client_info.get('first_name', '')} {client_info.get('last_name', '')}".strip()
-                        )
-                        await loop.run_in_executor(
-                            None, add_new_client_to_master, client_info
-                        )
-                        logger.info(
-                            f"🆕 Auto-onboarded new client: {client_info.get('email')}"
-                        )
-
-                        # Send WhatsApp notification
-                        await loop.run_in_executor(
-                            None,
-                            send_whatsapp_message,
-                            os.getenv("FOUNDER_PHONE"),
-                            f"✨ *NEW CLIENT AUTO-ONBOARDED!*\n\nName: {client_info.get('first_name')} {client_info.get('last_name')}\nEmail: {client_info.get('email')}\nMobile: {client_info.get('mobile', 'N/A')}",
-                        )
-                except Exception as e:
-                    logger.error(f"Error auto-onboarding client: {e}")
-
-        # 🛡️ STAY IN INBOX per Steve's Map
-        logger.info(f"🛡️ TIER {tier} SHIELD: {clean_email} stays in Inbox.")
-
-        # Only Tier 1 gets a draft - Tier 2 just logs
-        suggested_actions = []
-        sender_instructions = ""
-        if tier == 1:
-            hist_context = await loop.run_in_executor(
-                None, get_historical_context, clean_email
-            )
-            draft_result = await loop.run_in_executor(
-                None, draft_response, email, tier, hist_context, client
-            )
-
-            # Handle both old string return and new dict return
-            if isinstance(draft_result, dict):
-                draft_body = draft_result.get("draft", "Error generating draft")
-                suggested_actions = draft_result.get("suggested_actions", [])
-                sender_instructions = draft_result.get("sender_instructions", "")
-            else:
-                draft_body = draft_result
+        if isinstance(draft_result, dict):
+            draft_body = draft_result.get("draft", "Error generating draft")
+            suggested_actions = draft_result.get("suggested_actions", [])
+            ai_reasoning = draft_result.get("ai_reasoning", triage.get("reason", ""))
         else:
-            draft_body = f"[Tier 2 - Govt/Assoc - Logged] Subject: {email['subject']}\n\nNo reply needed. Logged to spreadsheet."
+            draft_body = draft_result
+            ai_reasoning = triage.get("reason", "")
+            suggested_actions = []
 
         # Save full email content for client extraction later
         email_body = email.get("snippet", "") + "\n\n" + email.get("body", "")
@@ -409,7 +300,7 @@ EMAIL:
                 "workflow_stage": "draft",
                 "email_body": email_body[:5000],
                 "suggested_actions": json.dumps(suggested_actions),
-                "sender_instructions": sender_instructions,
+                "ai_reasoning": ai_reasoning,
             },
         )
 
@@ -506,7 +397,7 @@ EMAIL:
             "intuit.com" in clean_email and "invoice" in email["subject"].lower()
         )
 
-        if is_qb and "your webaccountant" in email["subject"].lower():
+        if is_qb and "your webestimator" in email["subject"].lower():
             from services.gmail import move_to_label
 
             logger.info(

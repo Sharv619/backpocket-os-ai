@@ -377,7 +377,7 @@ class _InboxCard extends StatelessWidget {
                             Icon(Icons.check_circle_outline, color: Colors.white, size: 16),
                             SizedBox(width: 6),
                             Text(
-                              'Verify Approve & Send Send',
+                              'Verify & Send',
                               style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
@@ -629,6 +629,46 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
     if (mounted) setState(() => _approving = false);
   }
 
+  Widget _buildSuggestedActions(dynamic actionsData) {
+    List<dynamic> actions = [];
+    try {
+      if (actionsData is String) {
+        actions = jsonDecode(actionsData);
+      } else if (actionsData is List) {
+        actions = actionsData;
+      }
+    } catch (_) {}
+
+    if (actions.isEmpty) return const SizedBox();
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: actions.map((a) {
+        final label = a['label'] ?? a['action'] ?? 'Action';
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppColors.green.withAlpha(128)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.auto_awesome, color: AppColors.green, size: 12),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(color: AppColors.green, fontSize: 11, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final tier = widget.item['tier'] as int? ?? 3;
@@ -726,6 +766,30 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
                   ),
                   const SizedBox(height: 20),
                   const Text(
+                    'AI Reasoning',
+                    style: TextStyle(
+                      color: AppColors.amber, fontSize: 12,
+                      fontWeight: FontWeight.w600, letterSpacing: 0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Text(
+                      widget.item['ai_reasoning']?.toString().isNotEmpty == true
+                          ? widget.item['ai_reasoning']
+                          : 'No reasoning provided.',
+                      style: const TextStyle(color: AppColors.textDim, fontSize: 13, height: 1.5),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
                     'AI Draft Reply (editable)',
                     style: TextStyle(
                       color: AppColors.amber, fontSize: 12,
@@ -758,6 +822,18 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
                       ),
                     ),
                   ),
+                  if (widget.item['suggested_actions']?.toString().isNotEmpty == true) ...[
+                    const SizedBox(height: 20),
+                    const Text(
+                      'Suggested Next Steps',
+                      style: TextStyle(
+                        color: AppColors.amber, fontSize: 12,
+                        fontWeight: FontWeight.w600, letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _buildSuggestedActions(widget.item['suggested_actions']),
+                  ],
                   const SizedBox(height: 24),
                   // Action buttons
                   SizedBox(
@@ -784,7 +860,7 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
                               const Icon(Icons.send_rounded, color: Colors.white, size: 18),
                             const SizedBox(width: 10),
                             Text(
-                              _approving ? 'Sending...' : 'Verify Approve & Send Send',
+                              _approving ? 'Sending...' : 'Verify & Send',
                               style: TextStyle(
                                 color: _approving ? AppColors.textDim : Colors.white,
                                 fontWeight: FontWeight.bold, fontSize: 15,
@@ -879,7 +955,7 @@ class _ApproveDialog extends StatelessWidget {
         side: const BorderSide(color: AppColors.border),
       ),
       title: const Text(
-        'Verify Approve & Send Send?',
+        'Verify & Send?',
         style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
       ),
       content: Column(

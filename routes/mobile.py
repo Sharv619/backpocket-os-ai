@@ -74,7 +74,7 @@ async def mobile_pending():
         conn.row_factory = __import__("sqlite3").Row
         cur = conn.cursor()
         cur.execute(
-            "SELECT ref_id, sender, subject, draft_body, tier, created_at "
+            "SELECT ref_id, sender, subject, draft_body, tier, created_at, ai_reasoning, suggested_actions "
             "FROM pending_approvals WHERE status = 'pending' ORDER BY tier, created_at DESC"
         )
         rows = cur.fetchall()
@@ -98,6 +98,8 @@ async def mobile_pending():
                     "preview": (r["draft_body"] or "")[:120],
                     "draft_body": r["draft_body"] or "",
                     "age_hours": age_hours,
+                    "ai_reasoning": r["ai_reasoning"] or "",
+                    "suggested_actions": r["suggested_actions"] or "",
                 }
             )
         return {"count": len(items), "items": items}
@@ -255,18 +257,10 @@ class MobileChatRequest(BaseModel):
 
 
 @router.post("/chat")
-async def mobile_chat(request: MobileChatRequest):
+async def mobile_chat(request: MobileChatRequest, x_local_only: str = Header(default="")):
     """Lightweight twin chat endpoint for mobile clients."""
     try:
-        from services.gemini import get_gemini_client
         from services.twin_brain import build_twin_context
-
-        client = get_gemini_client()
-        if not client:
-            return {
-                "response": "AI not available — check GEMINI_API_KEY.",
-                "conversation_id": "",
-            }
 
         context = ""
         try:
@@ -282,6 +276,30 @@ async def mobile_chat(request: MobileChatRequest):
             "Be concise, direct, and Australian-practical.\n\n"
             f"{context}"
         )
+
+        if x_local_only == "1" or os.getenv("FORCE_OLLAMA_DEMO") == "1":
+            import ollama
+            model = "llama3.2:1b"
+            response = ollama.chat(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": request.message}
+                ]
+            )
+            return {
+                "response": response["message"]["content"],
+                "conversation_id": request.conversation_id or "",
+                "source": f"ollama (local: {model})"
+            }
+
+        from services.gemini import get_gemini_client
+        client = get_gemini_client()
+        if not client:
+            return {
+                "response": "AI not available — check GEMINI_API_KEY.",
+                "conversation_id": "",
+            }
 
         from google.genai import types as genai_types
 

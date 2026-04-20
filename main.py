@@ -53,8 +53,7 @@ _LAN_ORIGINS = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+):\d+$",
-    allow_origins=[o for o in _LAN_ORIGINS + [os.getenv("FRONTEND_ORIGIN", "")] if o],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -176,8 +175,16 @@ for _dir in ["static", "logs", "docs"]:
     if not os.path.exists(_dir):
         os.makedirs(_dir)
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+@app.middleware("http")
+async def disable_cache(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/app"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
 
+app.mount("/static", StaticFiles(directory="static"), name="static")
 # Flutter web app — built assets copied here by CI/CD
 import os as _os
 _flutter_dist = _os.path.join(_os.path.dirname(__file__), "static_flutter")
@@ -239,7 +246,9 @@ async def health():
 
 @app.on_event("startup")
 async def startup_event():
-    pass
+    from services.background import inbox_polling_loop
+    asyncio.create_task(inbox_polling_loop())
+    logger.info("🚀 Background polling loop started automatically")
 
 
 @app.get("/dashboard")

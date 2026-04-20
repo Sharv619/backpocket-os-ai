@@ -5,6 +5,7 @@ import sqlite3
 import uuid
 import requests
 import ollama
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -14,7 +15,7 @@ OLLAMA_VISION_MODEL = "moondream"
 logger = logging.getLogger(__name__)
 
 DB_PATH = "backpocket.db"
-UPLOAD_DIR = "uploads"
+TEMP_PATH = os.path.join(os.getcwd(), "temp_uploads")
 
 # ── OpenRouter vision config ──────────────────────────────────────────────────
 # Vision models tried in order until one succeeds.
@@ -36,7 +37,7 @@ _IMAGE_MAGIC = {
     b"RIFF": "webp",  # RIFF....WEBP
 }
 
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(TEMP_PATH, exist_ok=True)
 
 
 def init_documents_table():
@@ -68,7 +69,7 @@ def save_document(file_bytes, original_filename, category="other"):
 
     ext = os.path.splitext(original_filename)[1].lower()
     unique_name = f"{uuid.uuid4()}{ext}"
-    file_path = os.path.join(UPLOAD_DIR, unique_name)
+    file_path = os.path.join(TEMP_PATH, unique_name)
 
     with open(file_path, "wb") as f:
         f.write(file_bytes)
@@ -168,10 +169,56 @@ def _call_openrouter_vision(image_b64: str, prompt: str, model: str) -> str:
     return data["choices"][0]["message"]["content"]
 
 
-def analyze_document(doc_id, custom_prompt: str | None = None):
-    """Analyze a document image using OpenRouter vision (gemma-3-27b-it:free).
-    Falls back to gemma-3-12b-it:free if the primary model fails.
+import asyncio
+
+# Existing imports retained
+
+def _store_extracted_entities(doc_id: int, entities_json: str) -> bool:
+    """Store JSON of extracted construction entities into the documents table.
+    Returns True on success, False otherwise.
     """
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE documents SET extracted_data = ? WHERE id = ?",
+            (entities_json, doc_id),
+        )
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        logger.error(f"❌ Error saving extracted entities for doc {doc_id}: {e}")
+        return False
+
+async def analyze_document_async(doc_id: int, custom_prompt: str | None = None) -> dict:
+    """Async wrapper for document analysis.
+    Executes the heavy vision work in a thread to keep the FastAPI event loop responsive.
+    """
+    return await asyncio.to_thread(analyze_document, doc_id, custom_prompt)
+
+def _construction_entity_prompt() -> str:
+    """Prompt that asks the vision model to extract construction-specific entities.
+    The system prompt explicitly bans returning raw PII (names, phone numbers).
+    """
+    return (
+        "You are an AI assistant for a construction workflow system. "
+        "From the supplied image, extract ONLY the following fields as a JSON object: "
+        "{\"job_type\": string, \"site_address\": string, \"measurements\": {\"length\": number, \"width\": number, \"height\": number}}. "
+        "If any field is not visible, set its value to null. Do NOT include any personal identifying information such as client names or phone numbers in the output."
+    )
+
+# ---------------------------------------------------------------------------
+# Updated main analysis function – now also extracts construction entities when applicable.
+# ---------------------------------------------------------------------------
+
+def analyze_document(doc_id, custom_prompt: str | None = None):
+    """Analyze a document image using vision models and extract construction entities.
+    
+    This function now also updates the workflow stage to 3 (Onsite Inspection) when entity extraction succeeds.
+    Returns a dict with status, analysis, model_used, and optional extracted_entities.
+    """
+    import services.database as db
     doc = get_document(doc_id)
     if not doc:
         return {"status": "error", "message": "Document not found"}
@@ -180,21 +227,22 @@ def analyze_document(doc_id, custom_prompt: str | None = None):
     if not os.path.exists(file_path):
         return {"status": "error", "message": "File not found on disk"}
 
-    # Non-image files (e.g. PDFs) — skip vision, return a helpful message
+    # Validate image type
     ext = os.path.splitext(file_path)[1].lower()
     if ext not in (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"):
         return {
             "status": "error",
-            "message": f"Vision model requires an image file. Got: {ext}. "
-            "Please upload a JPG or PNG.",
+            "message": f"Vision model requires an image file. Got: {ext}. Please upload a JPG or PNG.",
         }
 
+    # Load image bytes
     try:
         with open(file_path, "rb") as f:
             image_b64 = base64.b64encode(f.read()).decode("utf-8")
     except Exception as e:
         return {"status": "error", "message": f"Could not read file: {e}"}
 
+    # Choose prompt – allow caller override or default
     prompt = custom_prompt or (
         "You are a document analysis assistant for an Australian accounting firm.\n"
         "Analyse this document image and extract:\n"
@@ -208,27 +256,20 @@ def analyze_document(doc_id, custom_prompt: str | None = None):
     ai_response = None
     used_model = None
 
-    # Try Ollama vision first (local, fast, free)
+    # ---------------------------------------------------------------------
+    # Vision model call – Ollama first, fallback to OpenRouter, then OCR.
+    # ---------------------------------------------------------------------
     try:
         logger.info(f"Vision analysis: trying {OLLAMA_VISION_MODEL} for doc {doc_id}")
         response = ollama.chat(
             model=OLLAMA_VISION_MODEL,
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt,
-                    "images": [image_b64],
-                }
-            ],
+            messages=[{"role": "user", "content": prompt, "images": [image_b64]}],
         )
         ai_response = response["message"]["content"]
         used_model = f"ollama/{OLLAMA_VISION_MODEL}"
-        logger.info(
-            f"Vision analysis success with {OLLAMA_VISION_MODEL} ({len(ai_response)} chars)"
-        )
+        logger.info(f"Vision analysis success with {OLLAMA_VISION_MODEL} ({len(ai_response)} chars)")
     except Exception as e:
         logger.warning(f"Ollama vision failed: {e}. Trying OpenRouter fallback...")
-        # Fallback to OpenRouter if Ollama fails
         for model in VISION_MODELS:
             try:
                 ai_response = _call_openrouter_vision(image_b64, prompt, model)
@@ -237,30 +278,46 @@ def analyze_document(doc_id, custom_prompt: str | None = None):
             except Exception as e2:
                 logger.warning(f"OpenRouter vision {model} failed: {e2}")
 
+    # ---------------------------------------------------------------------
+    # If all vision attempts failed, fall back to OCR then RAG.
+    # ---------------------------------------------------------------------
     if not ai_response:
-        logger.warning(f"[VISION] All models failed for doc {doc_id}. Attempting RAG fallback.")
         try:
-            from services.agentic_rag import get_agentic_rag
-            rag = get_agentic_rag()
-            rag_context = rag.get_context_for_email(
-                {"snippet": f"Document analysis request for doc_id={doc_id}", "subject": "document"},
-                tier=2,
-            )
-            return {
-                "status": "rag_fallback",
-                "source": "chromadb_local",
-                "analysis": rag_context,
-                "document_id": doc_id,
-                "message": "Vision models unavailable. Returned local RAG context instead.",
-            }
-        except Exception as rag_err:
-            logger.error(f"[VISION] RAG fallback also failed: {rag_err}")
-            return {
-                "status": "error",
-                "message": "All vision models failed and RAG fallback unavailable.",
-            }
+            from PIL import Image
+            import pytesseract
+            temp_image_path = os.path.join(TEMP_PATH, f"ocr_{doc_id}.png")
+            with open(temp_image_path, "wb") as f_ocr:
+                f_ocr.write(base64.b64decode(image_b64))
+            ocr_text = pytesseract.image_to_string(Image.open(temp_image_path))
+            ai_response = f"[OCR FALLBACK]\n{ocr_text.strip()}"
+            used_model = "local_ocr"
+            logger.info("Vision fallback: Tesseract OCR succeeded")
+        except Exception as ocr_err:
+            logger.warning(f"OCR fallback failed: {ocr_err}")
+        # RAG fallback if OCR also failed
+        if not ai_response:
+            logger.warning(f"[VISION] All models failed for doc {doc_id}. Attempting RAG fallback.")
+            try:
+                from services.agentic_rag import get_agentic_rag
+                rag = get_agentic_rag()
+                rag_context = rag.get_context_for_email(
+                    {"snippet": f"Document analysis request for doc_id={doc_id}", "subject": "document"},
+                    tier=2,
+                )
+                return {
+                    "status": "rag_fallback",
+                    "source": "chromadb_local",
+                    "analysis": rag_context,
+                    "document_id": doc_id,
+                    "message": "Vision models unavailable. Returned local RAG context instead.",
+                }
+            except Exception as rag_err:
+                logger.error(f"[VISION] RAG fallback also failed: {rag_err}")
+                return {"status": "error", "message": "All vision models failed and RAG fallback unavailable."}
 
-    # Persist analysis to DB
+    # ---------------------------------------------------------------------
+    # Store primary analysis result.
+    # ---------------------------------------------------------------------
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute(
@@ -270,6 +327,39 @@ def analyze_document(doc_id, custom_prompt: str | None = None):
     conn.commit()
     conn.close()
 
+    # ---------------------------------------------------------------------
+    # Optional second pass: ask for construction entity extraction.
+    # This result is stored in the extracted_data column as JSON.
+    # If extraction succeeds, advance workflow_stage to 3 (Onsite Inspection).
+    # ---------------------------------------------------------------------
+    try:
+        entity_prompt = _construction_entity_prompt()
+        entity_response = None
+        # Re‑use the same model that succeeded earlier for consistency.
+        if used_model.startswith("ollama"):
+            response = ollama.chat(
+                model=OLLAMA_VISION_MODEL,
+                messages=[{"role": "user", "content": entity_prompt, "images": [image_b64]}],
+            )
+            entity_response = response["message"]["content"]
+        else:
+            # OpenRouter fallback – use the same model that succeeded earlier.
+            entity_response = _call_openrouter_vision(image_b64, entity_prompt, used_model.split('/')[-1])
+        # Ensure JSON validity then store.
+        try:
+            json.loads(entity_response)
+            _store_extracted_entities(doc_id, entity_response)
+            # Advance workflow stage to 3 (Onsite Inspection)
+            try:
+                import services.database as db
+                db.update_workflow_stage(str(doc_id), "3")
+                logger.info(f"Workflow stage for doc {doc_id} advanced to 3 after entity extraction.")
+            except Exception as we_err:
+                logger.warning(f"Failed to update workflow stage for doc {doc_id}: {we_err}")
+        except Exception:
+            logger.warning(f"Entity extraction did not return valid JSON for doc {doc_id}")
+    except Exception as e:
+        logger.warning(f"Construction entity extraction failed for doc {doc_id}: {e}")
     return {
         "status": "success",
         "analysis": ai_response,

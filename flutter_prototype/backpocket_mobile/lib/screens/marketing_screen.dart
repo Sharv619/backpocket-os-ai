@@ -32,6 +32,7 @@ class _MarketingScreenState extends State<MarketingScreen> {
   bool _generatingStory = false;
 
   // Generated content results
+  String? _gbpPost;
   String? _facebookPost;
   String? _instagramCaption;
   String? _instagramHashtags;
@@ -84,7 +85,7 @@ class _MarketingScreenState extends State<MarketingScreen> {
       return;
     }
 
-    setState(() => _generating = true);
+    setState(() { _generating = true; _gbpPost = null; });
     final headers = {
       'Content-Type': 'application/json',
       if (widget.apiKey.isNotEmpty) 'X-API-Key': widget.apiKey,
@@ -104,8 +105,7 @@ class _MarketingScreenState extends State<MarketingScreen> {
 
       if (data['status'] == 'success') {
         _showSnack('GBP Post generated!', isError: false);
-        _jobDescController.clear();
-        _suburbController.clear();
+        setState(() => _gbpPost = data['post'] as String?);
         _loadData();
       } else {
         _showSnack('Error: ${data['message']}', isError: true);
@@ -331,6 +331,15 @@ class _MarketingScreenState extends State<MarketingScreen> {
                                 ),
                         ),
                       ),
+                      if (_gbpPost != null) ...[
+                        const SizedBox(height: 16),
+                        _buildResultCard(
+                          icon: Icons.business,
+                          color: AppColors.amber,
+                          label: 'Google Business Post',
+                          content: _gbpPost!,
+                        ),
+                      ],
                     ],
                   ),
                 ),

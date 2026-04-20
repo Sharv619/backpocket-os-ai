@@ -129,15 +129,15 @@ class AgenticRAG:
         else:
             return "admin"
 
-def generate_agentic_response(
-    self,
-    email_content: Dict[str, Any],
-    tier: int = 1,
-    context: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    def generate_agentic_response(
+        self,
+        email_content: Dict[str, Any],
+        tier: int = 1,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Generate response using agentic reasoning + RAG context."""
         # DeepMind‑style reasoning logs
         logger.info(f"[AGENTIC REASONING]: Generating response for email subject '{email_content.get('subject','')[:30]}' (tier={tier})")
-        """Generate response using agentic reasoning + RAG context."""
 
         if not context:
             context = self.get_context_for_email(email_content, tier)
