@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 import logging
 import os
 import asyncio
@@ -8,8 +8,33 @@ from typing import Optional
 import services.database as db
 from services.gmail import send_email
 
-router = APIRouter(prefix="/api/mobile", tags=["mobile"])
 logger = logging.getLogger(__name__)
+
+# ── API-key gate ──────────────────────────────────────────────────────────────
+# When BP_API_KEY is set in env, every mobile route requires the header.
+# Without it (local dev / unset) routes are open — log a warning at import time.
+_BP_API_KEY = os.getenv("BP_API_KEY", "")
+if not _BP_API_KEY:
+    logger.warning(
+        "BP_API_KEY not set — mobile routes are unauthenticated. "
+        "Set BP_API_KEY in .env for production."
+    )
+
+
+async def _require_api_key(x_api_key: str = Header(default="")) -> None:
+    """Reject requests that don't carry the correct X-API-Key header."""
+    if _BP_API_KEY and x_api_key != _BP_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing X-API-Key",
+        )
+
+
+router = APIRouter(
+    prefix="/api/mobile",
+    tags=["mobile"],
+    dependencies=[Depends(_require_api_key)],
+)
 
 _TIER_LABELS = {"1": "URGENT", "2": "HIGH", "3": "MEDIUM", "4": "LOW", "5": "SPAM"}
 

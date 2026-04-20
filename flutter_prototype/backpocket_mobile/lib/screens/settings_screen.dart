@@ -30,6 +30,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _saving = false;
   String? _pingResult;
   bool _pinging = false;
+  bool _insecureUrl = false;
 
   // BYOK — Sovereign Engine
   final _orKeyController = TextEditingController();
@@ -63,11 +64,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  bool _isInsecureRemote(String url) {
+    if (!url.startsWith('http://')) return false;
+    final host = Uri.tryParse(url)?.host ?? '';
+    return host != '127.0.0.1' && host != 'localhost' && host.isNotEmpty;
+  }
+
   @override
   void initState() {
     super.initState();
     _serverUrlController = TextEditingController(text: widget.serverUrl);
     _apiKeyController = TextEditingController(text: widget.apiKey);
+    _serverUrlController.addListener(() {
+      final insecure = _isInsecureRemote(_serverUrlController.text.trim());
+      if (insecure != _insecureUrl) setState(() => _insecureUrl = insecure);
+    });
     _loadPrefs();
   }
 
@@ -89,6 +100,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           prefs.getString('server_url') ?? widget.serverUrl;
       _apiKeyController.text = prefs.getString('api_key') ?? widget.apiKey;
       _ownerNameController.text = prefs.getString('owner_name') ?? '';
+      _insecureUrl = _isInsecureRemote(_serverUrlController.text.trim());
     });
     _loadBYOKStatus();
     _loadCurrentStyle();
@@ -273,10 +285,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _SettingsSection(
             title: 'Server Configuration',
             children: [
+              if (_insecureUrl)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.red.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.red.withValues(alpha: 0.4)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.lock_open, color: AppColors.red, size: 14),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Plain HTTP exposes all traffic. Use HTTPS for any remote server.',
+                          style: TextStyle(color: AppColors.red, fontSize: 11),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               _SettingsField(
                 controller: _serverUrlController,
                 label: 'Server URL',
-                hint: 'http://192.168.x.x:8000',
+                hint: 'https://your-server.com or http://127.0.0.1:8000',
                 icon: Icons.dns_outlined,
               ),
               const SizedBox(height: 8),
