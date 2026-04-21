@@ -75,6 +75,7 @@ Based on the PRD feedback and current codebase audit, we are transitioning from 
 
 ## 5. Execution Steps (Next 24 Hours)
 
+
 1. **Update `api_service.dart`**: Add missing methods for `promoteInstruction` and `generateInvoicePdf`.
 2. **Refactor Screens**: Rename Twins in `agentic_rag_screen.dart`.
 3. **Implement Offline Cache**: Add `sqflite` dependency and basic queueing logic.
