@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-import os
 from dotenv import load_dotenv
 load_dotenv('/home/lade/Hackathons/.git/backpocket-mvp/.env', override=True)
 
 from services.gmail import get_unread_emails
-from services.gemini import triage_email, draft_response
+from services.gemini import draft_response
 import services.database as db
 import uuid
 from datetime import datetime

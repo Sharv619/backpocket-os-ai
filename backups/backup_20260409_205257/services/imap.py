@@ -182,7 +182,6 @@ def archive_message_imap(msg_id_string, config_file):
         mail.select("inbox")
         
         # Check if archive folder exists, copy, then delete original
-        archive_folders = ["Archive", "Archiv", "Deleted Messages"] 
         status, folders = mail.list()
         archive_name = "Archive"
         if status == "OK" and folders:

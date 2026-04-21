@@ -17,8 +17,6 @@ Usage:
 import sys
 import os
 import sqlite3
-import json
-from pathlib import Path
 
 # Add parent to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -110,7 +108,7 @@ def check_database():
         if pending_count > 0:
             print_ok(f"Sample data: {pending_count} pending approvals")
         else:
-            print_warn(f"No pending approvals found (run demo_seed.py to populate)")
+            print_warn("No pending approvals found (run demo_seed.py to populate)")
 
         conn.close()
         return True
@@ -156,7 +154,7 @@ def check_config():
             else:
                 print_warn(f"{key} not found in .env")
     else:
-        print_warn(f".env not found — copy from .env.example and fill in API keys")
+        print_warn(".env not found — copy from .env.example and fill in API keys")
         config_ok = False
 
     # Check credentials (optional)
@@ -213,7 +211,7 @@ def check_api_endpoints():
                 if isinstance(data, list):
                     print_ok(f"GET /api/pending → 200 OK ({len(data)} approvals)")
                 else:
-                    print_warn(f"GET /api/pending returned unexpected format")
+                    print_warn("GET /api/pending returned unexpected format")
             else:
                 print_warn(f"GET /api/pending → {resp.status_code}")
         except Exception as e:

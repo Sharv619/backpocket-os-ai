@@ -3,11 +3,10 @@ BackPocket OS — Voice-to-Quote Routes
 FastAPI endpoints for voice transcription and quote generation.
 """
 
-import io
 import os
 from typing import Optional
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form
 from pydantic import BaseModel
 import requests
 
@@ -107,9 +106,9 @@ async def quote_from_transcript(request: QuoteDraftRequest) -> dict:
             try:
                 quote_data = json.loads(result.get("response", "{}"))
                 return {"quote_draft": quote_data}
-            except:
+            except Exception:
                 pass
-    except Exception as e:
+    except Exception:
         pass
 
     # Fallback

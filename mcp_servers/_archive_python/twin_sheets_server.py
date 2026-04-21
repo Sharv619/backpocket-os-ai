@@ -13,7 +13,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Dict, Any
 from datetime import datetime
 
 logging.basicConfig(
@@ -117,7 +117,7 @@ class SheetsMCPServer:
             Success status
         """
         try:
-            result = self.sheets.log_activity(action, details, tier)
+            self.sheets.log_activity(action, details, tier)
 
             return {"status": "success", "logged": True, "action": action}
 
@@ -144,10 +144,10 @@ class SheetsMCPServer:
         try:
             # Use the add_row or similar method from sheets service
             if hasattr(self.sheets, "add_client"):
-                result = self.sheets.add_client(email, name, company)
+                self.sheets.add_client(email, name, company)
             else:
                 # Manual add via append
-                result = self.sheets.append_row(
+                self.sheets.append_row(
                     "Clients_Master",
                     [name, email, company, datetime.now().strftime("%Y-%m-%d")],
                 )
@@ -196,7 +196,7 @@ class SheetsMCPServer:
             Success status
         """
         try:
-            result = self.sheets.log_portal_activity(client, action, details)
+            self.sheets.log_portal_activity(client, action, details)
 
             return {"status": "success", "logged": True, "client": client}
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import os
 from dotenv import load_dotenv
 
 # Load from the correct .env path

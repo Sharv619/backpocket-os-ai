@@ -1,5 +1,6 @@
 """Create the shared knowledge_notes table. Idempotent."""
-import sqlite3, sys, pathlib
+import sqlite3
+import pathlib
 
 DB = pathlib.Path(__file__).resolve().parent.parent / "backpocket.db"
 

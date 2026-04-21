@@ -1,13 +1,11 @@
 import os
-import logging
 
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from app.core.config import logger, db
+from app.core.config import logger
 from app.core.middleware import APIKeyMiddleware, setup_cors
 from app.models.schemas import LogRequest
 
@@ -62,11 +60,6 @@ from routes.mobile import router as mobile_router
 from routes.documents import router as documents_router
 from routes.voice_commands import router as voice_commands_router
 
-import routes.voice_handlers_dashboard
-import routes.voice_handlers_inbox
-import routes.voice_handlers_construction
-import routes.voice_handlers_misc
-import routes.voice_handlers_cross
 
 app.include_router(admin_router)
 app.include_router(voice_router)

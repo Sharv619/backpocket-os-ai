@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import os
 from dotenv import load_dotenv
 load_dotenv(override=True)
 
@@ -24,7 +23,7 @@ try:
     draft = draft_response(email_content=email_content, tier=1)
 
     if draft and isinstance(draft, str):
-        print(f"\n✅ SUCCESS! Draft generated:\n")
+        print("\n✅ SUCCESS! Draft generated:\n")
         print(f"---\n{draft}\n---")
     else:
         print(f"\n❌ FAILED: Draft returned as {type(draft).__name__}")

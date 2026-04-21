@@ -1,7 +1,5 @@
 import logging
-import os
 from typing import Optional
-from datetime import datetime
 from pydantic import BaseModel
 
 
@@ -47,19 +45,3 @@ import services.database as db
 # must exist before that module (or anything that triggers it) is loaded.
 db.init_db()
 
-from services.google_sheets import (
-    test_sheets_connection,
-    log_activity,
-    ensure_sheets_exist,
-)
-from services.gmail import send_email
-from services.gemini import (
-    triage_email,
-    draft_response,
-    refine_draft,
-    batch_triage_emails,
-    pre_triage_rules,
-)
-from services.whapi import send_notification
-from services.self_check import run_self_check, send_morning_pulse
-from services.local_audit import run_self_audit

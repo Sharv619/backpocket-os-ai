@@ -1171,7 +1171,6 @@ async def whatsapp_webhook(request: Request):
                         user_provided_draft = ""
                         
                         # Check if user is providing a direct edit (starts with "Hi " or "Dear " etc)
-                        original_block = block_text
                         if ref_id in block_text:
                             after_id = block_text.split(ref_id, 1)[1].strip().lstrip(':').strip()
                             # If the content looks like an email (starts with Hi, Dear, Thanks, etc), treat as direct edit
@@ -1437,7 +1436,7 @@ async def api_approve(request: ApproveRequest):
     email_addr  = info.get('sender', '').strip()
     subject     = info.get('subject', '')
     draft       = info.get('draft_body', '')
-    from_alias  = info.get('delivered_to', '')
+    info.get('delivered_to', '')
     
     # Validate email address
     if not email_addr or email_addr == 'unknown sender' or '@' not in email_addr:
@@ -2002,7 +2001,7 @@ async def process_triaged_email(email, triage, loop):
     from services.google_sheets import log_activity, check_client_identity
     from services.gmail import get_historical_context, archive_message
     from services.imap import archive_message_imap
-    from services.whapi import send_notification, send_whatsapp_message
+    from services.whapi import send_whatsapp_message
     from services.gemini import draft_response
 
     clean_email = email.get('clean_email', '')

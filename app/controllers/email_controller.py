@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter
 import logging
 import os
 import asyncio
 from datetime import datetime
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional
 import services.database as db
 from services.gmail import send_email
 

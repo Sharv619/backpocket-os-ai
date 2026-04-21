@@ -2,7 +2,6 @@
 """Create construction/tradie management tables"""
 
 import sqlite3
-from datetime import datetime
 
 DB_PATH = "backpocket.db"
 

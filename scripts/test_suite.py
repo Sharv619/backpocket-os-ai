@@ -5,7 +5,6 @@ Run all demo path tests
 """
 
 import requests
-import json
 import sqlite3
 import time
 import os
@@ -24,7 +23,7 @@ def ensure_server():
         return True
     except:
         print("🔄 Starting server...")
-        proc = subprocess.Popen(
+        subprocess.Popen(
             [
                 sys.executable,
                 "-m",

@@ -13,7 +13,6 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import logging
-import json
 from typing import Optional, List, Dict, Any
 
 logging.basicConfig(
@@ -179,7 +178,7 @@ class WhatsAppMCPServer:
             revised = stats.get("revised", 0)
             tier1 = stats.get("tier1", 0)
 
-            message = f"Daily Summary\n\n"
+            message = "Daily Summary\n\n"
             message += f"Emails processed: {processed}\n"
             message += f"Approved: {approved}\n"
             message += f"Revised: {revised}\n"
@@ -296,7 +295,7 @@ class WhatsAppMCPServer:
             Success status
         """
         try:
-            result = self.whapi.send_buttons(to, body, buttons)
+            self.whapi.send_buttons(to, body, buttons)
 
             return {"status": "success", "sent": True, "buttons": buttons}
 

@@ -76,8 +76,8 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 from controllers.admin_controller import router as admin_router
 from controllers.voice_controller import router as voice_router
 from controllers.crm_controller import router as construction_router
-from controllers/email_controller import router as mobile_router
-from controllers/document_controller import router as documents_router
+from controllers.email_controller import router as mobile_router
+from controllers.document_controller import router as documents_router
 
 # Include route controllers
 app.include_router(admin_router)

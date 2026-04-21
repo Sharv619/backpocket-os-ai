@@ -483,15 +483,14 @@ def draft_response(email_content, tier, historical_context="", client_info=None)
         if not client:
             return "Gemini not initialized"
 
-        client_note = f"CLIENT BACKGROUND: {client_info.get('background_info')}" if client_info else "NEW CONTACT."
-        client_name = client_info.get('first_name', 'there') if client_info else 'there'
+        f"CLIENT BACKGROUND: {client_info.get('background_info')}" if client_info else "NEW CONTACT."
+        client_info.get('first_name', 'there') if client_info else 'there'
 
         # Load Cherry's Style Guide from file
-        style_guide = ""
         style_path = os.path.join("docs", "CHERRY_STYLE.txt")
         if os.path.exists(style_path):
             with open(style_path, "r", encoding="utf-8") as f:
-                style_guide = f.read()
+                f.read()
 
         # Load corrections history for learning (especially for Tier 1 clients)
         corrections_context = ""

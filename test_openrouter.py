@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import os
-import sys
 from dotenv import load_dotenv
 load_dotenv(override=True)
 
@@ -28,7 +27,7 @@ try:
     )
     print(f"Status: {response.status_code}")
     if response.status_code == 200:
-        print(f"✓ OpenRouter is working!")
+        print("✓ OpenRouter is working!")
         data = response.json()
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
         print(f"Response: {content}")

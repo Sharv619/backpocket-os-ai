@@ -197,7 +197,6 @@ class DocumentProcessor:
         data["emails"] = [e for e in data["emails"] if not e.endswith('.') and len(e) > 5][:5]
         
         # Intelligent Australian phone extraction
-        phones = []
         
         # Australian mobile: 04XX XXX XXX or +61 4XX XXX XXX
         mobile_patterns = [

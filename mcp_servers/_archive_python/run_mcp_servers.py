@@ -18,8 +18,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import argparse
 import logging
 from typing import Dict, Any
-import json
-import asyncio
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -419,7 +417,7 @@ try:
 except ImportError:
     # Fallback if FastAPI not available
     def run_server(port: int = 8000, host: str = "127.0.0.1"):
-        print(f"\n⚠️ FastAPI not installed. Installing...")
+        print("\n⚠️ FastAPI not installed. Installing...")
         import subprocess
 
         subprocess.run([sys.executable, "-m", "pip", "install", "fastapi", "uvicorn"])
@@ -444,7 +442,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.server == "all":
-        print(f"""
+        print("""
 ╔══════════════════════════════════════════════════════════════════╗
 ║           BackPocket OS - MCP Server Suite                      ║
 ╠══════════════════════════════════════════════════════════════════╣

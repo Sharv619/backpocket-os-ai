@@ -317,7 +317,7 @@ def send_morning_nudge():
         lines.append(f"You have *{len(pending_refs)} email(s)* waiting for review:\n")
         
         # Group by tier
-        tier1 = [r for r in pending_refs if r.startswith('2026') and any(db.get_pending_approval(r).get('tier') == '1' for r in [r])]
+        [r for r in pending_refs if r.startswith('2026') and any(db.get_pending_approval(r).get('tier') == '1' for r in [r])]
         
         for r in pending_refs[:8]:
             p = db.get_pending_approval(r)

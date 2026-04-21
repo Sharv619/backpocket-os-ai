@@ -1,5 +1,4 @@
 import os
-import json
 from dotenv import load_dotenv
 from services.gmail import get_unread_emails
 
