@@ -660,73 +660,136 @@ class _LocalDocCard extends StatelessWidget {
         (doc['ai_analysis'] as String? ?? '').isNotEmpty;
     final status = doc['status'] as String? ?? 'pending';
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.amber.withAlpha(26),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.description,
-                    color: AppColors.amber, size: 20),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+    return GestureDetector(
+      onTap: () {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: AppColors.card,
+            title: Text(
+              doc['original_name'] as String? ?? 'Document Analysis',
+              style: const TextStyle(color: Colors.white),
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (hasAnalysis)
                     Text(
-                      doc['original_name'] as String? ??
-                          doc['filename'] as String? ??
-                          'Document',
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600),
+                      doc['ai_analysis'] as String,
+                      style: const TextStyle(color: AppColors.textDim, fontSize: 14),
+                    )
+                  else
+                    const Text(
+                      'No analysis available yet. Analysis is performed automatically after upload.',
+                      style: TextStyle(color: AppColors.textMuted),
                     ),
-                    Text(
-                      (doc['created_at']?.toString() ?? '')
-                          .split('.')
-                          .first,
-                      style: const TextStyle(
-                          color: AppColors.textMuted, fontSize: 11),
-                    ),
-                  ],
-                ),
-              ),
-              _StatusBadge(hasAnalysis: hasAnalysis, status: status),
-            ],
-          ),
-          if (hasAnalysis) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                doc['ai_analysis'] as String,
-                style: const TextStyle(
-                    color: AppColors.textDim,
-                    fontSize: 12,
-                    height: 1.5),
-                maxLines: 4,
-                overflow: TextOverflow.ellipsis,
+                  const SizedBox(height: 20),
+                  const Text('Details',
+                      style: TextStyle(
+                          color: AppColors.amber,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12)),
+                  const Divider(color: AppColors.border),
+                  _detailRow('Category', doc['category'] ?? 'other'),
+                  _detailRow('Status', status),
+                  _detailRow('Created', doc['created_at'] ?? ''),
+                ],
               ),
             ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close', style: TextStyle(color: AppColors.amber)),
+              ),
+            ],
+          ),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.amber.withAlpha(26),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.description,
+                      color: AppColors.amber, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        doc['original_name'] as String? ??
+                            doc['filename'] as String? ??
+                            'Document',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600),
+                      ),
+                      Text(
+                        (doc['created_at']?.toString() ?? '')
+                            .split('.')
+                            .first,
+                        style: const TextStyle(
+                            color: AppColors.textMuted, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+                _StatusBadge(hasAnalysis: hasAnalysis, status: status),
+              ],
+            ),
+            if (hasAnalysis) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  doc['ai_analysis'] as String,
+                  style: const TextStyle(
+                      color: AppColors.textDim,
+                      fontSize: 12,
+                      height: 1.5),
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _detailRow(String label, dynamic value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label,
+              style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+          Text(value.toString(),
+              style: const TextStyle(color: Colors.white, fontSize: 12)),
         ],
       ),
     );

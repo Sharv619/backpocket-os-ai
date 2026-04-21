@@ -149,6 +149,22 @@ PARAM_ORDER = {
             "category": "Category? (tone/workflow/priority/style/compliance)",
         },
     },
+    "construction.quote.invoice": {
+        "order": ["quote_id", "fuzzy", "fuzzy_ref"],
+        "defaults": {},
+        "questions": {
+            "quote_id": "Which quote should I invoice?",
+            "fuzzy": "Which quote?",
+        },
+    },
+    "cross.quote_to_invoice": {
+        "order": ["quote_id", "fuzzy", "fuzzy_ref"],
+        "defaults": {},
+        "questions": {
+            "quote_id": "Which quote should I invoice?",
+            "fuzzy": "Which quote?",
+        },
+    },
 }
 
 # Intents that need confirmation before executing

@@ -24,96 +24,116 @@ _PAPERLESS_ENABLED = bool(os.getenv("PAPERLESS_TOKEN", ""))
 # ── Upload ────────────────────────────────────────────────────────────────────
 
 @router.post("/upload")
-async def upload_document(request: Request):
+async def upload_document_and_analyze(request: Request):
     """
-    Upload a document. Accepts:
-      - application/json: {'file': '<base64>', 'filename': '...', 'category': '...'}
-      - multipart/form-data: file field + optional category field
-    Paperless-ngx used when PAPERLESS_TOKEN is set, else local SQLite.
+    New workflow:
+    1. Uploads a document to Paperless-ngx.
+    2. Polls for the OCR task to complete.
+    3. Fetches the extracted text from Paperless.
+    4. Submits the clean text to a language model for semantic analysis.
     """
+    if not _PAPERLESS_ENABLED:
+        return HTTPException(status_code=503, detail="Paperless-ngx service is not configured.")
+
     try:
-        content: bytes
-        filename: str
-        category: str = "other"
-
-        ct = request.headers.get("content-type", "")
-
-        if "application/json" in ct:
-            body = await request.json()
-            raw = body.get("file", "")
-            filename = body.get("filename", "document.jpg")
-            category = body.get("category", "other")
-            if not raw:
-                return {"status": "error", "message": "No file data in JSON body"}
-            # Strip data-URI prefix if present (e.g. "data:image/jpeg;base64,...")
-            if "," in raw:
-                raw = raw.split(",", 1)[1]
-            content = base64.b64decode(raw)
-
-        elif "multipart" in ct:
-            form = await request.form()
-            upload = form.get("file")
-            if upload is None:
-                return {"status": "error", "message": "No file field in form"}
-            filename = getattr(upload, "filename", None) or "document.jpg"
-            category = str(form.get("category", "other"))
-            content = await upload.read()
-            # Strip accidental multipart wrapper
-            if content.startswith(b"------"):
-                h = content.find(b"\r\n\r\n")
-                if h > 0:
-                    nb = content.find(b"\r\n------", h)
-                    content = content[h + 4: nb] if nb > 0 else content[h + 4:]
-
-        else:
-            # Raw body fallback (shouldn't happen but be forgiving)
-            content = await request.body()
-            filename = "document.jpg"
-            if len(content) < 100:
-                return {"status": "error", "message": "No file provided"}
-
+        # Step 0: Extract file content from the request (same as before)
+        content, filename, category = await _extract_file_from_request(request)
         if len(content) < 100:
             return {"status": "error", "message": "File too small or invalid"}
 
-        # ── Store in Paperless (primary) ──────────────────────────────────────
-        if _PAPERLESS_ENABLED:
-            loop = asyncio.get_event_loop()
-            # Infer document type from category for auto-tagging
-            doc_type_name = _category_to_doc_type(category)
-            result = await loop.run_in_executor(
-                None,
-                lambda: paperless.upload_document(
-                    content,
-                    filename,
-                    title=os.path.splitext(filename)[0],
-                    document_type=doc_type_name,
-                ),
-            )
-            if "error" not in result:
-                # Also save locally so analyze endpoint still works
-                doc_id = save_document(content, filename, category=category)
-                return {
-                    "status": "success",
-                    "document_id": doc_id,
-                    "paperless_task_id": result.get("task_id"),
-                    "filename": filename,
-                    "message": "Uploaded to Paperless-ngx (OCR queued)",
-                    "storage": "paperless",
-                }
-            logger.warning(f"Paperless upload failed ({result['error']}), falling back to local")
+        # Step 1: Upload to Paperless and get a task ID
+        loop = asyncio.get_event_loop()
+        upload_result = await loop.run_in_executor(
+            None,
+            lambda: paperless.upload_document(
+                content,
+                filename,
+                title=os.path.splitext(filename)[0],
+                document_type=_category_to_doc_type(category),
+            ),
+        )
 
-        # ── Fallback: local SQLite store ──────────────────────────────────────
-        doc_id = save_document(content, filename, category=category)
+        if "error" in upload_result:
+            raise HTTPException(status_code=502, detail=f"Paperless upload failed: {upload_result['error']}")
+        
+        task_id = upload_result.get("task_id")
+        if not task_id:
+            raise HTTPException(status_code=500, detail="Paperless did not return a task ID.")
+
+        # Step 2: Poll for task completion to get the document ID
+        doc_id = None
+        for _ in range(15): # Poll for up to 30 seconds
+            await asyncio.sleep(2)
+            status_result = await loop.run_in_executor(None, paperless.get_task_status, task_id)
+            if status_result.get("status") == "SUCCESS":
+                doc_id = status_result.get("document_id")
+                break
+            elif status_result.get("status") == "FAILURE":
+                raise HTTPException(status_code=500, detail=f"Paperless processing failed: {status_result.get('error')}")
+        
+        if not doc_id:
+            raise HTTPException(status_code=504, detail="Timeout waiting for Paperless to process the document.")
+
+        # Step 3: Fetch the full document details, including OCR'd content
+        paperless_doc = await loop.run_in_executor(None, paperless.get_document, doc_id)
+        if "error" in paperless_doc:
+            raise HTTPException(status_code=502, detail=f"Could not fetch processed document from Paperless: {paperless_doc['error']}")
+        
+        ocr_content = paperless_doc.get("content", "")
+        if not ocr_content:
+            # If content is empty, it might not be an error, but we can't analyze.
+            # We'll save a local record and return a success message without AI analysis.
+            local_doc_id = save_document(content, filename, category=category)
+            return {"status": "success_no_analysis", "document_id": local_doc_id, "paperless_id": doc_id, "message": "Document uploaded and OCR'd, but no text was found to analyze."}
+
+        # Step 4: Save a local reference and submit the text for AI analysis
+        local_doc_id = save_document(content, filename, category=category)
+        
+        from services.document_vision import analyze_text_content
+        analysis_result = await loop.run_in_executor(None, analyze_text_content, local_doc_id, ocr_content)
+
         return {
             "status": "success",
-            "document_id": doc_id,
-            "filename": filename,
-            "message": "Document uploaded",
-            "storage": "local",
+            "document_id": local_doc_id,
+            "paperless_id": doc_id,
+            "analysis": analysis_result,
+            "message": "Document uploaded, OCR'd, and analyzed."
         }
+
     except Exception as e:
-        logger.error(f"Upload error: {e}")
+        logger.error(f"New upload workflow error: {e}")
+        # Use HTTPException's error handling if it's one of those, otherwise generic error
+        if isinstance(e, HTTPException):
+            raise
         return {"status": "error", "message": str(e)}
+
+async def _extract_file_from_request(request: Request):
+    """Helper to get file content, name, and category from different request types."""
+    content: bytes
+    filename: str
+    category: str = "other"
+    ct = request.headers.get("content-type", "")
+
+    if "application/json" in ct:
+        body = await request.json()
+        raw = body.get("file", "")
+        filename = body.get("filename", "document.jpg")
+        category = body.get("category", "other")
+        if not raw: raise ValueError("No file data in JSON body")
+        if "," in raw: raw = raw.split(",", 1)[1]
+        content = base64.b64decode(raw)
+    elif "multipart" in ct:
+        form = await request.form()
+        upload = form.get("file")
+        if not isinstance(upload, UploadFile): raise ValueError("No file field in form")
+        filename = upload.filename or "document.jpg"
+        category = str(form.get("category", "other"))
+        content = await upload.read()
+    else:
+        raise ValueError(f"Unsupported content type: {ct}")
+        
+    return content, filename, category
+
 
 
 def _category_to_doc_type(category: str) -> str:

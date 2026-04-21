@@ -62,6 +62,41 @@ Be proactive. Offer specific help and follow through on tasks.""",
 }
 
 
+def get_ai_provider():
+    """Reads the AI_PROVIDER from .env and returns the correct service class instance."""
+    provider = os.getenv("AI_PROVIDER", "openrouter").lower()
+
+    if provider == "ollama":
+        from services.ollama_service import OllamaService
+        return OllamaService()
+    
+    # Default to OpenRouter
+    from services.openrouter_service import OpenRouterService
+    return OpenRouterService()
+
+
+class TwinEngine:
+    """
+    Unified engine for making AI calls.
+    Uses the provider model to switch between cloud and local.
+    """
+    def __init__(self):
+        self.provider = get_ai_provider()
+        logger.info(f"TwinEngine initialized with AI provider: {self.provider.__class__.__name__}")
+
+    def get_completion(self, prompt: str, model: str = None) -> str:
+        """
+        Gets a text completion from the configured AI provider.
+        """
+        return self.provider.analyze(prompt, model=model)
+
+    def get_vision_completion(self, prompt: str, image_b64: str, model: str = None) -> str:
+        """
+        Gets a vision completion from the configured AI provider.
+        """
+        return self.provider.analyze_vision(prompt, image_b64, model=model)
+
+
 # ── ChromaDB RAG ───────────────────────────────────────────────────────────────
 
 class RAGContextBuilder:
