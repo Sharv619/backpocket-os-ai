@@ -404,6 +404,44 @@ Look at this photo and return a JSON object with EXACTLY these fields:
 Return ONLY the JSON. No markdown, no extra text."""
 
 
+def analyze_text_content(doc_id: int, text_content: str, custom_prompt: str | None = None) -> dict:
+    """Analyze pre-extracted text content using the configured TwinEngine AI provider."""
+    prompt = custom_prompt or (
+        "You are a document analysis assistant for an Australian accounting firm.\n"
+        f"A document has been processed via OCR and the following text was extracted:\n\n---\n{text_content}\n---\n\n"
+        "Please analyze this text and extract:\n"
+        "1. Document type (invoice, receipt, contract, tax form, letter, other)\n"
+        "2. Key information: dates, dollar amounts, ABN/ACN, names, addresses\n"
+        "3. Any action items or deadlines visible\n"
+        "4. A plain-English summary of what this document is about\n\n"
+        "Be concise. If something is not visible, say 'not visible'."
+    )
+    
+    try:
+        from services.twin_engine import TwinEngine
+        engine = TwinEngine()
+        ai_response = engine.get_completion(prompt)
+
+        # Store the AI analysis result
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE documents SET ai_analysis = ?, status = 'analyzed' WHERE id = ?",
+            (ai_response, doc_id),
+        )
+        conn.commit()
+        conn.close()
+
+        return {
+            "status": "success",
+            "analysis": ai_response,
+            "model_used": f"provider/{engine.provider.__class__.__name__}",
+            "document_id": doc_id,
+        }
+    except Exception as e:
+        logger.error(f"Text analysis failed for doc {doc_id}: {e}")
+        return {"status": "error", "message": str(e)}
+
 def analyze_building_image(image_b64: str, analysis_type: str = "material") -> dict:
     """
     Analyse a building/site photo for materials or structural damage.

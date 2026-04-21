@@ -250,17 +250,9 @@ async def startup_event():
     asyncio.create_task(inbox_polling_loop())
     logger.info("🚀 Background polling loop started automatically")
 
-
-@app.get("/dashboard")
-async def get_dashboard():
-    return FileResponse(
-        "static/index.html",
-        headers={
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Pragma": "no-cache",
-            "Expires": "0",
-        },
-    )
+@app.get("/")
+async def root():
+    return {"message": "BackPocket OS API is running. See /docs for details."}
 
 
 @app.get("/run-poll")

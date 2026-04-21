@@ -121,7 +121,8 @@ class ApiService {
       Uri.parse('$baseUrl/api/documents'),
       headers: _headers,
     );
-    return jsonDecode(res.body) ?? [];
+    final data = jsonDecode(res.body);
+    return data['documents'] ?? [];
   }
 
   // ── Marketing ──────────────────────────────────────────────────────────────

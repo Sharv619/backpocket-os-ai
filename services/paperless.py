@@ -1,250 +1,138 @@
-"""
-Paperless-ngx REST API wrapper.
-
-Set PAPERLESS_URL and PAPERLESS_TOKEN in .env.
-If PAPERLESS_TOKEN is empty, all methods return graceful fallbacks so the
-rest of the app keeps working without Paperless running.
-"""
-import io
-import logging
 import os
-from typing import Optional
-
 import requests
+import time
+import logging
 
 logger = logging.getLogger(__name__)
 
-PAPERLESS_URL = os.getenv("PAPERLESS_URL", "http://localhost:8010").rstrip("/")
-PAPERLESS_TOKEN = os.getenv("PAPERLESS_TOKEN", "")
+BASE_URL = os.getenv("PAPERLESS_URL", "http://localhost:8010")
+TOKEN = os.getenv("PAPERLESS_TOKEN", "")
 
+if not TOKEN:
+    logger.warning("PAPERLESS_TOKEN is not set. Paperless-ngx integration will be disabled.")
 
-def is_available() -> bool:
-    return bool(PAPERLESS_TOKEN)
+def _get_headers():
+    return {"Authorization": f"Token {TOKEN}"}
 
-
-def _headers() -> dict:
-    return {"Authorization": f"Token {PAPERLESS_TOKEN}"}
-
-
-# ── Upload ────────────────────────────────────────────────────────────────────
-
-def upload_document(
-    content: bytes,
-    filename: str,
-    title: Optional[str] = None,
-    correspondent: Optional[str] = None,
-    document_type: Optional[str] = None,
-    tags: Optional[list[int]] = None,
-) -> dict:
-    """
-    POST to /api/documents/post_document/
-    Returns {"paperless_id": int, "task_id": str} on success.
-    Returns {"error": str} on failure.
-    """
-    if not is_available():
+def upload_document(file_bytes, filename, title=None, document_type=None):
+    """Uploads a document and returns the task ID."""
+    if not TOKEN:
         return {"error": "Paperless not configured"}
-
-    data: dict = {}
+    
+    url = f"{BASE_URL}/api/documents/post_document/"
+    files = {'document': (filename, file_bytes)}
+    data = {}
     if title:
-        data["title"] = title
-    if correspondent:
-        data["correspondent"] = correspondent
+        data['title'] = title
     if document_type:
-        data["document_type"] = document_type
-    if tags:
-        for tag in tags:
-            data.setdefault("tags", []).append(tag)
+        # We need to get the ID for the document type name
+        doc_type_id = get_document_type_id_by_name(document_type)
+        if doc_type_id:
+            data['document_type'] = doc_type_id
 
     try:
-        resp = requests.post(
-            f"{PAPERLESS_URL}/api/documents/post_document/",
-            headers=_headers(),
-            files={"document": (filename, io.BytesIO(content), _mime_type(filename))},
-            data=data,
-            timeout=60,
-        )
-        resp.raise_for_status()
-        # Paperless returns the async task UUID as plain text or JSON
-        task_id = resp.text.strip().strip('"')
-        return {"task_id": task_id, "filename": filename}
-    except requests.RequestException as e:
-        logger.error(f"Paperless upload error: {e}")
+        response = requests.post(url, headers=_get_headers(), files=files, data=data, timeout=30)
+        response.raise_for_status()
+        task_id = response.json()
+        return {"task_id": task_id}
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Paperless upload failed: {e}")
         return {"error": str(e)}
 
-
-def _mime_type(filename: str) -> str:
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    return {
-        "pdf": "application/pdf",
-        "jpg": "image/jpeg",
-        "jpeg": "image/jpeg",
-        "png": "image/png",
-        "tiff": "image/tiff",
-        "tif": "image/tiff",
-    }.get(ext, "application/octet-stream")
-
-
-# ── List & fetch ──────────────────────────────────────────────────────────────
-
-def list_documents(page: int = 1, page_size: int = 25, query: str = "") -> dict:
-    """
-    GET /api/documents/?page=&page_size=&query=
-    Returns {"count": int, "results": [...]} or {"error": str}.
-    """
-    if not is_available():
-        return {"count": 0, "results": [], "error": "Paperless not configured"}
-
-    params: dict = {"page": page, "page_size": page_size}
-    if query:
-        params["query"] = query
-
-    try:
-        resp = requests.get(
-            f"{PAPERLESS_URL}/api/documents/",
-            headers=_headers(),
-            params=params,
-            timeout=15,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        # Normalise to our shape
-        results = [_normalise_doc(d) for d in data.get("results", [])]
-        return {"count": data.get("count", len(results)), "results": results}
-    except requests.RequestException as e:
-        logger.error(f"Paperless list error: {e}")
-        return {"count": 0, "results": [], "error": str(e)}
-
-
-def get_document(doc_id: int) -> dict:
-    """GET /api/documents/{id}/"""
-    if not is_available():
+def get_task_status(task_id):
+    """Polls for the status of a task and returns the related document ID on success."""
+    if not TOKEN:
         return {"error": "Paperless not configured"}
+        
+    url = f"{BASE_URL}/api/tasks/?task_id={task_id}"
     try:
-        resp = requests.get(
-            f"{PAPERLESS_URL}/api/documents/{doc_id}/",
-            headers=_headers(),
-            timeout=15,
-        )
-        resp.raise_for_status()
-        return _normalise_doc(resp.json())
-    except requests.RequestException as e:
-        logger.error(f"Paperless get_document error: {e}")
+        response = requests.get(url, headers=_get_headers(), timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if data.get("results"):
+            task_info = data["results"][0]
+            if task_info["status"] == "SUCCESS":
+                return {"status": "SUCCESS", "document_id": task_info.get("related_document")}
+            elif task_info["status"] == "FAILURE":
+                return {"status": "FAILURE", "error": task_info.get("result")}
+            else:
+                return {"status": task_info["status"]}
+        return {"status": "PENDING"}
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Failed to get task status: {e}")
         return {"error": str(e)}
 
+def get_document(document_id, poll_retries=10, poll_interval=2):
+    """
+    Waits for a document to be ready and fetches its details, including OCR'd content.
+    This is useful for getting content immediately after upload.
+    """
+    if not TOKEN:
+        return {"error": "Paperless not configured"}
 
-def download_document(doc_id: int) -> Optional[bytes]:
-    """GET /api/documents/{id}/download/"""
-    if not is_available():
-        return None
+    url = f"{BASE_URL}/api/documents/{document_id}/"
+    for _ in range(poll_retries):
+        try:
+            response = requests.get(url, headers=_get_headers(), timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('content'):
+                    return data
+            time.sleep(poll_interval)
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to get document {document_id}: {e}")
+            return {"error": str(e)}
+    return {"error": "Polling timed out, document not ready."}
+
+def list_documents(page=1, page_size=25, query=""):
+    """Lists documents from Paperless."""
+    if not TOKEN:
+        return {"error": "Paperless not configured"}
+
+    url = f"{BASE_URL}/api/documents/?page={page}&page_size={page_size}&query={query}"
     try:
-        resp = requests.get(
-            f"{PAPERLESS_URL}/api/documents/{doc_id}/download/",
-            headers=_headers(),
-            timeout=30,
-        )
-        resp.raise_for_status()
-        return resp.content
-    except requests.RequestException as e:
-        logger.error(f"Paperless download error: {e}")
+        response = requests.get(url, headers=_get_headers(), timeout=15)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        return {"error": str(e)}
+
+def download_document(document_id):
+    """Downloads the original document file."""
+    if not TOKEN:
+        return None
+    url = f"{BASE_URL}/api/documents/{document_id}/download/"
+    try:
+        response = requests.get(url, headers=_get_headers(), timeout=30)
+        response.raise_for_status()
+        return response.content
+    except requests.exceptions.RequestException:
         return None
 
+# Helper functions for metadata
+def list_correspondents():
+    return _list_metadata_endpoint("correspondents")
 
-def get_thumbnail_url(doc_id: int) -> str:
-    """Returns proxied thumbnail URL (served via our FastAPI, not direct to Paperless)."""
-    return f"/api/documents/thumbnail/{doc_id}"
+def list_document_types():
+    return _list_metadata_endpoint("document_types")
 
+def list_tags():
+    return _list_metadata_endpoint("tags")
 
-# ── Metadata helpers ──────────────────────────────────────────────────────────
-
-def list_correspondents() -> list[dict]:
-    return _list_meta("correspondents")
-
-
-def list_document_types() -> list[dict]:
-    return _list_meta("document_types")
-
-
-def list_tags() -> list[dict]:
-    return _list_meta("tags")
-
-
-def _list_meta(endpoint: str) -> list[dict]:
-    if not is_available():
+def _list_metadata_endpoint(endpoint):
+    if not TOKEN: return []
+    url = f"{BASE_URL}/api/{endpoint}/"
+    try:
+        response = requests.get(url, headers=_get_headers(), timeout=10)
+        response.raise_for_status()
+        return response.json().get("results", [])
+    except requests.exceptions.RequestException:
         return []
-    try:
-        resp = requests.get(
-            f"{PAPERLESS_URL}/api/{endpoint}/",
-            headers=_headers(),
-            params={"page_size": 100},
-            timeout=10,
-        )
-        resp.raise_for_status()
-        return resp.json().get("results", [])
-    except requests.RequestException as e:
-        logger.error(f"Paperless {endpoint} error: {e}")
-        return []
 
-
-def ensure_correspondent(name: str) -> Optional[int]:
-    """Get or create a correspondent by name, return its ID."""
-    if not is_available() or not name:
-        return None
-    existing = list_correspondents()
-    for c in existing:
-        if c.get("name", "").lower() == name.lower():
-            return c["id"]
-    try:
-        resp = requests.post(
-            f"{PAPERLESS_URL}/api/correspondents/",
-            headers={**_headers(), "Content-Type": "application/json"},
-            json={"name": name},
-            timeout=10,
-        )
-        if resp.status_code in (200, 201):
-            return resp.json().get("id")
-    except requests.RequestException:
-        pass
-    return None
-
-
-def ensure_document_type(name: str) -> Optional[int]:
-    """Get or create a document type by name, return its ID."""
-    if not is_available() or not name:
-        return None
-    existing = list_document_types()
-    for dt in existing:
+def get_document_type_id_by_name(name):
+    """Finds a document type ID by its name."""
+    doc_types = list_document_types()
+    for dt in doc_types:
         if dt.get("name", "").lower() == name.lower():
-            return dt["id"]
-    try:
-        resp = requests.post(
-            f"{PAPERLESS_URL}/api/document_types/",
-            headers={**_headers(), "Content-Type": "application/json"},
-            json={"name": name},
-            timeout=10,
-        )
-        if resp.status_code in (200, 201):
-            return resp.json().get("id")
-    except requests.RequestException:
-        pass
+            return dt.get("id")
     return None
-
-
-# ── Normalise Paperless doc → our shape ──────────────────────────────────────
-
-def _normalise_doc(d: dict) -> dict:
-    return {
-        "id": d.get("id"),
-        "paperless_id": d.get("id"),
-        "title": d.get("title", "Untitled"),
-        "filename": d.get("original_file_name", ""),
-        "created": d.get("created", ""),
-        "added": d.get("added", ""),
-        "correspondent": d.get("correspondent"),
-        "document_type": d.get("document_type"),
-        "tags": d.get("tags", []),
-        "content": (d.get("content") or "")[:300],  # OCR preview
-        "archived_file_name": d.get("archived_file_name", ""),
-        "thumbnail_url": f"/api/documents/thumbnail/{d.get('id')}",
-        "download_url": f"/api/documents/download/{d.get('id')}",
-        "paperless_url": f"{PAPERLESS_URL}/documents/{d.get('id')}/details",
-    }

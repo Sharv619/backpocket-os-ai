@@ -276,8 +276,31 @@ async def handle_quote_invoice(params: dict, screen_context: str, metadata: dict
     if not quote_id:
         return {"error": "Which quote should I invoice?"}
 
+    # First, fetch the quote to get its details
+    manager = get_construction_manager()
+    quote = manager.get_quote(int(quote_id))
+    if not quote:
+        return {"error": f"Sorry, I couldn't find a quote with the ID {quote_id}."}
+
+    # Auto-accept the quote before invoicing if using voice
+    manager.update_quote_status(int(quote_id), "accepted")
+    
+    # Construct the invoice payload from the quote details
+    invoice_items = [
+        {"description": "Labor", "qty": 1, "rate": quote.get("labor_cost", 0), "gst": True},
+        {"description": "Materials", "qty": 1, "rate": quote.get("materials_cost", 0), "gst": True},
+    ]
+
+    invoice_payload = {
+        "client_name": quote.get("client_name"),
+        "client_email": "", # Assuming email is not stored in quote, can be added later
+        "items": invoice_items,
+        "notes": f"Invoice for job: {quote.get('job_type')}",
+        "quote_id": int(quote_id)
+    }
+
     async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.post(f"{BASE}/api/invoice/generate", json={"quote_id": int(quote_id)})
+        resp = await client.post(f"{BASE}/api/invoice/generate", json=invoice_payload)
         if resp.status_code == 200:
             data = resp.json()
             return {
