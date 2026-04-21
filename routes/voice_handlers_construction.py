@@ -14,6 +14,48 @@ logger = logging.getLogger(__name__)
 BASE = "http://127.0.0.1:8000"
 
 
+# ── Site Visits ──────────────────────────────────────────────────────────────
+
+@register_handler("construction.site_visit.log")
+async def handle_site_visit_log(params: dict, screen_context: str, metadata: dict | None) -> dict:
+    from services.voice_to_actions import process_site_visit_transcript
+    from services.request_context import get_current_user_id
+    
+    transcript = params.get("transcript", metadata.get("raw_transcript", ""))
+    if not transcript:
+        return {"error": "What did you see on site?"}
+
+    user_id = get_current_user_id() or "dev-user"
+    quote_id = params.get("quote_id", params.get("lead_id"))
+    
+    if quote_id:
+        try:
+            quote_id = int(quote_id)
+        except (ValueError, TypeError):
+            quote_id = None
+    
+    # Process transcript using the new Pipeline
+    extracted = process_site_visit_transcript(transcript, user_id=user_id, quote_id=quote_id)
+    
+    if extracted.get("status") == "success":
+        mats = len(extracted.get("materials_list", []))
+        subs = len(extracted.get("subcontractors_list", []))
+        actions = len(extracted.get("action_items", []))
+        promises = len(extracted.get("client_promises", []))
+        
+        summary_msg = f"Site visit logged! Found {mats} materials, {subs} subbies, {promises} promises, and {actions} actions."
+        return {
+            "status": "success",
+            "materials_count": mats,
+            "subcontractors_count": subs,
+            "actions_count": actions,
+            "promises_count": promises,
+            "_ui_action": {"navigate_to": "construction", "tab_index": 0, "refresh_data": True, "show_toast": summary_msg},
+            "speech_response": summary_msg
+        }
+    
+    return {"error": "Failed to log site visit. " + extracted.get("error", "")}
+
 # ── Leads ────────────────────────────────────────────────────────────────────
 
 @register_handler("construction.lead.create")

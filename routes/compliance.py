@@ -1,7 +1,7 @@
 """Compliance routes — ABN validation, GST verification."""
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel
-from services.abn_validator import validate_abn, format_abn, validate_gst_amount, abn_info
+from services.abn_validator import validate_gst_amount, abn_info
 
 router = APIRouter(prefix="/api/compliance", tags=["compliance"])
 

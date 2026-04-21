@@ -5,11 +5,10 @@ FastAPI endpoints for voice transcription and quote generation.
 
 import asyncio
 import functools
-import io
 import os
 from typing import Optional
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, Request
 from pydantic import BaseModel
 import requests
 
@@ -124,6 +123,25 @@ async def quote_from_transcript(request: QuoteDraftRequest) -> dict:
             "notes": "Needs manual review",
         }
     }
+
+
+@router.post("/site-visit")
+async def site_visit_transcript(request: QuoteDraftRequest, req: Request) -> dict:
+    """
+    Parse a site visit transcript to extract materials, subbies, and action items.
+    Saves to the site_visits DB table.
+    """
+    from services.voice_to_actions import process_site_visit_transcript
+    
+    user_id = getattr(req.state, "user_id", "default_user")
+    transcript = request.transcript
+    
+    if not transcript:
+        return {"error": "No transcript provided"}
+
+    extracted_data = process_site_visit_transcript(transcript, user_id=user_id)
+    
+    return {"status": extracted_data.get("status", "success"), "data": extracted_data}
 
 
 def _build_quote_prompt(transcript: str) -> str:

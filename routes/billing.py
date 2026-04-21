@@ -1,12 +1,13 @@
 """Billing routes — Stripe checkout, webhook, subscription status."""
-from fastapi import APIRouter, Request, HTTPException, status
+from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 from services.stripe import (
     create_checkout_session,
     handle_webhook,
     get_subscription_status,
     init_billing_table,
-    PILOT_PRICE_AUD_CENTS,
+    PLAN_MONTHLY,
+    PLAN_LIFETIME,
 )
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
@@ -19,16 +20,17 @@ except Exception:
 
 class CheckoutRequest(BaseModel):
     customer_email: str | None = None
+    plan: str = PLAN_MONTHLY
     success_url: str = "https://backpocketsystem.io/success"
     cancel_url: str = "https://backpocketsystem.io/pricing"
 
 
 @router.post("/checkout")
 async def create_session(body: CheckoutRequest):
-    """Create a $199 AUD Stripe Checkout session."""
+    """Create a Stripe Checkout session (Monthly or Lifetime)."""
     try:
         return await create_checkout_session(
-            amount=PILOT_PRICE_AUD_CENTS,
+            plan=body.plan,
             success_url=body.success_url,
             cancel_url=body.cancel_url,
             customer_email=body.customer_email,

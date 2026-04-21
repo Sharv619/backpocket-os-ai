@@ -8,12 +8,19 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 DB_PATH = pathlib.Path(__file__).resolve().parent.parent / "backpocket.db"
-PILOT_PRICE_AUD_CENTS = 19900  # $199.00 AUD
+
+# Pricing (AUD Cents)
+LIFETIME_PRICE_CENTS = 19900  # $199.00 AUD
+MONTHLY_PRICE_CENTS = 2500    # $25.00 AUD
+
+PLAN_MONTHLY = "monthly"
+PLAN_LIFETIME = "lifetime"
 
 # ── Schema bootstrap ──────────────────────────────────────────────────────────
 
 def init_billing_table():
     con = sqlite3.connect(DB_PATH)
+    # Add plan_type to track subscription vs lifetime
     con.execute("""
         CREATE TABLE IF NOT EXISTS billing_sessions (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21,8 +28,10 @@ def init_billing_table():
             session_id    TEXT UNIQUE,
             amount_cents  INTEGER,
             currency      TEXT DEFAULT 'aud',
+            plan_type     TEXT, -- 'monthly' or 'lifetime'
             status        TEXT DEFAULT 'pending',
             stripe_customer_id TEXT,
+            stripe_subscription_id TEXT,
             created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -46,22 +55,34 @@ def _stripe():
 
 
 async def create_checkout_session(
-    amount: int = PILOT_PRICE_AUD_CENTS,
+    plan: str = PLAN_MONTHLY,
     success_url: str = "https://backpocketsystem.io/success",
     cancel_url: str = "https://backpocketsystem.io/pricing",
     customer_email: str | None = None,
 ) -> dict:
-    """Create a Stripe Checkout session. Returns {url, session_id}."""
+    """Create a Stripe Checkout session for Monthly ($25) or Lifetime ($199)."""
     s = _stripe()
+    
+    if plan == PLAN_LIFETIME:
+        amount = LIFETIME_PRICE_CENTS
+        mode = "payment"
+        name = "BackPocket OS — Lifetime Access"
+        description = "One-time payment for lifetime access to your Digital Twin."
+    else:
+        amount = MONTHLY_PRICE_CENTS
+        mode = "subscription"
+        name = "BackPocket OS — Monthly Plan"
+        description = "Full access to your AI Digital Twin for $25/month."
+
     params: dict = {
-        "mode": "payment",
+        "mode": mode,
         "line_items": [{
             "price_data": {
                 "currency": "aud",
                 "unit_amount": amount,
                 "product_data": {
-                    "name": "BackPocket OS — Pilot Plan",
-                    "description": "AI-powered business automation for tradies. $199 AUD pilot access.",
+                    "name": name,
+                    "description": description,
                 },
             },
             "quantity": 1,
@@ -69,6 +90,11 @@ async def create_checkout_session(
         "success_url": success_url + "?session_id={CHECKOUT_SESSION_ID}",
         "cancel_url": cancel_url,
     }
+    
+    # Add recurring interval for monthly plan
+    if plan == PLAN_MONTHLY:
+        params["line_items"][0]["price_data"]["recurring"] = {"interval": "month"}
+
     if customer_email:
         params["customer_email"] = customer_email
 
@@ -77,13 +103,13 @@ async def create_checkout_session(
     # Persist to DB
     con = sqlite3.connect(DB_PATH)
     con.execute(
-        "INSERT OR IGNORE INTO billing_sessions (customer_email, session_id, amount_cents, status) VALUES (?,?,?,?)",
-        (customer_email, session.id, amount, "pending"),
+        "INSERT OR IGNORE INTO billing_sessions (customer_email, session_id, amount_cents, plan_type, status) VALUES (?,?,?,?,?)",
+        (customer_email, session.id, amount, plan, "pending"),
     )
     con.commit()
     con.close()
 
-    logger.info(f"Stripe session created: {session.id}")
+    logger.info(f"Stripe {plan} session created: {session.id}")
     return {"url": session.url, "session_id": session.id}
 
 
@@ -104,7 +130,14 @@ async def handle_webhook(payload: bytes, sig_header: str) -> dict:
 
     if event_type == "checkout.session.completed":
         session = event["data"]["object"]
-        _mark_session_paid(session["id"], session.get("customer"))
+        _mark_session_paid(
+            session["id"], 
+            session.get("customer"), 
+            session.get("subscription")
+        )
+    elif event_type == "customer.subscription.deleted":
+        subscription = event["data"]["object"]
+        _cancel_subscription(subscription["id"])
     elif event_type in ("payment_intent.payment_failed", "checkout.session.expired"):
         session = event["data"]["object"]
         _update_session_status(session.get("id"), "failed")
@@ -128,15 +161,26 @@ def get_subscription_status(customer_email: str | None = None) -> dict:
     return dict(row)
 
 
-def _mark_session_paid(session_id: str, stripe_customer_id: str | None):
+def _mark_session_paid(session_id: str, stripe_customer_id: str | None, stripe_subscription_id: str | None):
     con = sqlite3.connect(DB_PATH)
     con.execute(
-        "UPDATE billing_sessions SET status='paid', stripe_customer_id=?, updated_at=? WHERE session_id=?",
-        (stripe_customer_id, datetime.utcnow().isoformat(), session_id),
+        "UPDATE billing_sessions SET status='active', stripe_customer_id=?, stripe_subscription_id=?, updated_at=? WHERE session_id=?",
+        (stripe_customer_id, stripe_subscription_id, datetime.utcnow().isoformat(), session_id),
     )
     con.commit()
     con.close()
-    logger.info(f"Session {session_id} marked paid")
+    logger.info(f"Session {session_id} marked active")
+
+
+def _cancel_subscription(subscription_id: str):
+    con = sqlite3.connect(DB_PATH)
+    con.execute(
+        "UPDATE billing_sessions SET status='canceled', updated_at=? WHERE stripe_subscription_id=?",
+        (datetime.utcnow().isoformat(), subscription_id),
+    )
+    con.commit()
+    con.close()
+    logger.info(f"Subscription {subscription_id} marked canceled")
 
 
 def _update_session_status(session_id: str, status: str):

@@ -403,9 +403,7 @@ def sync_instructions_to_sheets(instructions):
         try:
             # Check if sheet exists by trying to get data
             service.spreadsheets().values().get(spreadsheetId=spreadsheet_id, range='Twin_Instructions!A1').execute()
-            sheet_exists = True
         except:
-            sheet_exists = False
             # Create the sheet
             try:
                 body = {

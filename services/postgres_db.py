@@ -14,7 +14,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session, sessionmaker, declarative_base, relationship
+from sqlalchemy.orm import Session, sessionmaker, declarative_base
 from sqlalchemy import (
     Column,
     String,
@@ -126,15 +126,42 @@ class User(Base):
     updated_at = Column(DateTime, server_default=text("NOW()"), onupdate=text("NOW()"))
 
 
+class Lead(Base):
+    __tablename__ = "leads"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    client_name = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    phone = Column(String)
+    job_type = Column(String)
+    location = Column(String)
+    pain_points = Column(Text)
+    scope_items = Column(Text)
+    urgency = Column(String)
+    estimated_budget = Column(Float)
+    timeline = Column(String)
+    status = Column(String, default="new")
+    extracted_at = Column(DateTime)
+    created_at = Column(DateTime, server_default=text("NOW()"))
+    updated_at = Column(DateTime, server_default=text("NOW()"), onupdate=text("NOW()"))
+
+
 class Quote(Base):
     __tablename__ = "quotes"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     lead_id = Column(UUID(as_uuid=True), ForeignKey("leads.id"), nullable=True)
     client_name = Column(String)
-    items_json = Column(JSONB)
+    job_type = Column(String)
+    description = Column(Text)
+    scope_items = Column(Text)
+    materials_cost = Column(Float)
+    labor_cost = Column(Float)
+    markup_percent = Column(Float)
     total_amount = Column(Float)
     status = Column(String, default="draft")
+    sent_date = Column(DateTime)
+    accepted_date = Column(DateTime)
     created_at = Column(DateTime, server_default=text("NOW()"))
     updated_at = Column(DateTime, server_default=text("NOW()"), onupdate=text("NOW()"))
 
@@ -144,10 +171,12 @@ class Payment(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     quote_id = Column(UUID(as_uuid=True), ForeignKey("quotes.id"), nullable=True)
+    client_name = Column(String)
     amount = Column(Float)
     currency = Column(String, default="AUD")
-    payment_date = Column(DateTime, server_default=text("NOW()"))
-    status = Column(String, default="completed")
+    status = Column(String, default="pending")
+    due_date = Column(DateTime)
+    received_date = Column(DateTime)
     created_at = Column(DateTime, server_default=text("NOW()"))
     updated_at = Column(DateTime, server_default=text("NOW()"), onupdate=text("NOW()"))
 
@@ -157,13 +186,12 @@ class PendingApproval(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     ref_id = Column(String, index=True)
-    ref_type = Column(String)
+    sender = Column(String)
+    subject = Column(String)
     preview = Column(Text)
+    tier = Column(Integer, default=3)
     status = Column(String, default="pending")
-    age_hours = Column(Integer)
-    embedding = Column(
-        ARRAY(Float)
-    )  # Use ARRAY(Float) for pgvector compatibility, or direct vector(dim) if ORM supports
+    embedding = Column(ARRAY(Float))  # Use ARRAY(Float) for pgvector compatibility
     created_at = Column(DateTime, server_default=text("NOW()"))
     updated_at = Column(DateTime, server_default=text("NOW()"), onupdate=text("NOW()"))
 
@@ -172,9 +200,11 @@ class KnowledgeNote(Base):
     __tablename__ = "knowledge_notes"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    category = Column(String)
     title = Column(String)
-    content = Column(Text)
+    body = Column(Text)
     tags = Column(ARRAY(String))
+    author_email = Column(String)
     embedding = Column(ARRAY(Float))  # Use ARRAY(Float) for pgvector compatibility
     created_at = Column(DateTime, server_default=text("NOW()"))
     updated_at = Column(DateTime, server_default=text("NOW()"), onupdate=text("NOW()"))
@@ -353,5 +383,4 @@ def set_user_id(user_id: str) -> None:
 
 
 # Import needed for type hints
-from datetime import datetime
 import uuid  # Added uuid import

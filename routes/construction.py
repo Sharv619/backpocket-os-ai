@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter
 import asyncio
 import functools
 import logging
@@ -6,7 +6,6 @@ import os
 import requests
 import json
 import re
-from typing import Optional
 from services.construction import get_construction_manager
 
 router = APIRouter(prefix="/api/construction", tags=["construction"])

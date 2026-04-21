@@ -6,7 +6,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
-import 'package:record/record.dart';
+import 'package:flutter_sound/flutter_sound.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../theme.dart';
 import '../services/voice_command_service.dart';
@@ -33,11 +34,12 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
   late AnimationController _waveController;
   late VoiceCommandService _voiceService;
   final TextEditingController _textController = TextEditingController();
-  final AudioRecorder _recorder = AudioRecorder();
+  final FlutterSoundRecorder _recorder = FlutterSoundRecorder();
 
   bool _isRecording = false;
   bool _showTextInput = false;
   bool _isProcessing = false;
+  bool _isRecorderInitialized = false;
   VoiceCommandResponse? _response;
   final List<_ConversationEntry> _conversation = [];
   String _lastTranscript = '';
@@ -54,13 +56,28 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
       apiKey: widget.apiKey,
     );
     _voiceService.setScreenContext(widget.screenContext);
+    _initRecorder();
+  }
+
+  Future<void> _initRecorder() async {
+    if (!kIsWeb) {
+      final status = await Permission.microphone.request();
+      if (status != PermissionStatus.granted) {
+        if (mounted) setState(() => _showTextInput = true);
+        return;
+      }
+    }
+    await _recorder.openRecorder();
+    _isRecorderInitialized = true;
   }
 
   @override
   void dispose() {
     _waveController.dispose();
     _textController.dispose();
-    _recorder.dispose();
+    if (_isRecorderInitialized) {
+      _recorder.closeRecorder();
+    }
     super.dispose();
   }
 
@@ -107,31 +124,30 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
   }
 
   Future<void> _startRecording() async {
-    final hasPermission = await _recorder.hasPermission();
-    if (!hasPermission) {
-      if (mounted) setState(() => _showTextInput = true);
-      return;
+    if (!_isRecorderInitialized) {
+      await _initRecorder();
+      if (!_isRecorderInitialized) return;
     }
 
     if (kIsWeb) {
-      // Web: path is ignored by the web impl; blob URL returned from stop()
-      await _recorder.start(const RecordConfig(encoder: AudioEncoder.wav), path: '');
+      // Web: path is ignored, returns blob URL
+      await _recorder.startRecorder(toFile: 'voice_cmd.wav', codec: Codec.pcm16WAV);
     } else {
       final dir = await getTemporaryDirectory();
       final path = '${dir.path}/voice_cmd_${DateTime.now().millisecondsSinceEpoch}.m4a';
-      await _recorder.start(const RecordConfig(encoder: AudioEncoder.aacLc), path: path);
+      await _recorder.startRecorder(toFile: path, codec: Codec.aacADTS);
     }
     if (mounted) setState(() => _isRecording = true);
   }
 
   Future<void> _stopRecording() async {
-    final path = await _recorder.stop();
+    final path = await _recorder.stopRecorder();
     if (mounted) setState(() { _isRecording = false; _isProcessing = true; });
 
     VoiceCommandResponse? response;
 
     if (kIsWeb) {
-      // record v5 web: stop() returns a blob URL — fetch bytes then upload
+      // flutter_sound web: stop() returns a blob URL — fetch bytes then upload
       if (path != null && path.isNotEmpty) {
         try {
           final blobRes = await http.get(Uri.parse(path));

@@ -6,9 +6,7 @@ Run: python scripts/sqlite_to_pg_migration.py --source /var/lib/backpocket/backp
 """
 
 import argparse
-import sys
 from datetime import datetime
-from pathlib import Path
 
 import sqlite3
 import json
@@ -28,7 +26,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
 )
-from sqlalchemy.dialects.postgresql import JSON, JSONB
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import sessionmaker
 
 
@@ -342,7 +340,7 @@ class SQLiteToPostgres:
             print(f"[WARN] pgvector not available, skipping embedding columns: {e}")
 
     def add_rls_policies(self):
-        """Add Row-Level Security policies (requires Supabase auth.uid())."""
+        """Add Row-Level Security policies (using custom app variable)."""
         print("[RLS] Adding Row-Level Security policies...")
         try:
           with self.engine.connect() as conn:
@@ -352,64 +350,36 @@ class SQLiteToPostgres:
                 "payments",
                 "pending_approvals",
                 "knowledge_notes",
-                "users",  # Assuming a users table for auth.uid()
+                "users",
             ]
 
             for table in tables_to_rls:
                 if not self.engine.dialect.has_table(conn, table):
-                    print(
-                        f"[WARN] Table '{table}' not found, skipping RLS policy creation."
-                    )
                     continue
-
-                # Check if 'user_id' column exists before applying RLS
-                # This requires querying information_schema or similar, but for simplicity,
-                # we'll assume 'user_id' exists for these tables for now.
-                # In a real scenario, you'd check `conn.execute(text(f"SELECT column_name FROM information_schema.columns WHERE table_name='{table}' AND column_name='user_id'"))`
-                # If no 'user_id' column, the RLS policy might fail or be ineffective.
 
                 print(f"  Enabling RLS for table: {table}")
                 conn.execute(text(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
 
-                # Policy for INSERT (allows insert if user_id is current user or null, for system-generated data)
-                conn.execute(
-                    text(f"""
-                    DROP POLICY IF EXISTS "{table}_insert_policy" ON {table};
-                    CREATE POLICY "{table}_insert_policy" ON {table}
-                    FOR INSERT WITH CHECK (auth.uid() = user_id OR user_id IS NULL);
-                """)
-                )
+                # Use a custom session variable 'backpocket.user_id'
+                # This works locally and in cloud Postgres.
+                # In FastAPI middleware, we run: SET LOCAL backpocket.user_id = '...'
+                user_check = "(current_setting('backpocket.user_id', true) = user_id::text OR user_id IS NULL)"
 
-                # Policy for SELECT (users can view their own data or data with null user_id)
-                conn.execute(
-                    text(f"""
-                    DROP POLICY IF EXISTS "{table}_select_policy" ON {table};
-                    CREATE POLICY "{table}_select_policy" ON {table}
-                    FOR SELECT USING (auth.uid() = user_id OR user_id IS NULL);
-                """)
-                )
+                conn.execute(text(f'DROP POLICY IF EXISTS "{table}_insert_policy" ON {table}'))
+                conn.execute(text(f'CREATE POLICY "{table}_insert_policy" ON {table} FOR INSERT WITH CHECK {user_check}'))
 
-                # Policy for UPDATE (users can update their own data)
-                conn.execute(
-                    text(f"""
-                    DROP POLICY IF EXISTS "{table}_update_policy" ON {table};
-                    CREATE POLICY "{table}_update_policy" ON {table}
-                    FOR UPDATE USING (auth.uid() = user_id);
-                """)
-                )
+                conn.execute(text(f'DROP POLICY IF EXISTS "{table}_select_policy" ON {table}'))
+                conn.execute(text(f'CREATE POLICY "{table}_select_policy" ON {table} FOR SELECT USING {user_check}'))
 
-                # Policy for DELETE (users can delete their own data)
-                conn.execute(
-                    text(f"""
-                    DROP POLICY IF EXISTS "{table}_delete_policy" ON {table};
-                    CREATE POLICY "{table}_delete_policy" ON {table}
-                    FOR DELETE USING (auth.uid() = user_id);
-                """)
-                )
+                conn.execute(text(f'DROP POLICY IF EXISTS "{table}_update_policy" ON {table}'))
+                conn.execute(text(f'CREATE POLICY "{table}_update_policy" ON {table} FOR UPDATE USING {user_check}'))
+
+                conn.execute(text(f'DROP POLICY IF EXISTS "{table}_delete_policy" ON {table}'))
+                conn.execute(text(f'CREATE POLICY "{table}_delete_policy" ON {table} FOR DELETE USING {user_check}'))
             conn.commit()
           print("[RLS] RLS policies applied.")
         except Exception as e:
-          print(f"[WARN] RLS policies skipped (requires Supabase auth.uid()): {e}")
+          print(f"[WARN] RLS policies failed: {e}")
 
     def verify_counts(self):
         """Verify row counts match."""

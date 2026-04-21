@@ -1,8 +1,7 @@
 """Symmetric encryption for secrets at rest using Fernet (AES-128-CBC + HMAC-SHA256)."""
 import os
 import json
-import base64
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet
 
 _fernet: Fernet | None = None
 

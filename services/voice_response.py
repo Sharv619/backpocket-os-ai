@@ -66,7 +66,7 @@ def generate_collecting_response(intent: str, question: str, collected: dict) ->
 
     summary_parts = []
     for key, val in collected.items():
-        clean_key = key.replace("_", " ")
+        key.replace("_", " ")
         summary_parts.append(f"{val}")
 
     return f"Got it. {question}"

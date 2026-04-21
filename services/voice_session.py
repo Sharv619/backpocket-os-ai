@@ -57,7 +57,6 @@ MONEY_WORDS = {
 
 def _normalize_entities(entities: dict, valid_params: list[str]) -> dict:
     """Map Gemini entity keys to PARAM_ORDER keys + parse money slang."""
-    import re
     normalized = {}
     for key, val in entities.items():
         mapped_key = ENTITY_ALIASES.get(key, key)

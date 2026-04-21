@@ -19,3 +19,5 @@ itsdangerous
 pyhumps
 ollama
 beautifulsoup4
+stripe
+cryptography

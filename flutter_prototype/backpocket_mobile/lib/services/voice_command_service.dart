@@ -273,4 +273,73 @@ class VoiceCommandService extends ChangeNotifier {
     _state = VoiceFlowState.idle;
     notifyListeners();
   }
+
+  Future<void> syncOfflineCommands() async {
+    if (!await _queueService.hasInternet()) return;
+
+    final commands = await _queueService.getQueuedCommands();
+    if (commands.isEmpty) return;
+
+    for (final cmd in commands) {
+      final id = cmd['id'] as int;
+      final transcript = cmd['transcript'] as String;
+      final screenContext = cmd['screen_context'] as String;
+      final sessionId = cmd['session_id'] as String?;
+      final metadataStr = cmd['metadata'] as String?;
+      final audioPath = cmd['audio_path'] as String?;
+
+      Map<String, dynamic>? metadata;
+      if (metadataStr != null) {
+        try {
+          metadata = jsonDecode(metadataStr);
+        } catch (_) {}
+      }
+
+      bool success = false;
+      if (audioPath != null) {
+        // Upload audio
+        try {
+          final uri = Uri.parse('$baseUrl/api/voice/transcribe');
+          final request = http.MultipartRequest('POST', uri)
+            ..files.add(await http.MultipartFile.fromPath('audio', audioPath));
+          if (apiKey.isNotEmpty) request.headers['X-API-Key'] = apiKey;
+
+          final streamed = await request.send();
+          final body = await streamed.stream.bytesToString();
+
+          if (streamed.statusCode == 200) {
+            final data = jsonDecode(body);
+            final newTranscript = data['transcript'] as String?;
+            if (newTranscript != null && newTranscript.isNotEmpty) {
+              success = await _sendRawCommand(newTranscript, screenContext, sessionId, metadata);
+            }
+          }
+        } catch (_) {}
+      } else {
+        success = await _sendRawCommand(transcript, screenContext, sessionId, metadata);
+      }
+
+      if (success) {
+        await _queueService.removeCommand(id);
+      }
+    }
+  }
+
+  Future<bool> _sendRawCommand(String transcript, String screen, String? sessionId, Map<String, dynamic>? metadata) async {
+    try {
+      final resp = await http.post(
+        Uri.parse('$baseUrl/api/voice/command'),
+        headers: _headers,
+        body: jsonEncode({
+          'transcript': transcript,
+          'screen_context': screen,
+          'session_id': sessionId,
+          'metadata': metadata,
+        }),
+      );
+      return resp.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
 }

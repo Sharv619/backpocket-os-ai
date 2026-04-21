@@ -1,10 +1,8 @@
 """Construction/Tradie business management"""
 
 import sqlite3
-import json
 import logging
-from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 DB_PATH = "backpocket.db"

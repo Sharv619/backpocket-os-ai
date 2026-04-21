@@ -1,6 +1,5 @@
 """Tests for SOVEREIGN ENGINE — BYOK service."""
 
-import os
 import pytest
 
 

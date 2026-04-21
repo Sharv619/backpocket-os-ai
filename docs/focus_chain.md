@@ -1,143 +1,110 @@
-# Focus Chain — BackPocket MVP Workflow Implementation
+# ⛓️ BackPocket OS: The Focus Chain
 
-> Priority-ordered implementation chain. Each link unlocks the next.
-> Last updated: 2026-04-18
-
----
-
-## P0 — Core Business Value
-
-### FC-1: Construction Pipeline Stage Tracker
-**Goal**: Visualize the 9-stage job lifecycle per lead
-**Backend**:
-- Add `workflow_stage` column to `leads` table (default: 1)
-- `PATCH /api/construction/leads/{id}/stage` — advance/set stage
-- Auto-advance rules: quote sent → stage 5, accepted → stage 7, payment received → stage 9
-
-**Flutter**:
-- New `widgets/workflow_stage_tracker.dart` — horizontal stepper with branch at stage 6
-- Embed in lead detail view (construction_screen.dart)
-- Embed summary on dashboard_screen.dart
-
-**Done when**: User taps a lead → sees which stage it's at → can advance it.
+**Goal:** Transform the "Demo MVP" into a 100% functional, production-ready Digital Twin.
+**Current Phase:** Phase 1 - The Core Engine
+**Current Focus:** [ ] Step 1.3: The "Dual-Write" Postgres Migration
 
 ---
 
-### FC-2: Lead → Quote → Invoice Pipeline UI
-**Goal**: Full pipeline flow inside Flutter construction tab
-**Backend**: Endpoints already exist. No new backend work.
+## 🏗️ PHASE 1: THE CORE ENGINE (The "Must-Haves")
+*Objective: Get the plumbing working so we can handle money and users.*
 
-**Flutter**:
-- "Create Quote" button on lead detail → pre-fills client_name, job_type, location from lead
-- Quote line item editor (materials + labor breakdown) using `quote_line_items` table
-- "Generate Follow-up" button → calls `POST /api/construction/quotes/{id}/tradie-followup` → show draft in dialog
-- "Generate Invoice" button → calls `POST /api/invoice/generate` → PDF preview/download
-- "Record Payment" button on accepted quote → record payment inline
+- [x] **1.1: Stripe Finance Backend**
+    - File: `services/stripe.py`
+    - Task: Implement real `create_checkout_session`, `handle_webhook`, and `get_subscription_status`.
+    - Status: ✅ COMPLETE (Monthly $25/mo and Lifetime $199 handled)
 
-**Done when**: User can go from lead → create quote → send → generate invoice → record payment — all from Flutter.
+- [x] **1.2: RAG Context Injection**
+    - File: `services/pgvector_rag.py`
+    - Task: Actually inject retrieved ChromaDB memories into Gemini/Ollama prompts.
+    - Status: ✅ COMPLETE (Wired to OpenRouter with Postgres context)
 
----
+- [x] **1.3: The "Dual-Write" Postgres Migration**
+    - File: `services/database.py` & `scripts/sqlite_to_pg_migration.py`
+    - Task: Activate Postgres as the primary DB, keeping SQLite as a local fallback.
+    - Status: ✅ COMPLETE (Migration run, Dual-write router active)
 
-## P1 — Pipeline Integration
-
-### FC-3: Email → Lead Extraction
-**Goal**: One-tap lead extraction from inbox emails
-**Backend**: `POST /api/construction/leads/extract` exists. No new backend.
-
-**Flutter**:
-- "Extract Lead" icon button on each inbox card (inbox_screen.dart)
-- New `widgets/lead_extraction_dialog.dart` — shows AI-extracted fields (name, job_type, location, budget, urgency) with edit capability
-- "Save Lead" → creates lead → shows snackbar → optional navigate to construction tab
-
-**Done when**: User sees email about a job → taps extract → reviews fields → saves as lead.
+- [x] **1.4: Real Auth & RLS**
+    - File: `services/auth.py`
+    - Task: Replace "Dev Bypass" with Supabase JWT validation and Postgres Row Level Security.
+    - Status: ✅ COMPLETE (JWT wired + Postgres RLS using contextvars)
 
 ---
 
-### FC-4: Inbox Approval Enhancements
-**Goal**: Filter, batch, and undo inbox actions
-**Flutter**:
-- Tier filter chips row at top of inbox (URGENT / HIGH / MEDIUM / LOW / SPAM)
-- Multi-select mode with "Batch Approve" and "Batch Archive" buttons
-- Draft editor with "Revise with AI" option (calls `/api/revise`)
-- Undo snackbar after approve/archive (60s window, calls undo endpoint)
+## 🎤 PHASE 2: MOBILE & VOICE (The "Site Manager")
+*Objective: Make the app actually work on a construction site.*
 
-**Done when**: User can filter by tier, batch-approve 5 emails at once, undo a mistake.
+**Current Focus:** [ ] Step 3.1: OCR Pipeline Implementation
 
 ---
 
-## P2 — Voice Integration
+## 🎤 PHASE 2: MOBILE & VOICE (The "Site Manager")
+*Objective: Make the app actually work on a construction site.*
 
-### FC-5: Voice Command Wiring
-**Goal**: Connect existing voice backend to Flutter screens
-**Backend**: 50+ intents built. State machine built. Handlers built.
+- [x] **2.1: Flutter Real-Mic Integration**
+    - File: `flutter_prototype/backpocket_mobile/lib/screens/voice_input_screen.dart`
+    - Task: Replace `AudioRecorder` stub with `flutter_sound`.
+    - Status: ✅ COMPLETE (Replaced `record` package with `flutter_sound` + permissions check)
 
-**Flutter**:
-- Pass `screen_context`, `tab_index`, `selected_item_id` from AppShell to VoiceCommandService on every FAB tap
-- Wire TTS playback: after voice response, call `POST /api/voice/tts` → play audio via `audioplayers` package
-- Multi-turn follow-up UI: when `needsMoreInput=true`, show iterative question card in overlay
-- Parameter collection progress bar (e.g., "Step 3 of 6: What's the budget?")
-- Voice-triggered navigation: when response has `navigateTo`, switch AppShell tab
+- [x] **2.2: Voice-to-Action Pipeline**
+    - File: `routes/voice.py` & `services/voice_to_actions.py`
+    - Task: Map transcripts to "Materials needed" or "Subcontractors to call" entries in DB.
+    - Status: ✅ COMPLETE (Pipeline built, site visits parsing + DB inserts wired)
 
-**Done when**: User says "create a lead for John in Penrith, kitchen reno" → voice walks through all fields → lead created.
-
----
-
-## P3 — Polish & Completeness
-
-### FC-6: Dashboard Overview Cards
-**Goal**: At-a-glance business state on dashboard
-**Flutter**:
-- Pipeline revenue card — draft/sent/accepted $ breakdown with color bars
-- Aging report — quotes pending >7 days highlighted amber, >14 days red
-- Action feed — last 10 actions (approvals, new leads, payments) with timestamps
-
-**Done when**: Dashboard shows revenue pipeline, stale quotes, and recent activity.
+- [x] **2.3: Offline Command Queue**
+    - File: Flutter `sqflite` implementation.
+    - Task: Queue voice blobs locally and sync when 4G returns.
+    - Status: ✅ COMPLETE (Added `syncOfflineCommands` and `connectivity_plus` listener to app shell)
+**Current Focus:** [ ] Step 4.1: MCP Restructure
 
 ---
 
-### FC-7: Site Visits & Job Files
-**Goal**: Track onsite inspections and attach files to quotes
-**Backend**:
-- CRUD endpoints for `site_visits` (create, list by quote_id, update)
-- CRUD endpoints for `job_files` (upload, list by quote_id, delete)
-- File upload via `POST /api/construction/quotes/{id}/files` (save to `uploads/`)
+## 📄 PHASE 3: DOCUMENT INTELLIGENCE (The "Eyes")
+*Objective: Automate the paperwork trail.*
 
-**Flutter**:
-- Site visit tab in quote detail (date picker, notes field, materials checklist, action items)
-- File attach button (camera + gallery + file picker) → upload to backend
-- File gallery grid in quote detail
+- [x] **3.1: OCR Pipeline Implementation**
+    - File: `services/documents/ocr.py`
+    - Task: Integrate native Python PyPDF2 extraction (bypassing broken docker dependencies) with Vision API stubs.
+    - Status: ✅ COMPLETE (Native extraction built and wired to upload endpoint)
 
-**Done when**: User can log a site visit with notes, attach photos/plans to a quote.
+- [x] **3.2: Receipt-to-Payment Extractor**
+    - File: `services/documents/extractor.py`
+    - Task: AI-extract line items from Bunnings/Supplier receipts into `payments` table.
+    - Status: ✅ COMPLETE (Built local Ollama extraction and integrated into upload route)
 
 ---
 
-## Dependency Graph
+## 🛠️ PHASE 4: VIBECODING & ORCHESTRATION (The "Speed")
+*Objective: Make the system help us build itself.*
 
-```
-FC-1 (Stage Tracker) ──→ FC-2 (Pipeline UI) ──→ FC-3 (Email→Lead)
-                                                       ↓
-FC-4 (Inbox Enhance) ←─────────────────────────────────┘
-         ↓
-FC-5 (Voice Wiring) ──→ FC-6 (Dashboard) ──→ FC-7 (Site Visits)
-```
+- [ ] **4.1: MCP Restructure**
+    - File: `mcp_servers/*.mjs`
+    - Task: Split broken Node monolith into 4 thin servers (Leads, Quotes, Pipeline, Knowledge).
+    - Status: 🔴 NOT STARTED
 
-## New Files Created
+- [ ] **4.2: Shared Knowledge Hook**
+    - File: `scripts/git-hooks/post-merge`
+    - Task: Auto-capture every git commit into the Twin's permanent memory.
+    - Status: 🔴 NOT STARTED
 
-| File | Purpose |
-|------|---------|
-| `widgets/workflow_stage_tracker.dart` | Reusable 9-stage stepper widget |
-| `widgets/lead_extraction_dialog.dart` | Email→lead preview/confirm dialog |
-| `widgets/pipeline_revenue_card.dart` | Revenue breakdown dashboard card |
-| `widgets/quote_line_item_editor.dart` | Materials/labor line item editor |
+---
 
-## Files Modified
+## 📢 PHASE 5: THE POLISH (Marketing & Coaching)
+*Objective: Add the "WOW" features.*
 
-| File | Changes |
-|------|---------|
-| `services/database.py` | `workflow_stage` column on leads |
-| `routes/construction.py` | Stage advance endpoint, site visit + file CRUD |
-| `screens/construction_screen.dart` | Stage tracker, invoice, follow-up, line items |
-| `screens/inbox_screen.dart` | Tier filters, extract lead, batch mode |
-| `screens/dashboard_screen.dart` | Pipeline card, aging report, action feed |
-| `main.dart` | Voice context passing |
-| `services/voice_command_service.dart` | TTS playback, screen context |
+- [ ] **5.1: Communication Coach Checkers**
+    - File: `services/coach/*.py`
+    - Task: Implement Empathy, Authority, and Clarity scanners for AI drafts.
+    - Status: 🔴 NOT STARTED
+
+- [ ] **5.2: Social Media Scheduler**
+    - File: `services/marketing/scheduler.py`
+    - Task: Build the queue for Facebook/Instagram delayed posts.
+    - Status: 🔴 NOT STARTED
+
+---
+
+## 🚦 EXECUTION LOG
+*Track our wins here.*
+
+- [2026-04-21] Initialized Focus Chain.

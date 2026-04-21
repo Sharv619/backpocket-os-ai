@@ -25,7 +25,7 @@ from datetime import datetime
 
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request as StarletteRequest
@@ -103,6 +103,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         from services.auth import SUPABASE_JWT_SECRET, verify_jwt
+        from services.request_context import set_current_user_id
 
         # --- JWT path ---
         auth_header = request.headers.get("Authorization", "")
@@ -110,8 +111,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
             token = auth_header[len("Bearer "):]
             try:
                 payload = verify_jwt(token)
-                request.state.user_id = payload.get("sub", "")
+                user_id = payload.get("sub", "")
+                request.state.user_id = user_id
                 request.state.user_email = payload.get("email", "")
+                set_current_user_id(user_id) # Set for RLS
             except Exception:
                 return StarletteResponse(
                     content='{"detail":"Invalid or expired token"}',
@@ -124,8 +127,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if _BP_API_KEY:
             key = request.headers.get("x-api-key", "")
             if key == _BP_API_KEY:
-                request.state.user_id = "api-key-user"
+                user_id = "00000000-0000-0000-0000-000000000000" # Valid UUID for Postgres
+                request.state.user_id = user_id
                 request.state.user_email = "apikey@backpocket.local"
+                set_current_user_id(user_id) # Set for RLS
                 return await call_next(request)
 
         # --- No valid credential ---
@@ -212,11 +217,6 @@ from routes.compliance import router as compliance_router
 from routes.byok import router as byok_router
 from routes.ux_audit import router as ux_audit_router
 
-import routes.voice_handlers_dashboard
-import routes.voice_handlers_inbox
-import routes.voice_handlers_construction
-import routes.voice_handlers_misc
-import routes.voice_handlers_cross
 
 app.include_router(auth_router)
 app.include_router(admin_router)

@@ -3,6 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
+import 'dart:async';
+import 'package:connectivity_plus/connectivity_plus.dart';
+
 import 'theme.dart';
 import 'screens/inbox_screen.dart';
 import 'screens/twin_chat_screen.dart';
@@ -166,7 +169,6 @@ class AppShell extends StatefulWidget {
   @override
   State<AppShell> createState() => _AppShellState();
 }
-
 class _AppShellState extends State<AppShell> {
   late int _tab;
   String _serverUrl = 'http://127.0.0.1:8000';
@@ -175,6 +177,7 @@ class _AppShellState extends State<AppShell> {
   VoiceCommandService? _voiceService;
   bool _showVoiceOverlay = false;
   VoiceCommandResponse? _voiceResponse;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
 
   // Pages cached here — rebuilt only when serverUrl/apiKey change.
   // IndexedStack keeps all live so tab switches preserve scroll/state.
@@ -186,6 +189,22 @@ class _AppShellState extends State<AppShell> {
     _tab = widget.initialTab;
     _pages = _buildPages();
     _loadPrefs();
+    _setupConnectivity();
+  }
+
+  @override
+  void dispose() {
+    _connectivitySubscription?.cancel();
+    super.dispose();
+  }
+
+  void _setupConnectivity() {
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> results) {
+      if (!results.contains(ConnectivityResult.none)) {
+        // Internet came back, sync offline commands
+        _voiceService?.syncOfflineCommands();
+      }
+    });
   }
 
   List<Widget> _buildPages() => [
@@ -223,6 +242,8 @@ class _AppShellState extends State<AppShell> {
       _voiceService = VoiceCommandService(baseUrl: _serverUrl, apiKey: _apiKey);
       _pages = _buildPages();
     });
+    // Attempt sync on startup
+    _voiceService?.syncOfflineCommands();
   }
 
   // ─── Animated Sidebar ─────────────────────────────────────────────────────────

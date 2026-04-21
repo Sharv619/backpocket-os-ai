@@ -1,5 +1,4 @@
 """Tests for ABN checksum validator."""
-import pytest
 from services.abn_validator import validate_abn, format_abn, validate_gst_amount, abn_info
 
 

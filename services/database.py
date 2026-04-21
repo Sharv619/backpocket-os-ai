@@ -28,6 +28,7 @@ def init_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS pending_approvals (
             ref_id TEXT PRIMARY KEY,
+            user_id TEXT, -- Added for RLS
             message_id TEXT,
             thread_id TEXT,
             sender TEXT,
@@ -91,6 +92,7 @@ def init_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS corrections (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT, -- Added for RLS
             ref_id TEXT,
             correction_type TEXT,  -- 'revise', 'approve', 'custom'
             sender TEXT,
@@ -108,6 +110,7 @@ def init_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS action_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT, -- Added for RLS
             ref_id TEXT,
             action TEXT,  -- 'approved', 'revised', 'archived', 'trashed'
             tier TEXT,
@@ -120,11 +123,13 @@ def init_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS sender_instructions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            sender_email TEXT UNIQUE,
+            user_id TEXT, -- Added for RLS
+            sender_email TEXT,
             instructions TEXT,
             category TEXT,  -- 'client', 'supplier', 'builder', etc.
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, sender_email)
         )
     ''')
 
@@ -132,6 +137,7 @@ def init_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS instructions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT, -- Added for RLS
             instruction_text TEXT NOT NULL,
             category TEXT DEFAULT 'general',
             target TEXT DEFAULT '',
@@ -146,7 +152,22 @@ def init_db():
         )
     ''')
 
-    # 7. Instruction revisions table
+    # 7. Knowledge Notes table for vector memory
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS knowledge_notes (
+            id TEXT PRIMARY KEY,
+            user_id TEXT, -- Added for RLS
+            category TEXT,
+            title TEXT,
+            body TEXT,
+            tags TEXT,
+            author_email TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # 8. Instruction revisions table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS instruction_revisions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -171,6 +192,7 @@ def init_db():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS leads (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT, -- Added for RLS
             client_name TEXT NOT NULL,
             email TEXT NOT NULL,
             phone TEXT,
@@ -190,6 +212,7 @@ def init_db():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS quotes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT, -- Added for RLS
             lead_id INTEGER,
             client_name TEXT,
             job_type TEXT,
@@ -210,6 +233,7 @@ def init_db():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS payments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT, -- Added for RLS
             quote_id INTEGER,
             client_name TEXT,
             amount DECIMAL(10,2),
@@ -223,6 +247,7 @@ def init_db():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS job_files (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT, -- Added for RLS
             quote_id INTEGER,
             file_name TEXT,
             file_path TEXT,
@@ -235,6 +260,7 @@ def init_db():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS site_visits (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT, -- Added for RLS
             quote_id INTEGER,
             visit_date DATE,
             transcript TEXT,

@@ -1,5 +1,4 @@
 import os
-import re
 import asyncio
 import random
 import logging
@@ -422,7 +421,6 @@ async def whatsapp_webhook(request: Request):
                         user_provided_draft = ""
 
                         # Check if user is providing a direct edit (starts with "Hi " or "Dear " etc)
-                        original_block = block_text
                         if ref_id in block_text:
                             after_id = (
                                 block_text.split(ref_id, 1)[1]

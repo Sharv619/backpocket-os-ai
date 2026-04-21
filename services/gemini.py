@@ -851,8 +851,8 @@ def draft_response(email_content, tier, historical_context="", client_info=None)
     if not _should_use_full_ai(email_content, tier) and entropy < 3.0 and tier != 1:
         # Simple template for low-complexity emails (but NOT for Tier 1 important clients)
         logger.info("💰 Using template (low entropy, saves API cost)")
-        subject = email_content.get("subject", "")
-        return f"Thanks for reaching out. I'll review this and get back to you shortly."
+        email_content.get("subject", "")
+        return "Thanks for reaching out. I'll review this and get back to you shortly."
 
     # Try Ollama first (local, cheap) – note that this uses the generic prompt (subject + snippet).
     try:
@@ -878,19 +878,18 @@ def draft_response(email_content, tier, historical_context="", client_info=None)
         if not client:
             return "Gemini not initialized"
 
-        client_note = (
+        (
             f"CLIENT BACKGROUND: {client_info.get('background_info')}"
             if client_info
             else "NEW CONTACT."
         )
-        client_name = client_info.get("first_name", "there") if client_info else "there"
+        client_info.get("first_name", "there") if client_info else "there"
 
         # Load Steve's Style Guide from file
-        style_guide = ""
         style_path = os.path.join("docs", "CHERRY_STYLE.txt")
         if os.path.exists(style_path):
             with open(style_path, "r", encoding="utf-8") as f:
-                style_guide = f.read()
+                f.read()
 
         # Load corrections history for learning (especially for Tier 1 clients)
         corrections_context = ""

@@ -3,8 +3,7 @@ import asyncio
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter
 import services.database as db
 from app.models.schemas import (
     ApproveRequest,

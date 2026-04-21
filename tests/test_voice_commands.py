@@ -2,7 +2,6 @@
 Voice command endpoint tests.
 Run: python -m pytest tests/test_voice_commands.py -v
 """
-import pytest
 from fastapi.testclient import TestClient
 from main import app
 

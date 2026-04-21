@@ -9,7 +9,6 @@ Usage in AI services:
     key = get_effective_key(user_id, "openrouter") or os.getenv("OPENROUTER_API_KEY")
 """
 
-import json
 import logging
 import sqlite3
 from datetime import datetime, timezone

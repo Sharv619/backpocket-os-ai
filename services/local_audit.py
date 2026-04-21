@@ -2,7 +2,6 @@ import os
 import re
 import requests
 import logging
-import json
 from datetime import datetime
 
 logger = logging.getLogger(__name__)

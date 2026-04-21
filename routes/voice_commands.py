@@ -119,8 +119,12 @@ async def voice_command(req: VoiceCommandRequest) -> VoiceCommandResponse:
             speech_response=f"Did you mean to {intent.replace('.', ' ')}? Say yes or try again.",
             session_state=session.to_dict(),
         )
+        
+    # Inject transcript into metadata for handlers that need full context
+    req_metadata = req.metadata or {}
+    req_metadata["raw_transcript"] = transcript
 
-    return await _dispatch_intent(session, intent, entities, req.screen_context, req.metadata)
+    return await _dispatch_intent(session, intent, entities, req.screen_context, req_metadata)
 
 
 async def _dispatch_intent(
@@ -312,7 +316,7 @@ def _handle_navigate(session: VoiceSession, entities: dict) -> VoiceCommandRespo
             )
     return VoiceCommandResponse(
         intent="navigate.screen", confidence=0.5, action="clarify",
-        speech_response=f"Which screen? Dashboard, inbox, chat, documents, marketing, instructions, construction, or settings?",
+        speech_response="Which screen? Dashboard, inbox, chat, documents, marketing, instructions, construction, or settings?",
         session_state=session.to_dict(),
     )
 

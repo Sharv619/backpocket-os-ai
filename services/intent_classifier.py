@@ -70,6 +70,9 @@ construction.payment.record  — "Record $[amount] payment from [name]"
 construction.payment.list    — "Show me payments", "Who's paid?"
 construction.payment.pipeline — "What's the damage?", "How much outstanding?"
 
+# Construction: Site Visits
+construction.site_visit.log  — "Log a site visit for [name]", "I'm on site at [suburb]", "Just finished the site visit"
+
 # Cross-screen
 cross.email_to_lead        — "That email looks like a lead, extract it"
 cross.lead_to_quote        — "Create a lead and generate a quote"

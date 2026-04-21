@@ -1,7 +1,7 @@
 """Tests for billing service (offline — no real Stripe calls)."""
 import sqlite3
 import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, MagicMock
 
 
 @pytest.fixture(autouse=True)

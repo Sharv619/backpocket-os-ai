@@ -5,6 +5,42 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+from services.pgvector_rag import rag_chat
+
+@router.get("/api/twins")
+async def get_twins():
+    """List the three specialized AI twins."""
+    from services.twin_engine import list_twins
+    return {"twins": list_twins()}
+
+
+@router.post("/api/twins/chat")
+async def twins_chat(request: Request):
+    """Chat with a specialized twin using Postgres pgvector RAG."""
+    try:
+        data = await request.json()
+        message = data.get("message", "")
+        twin_type = data.get("twin_type", "estimator")
+        # Note: Postgres RAG currently doesn't handle conversation history in rag_chat
+        # but we should at least get the response working.
+        
+        if not message:
+            return {"error": "message is required"}, 400
+
+        user_id = getattr(request.state, "user_id", "default_user")
+        
+        response_text = await rag_chat(user_id, message, twin_type)
+        
+        return {
+            "response": response_text,
+            "twin_type": twin_type,
+            "conversation_id": data.get("conversation_id", "default_conv")
+        }
+    except Exception as e:
+        logger.error(f"Twins chat error: {e}", exc_info=True)
+        return {"response": f"Error: {str(e)[:100]}", "error": str(e)}
+
+
 @router.post("/api/twins/ingest")
 async def twins_ingest(request: Request):
     try:

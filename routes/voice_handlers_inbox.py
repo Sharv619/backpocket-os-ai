@@ -7,7 +7,6 @@ import logging
 import httpx
 
 from routes._voice_handlers import register_handler
-from services.entity_resolver import resolve_entity
 
 logger = logging.getLogger(__name__)
 

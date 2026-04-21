@@ -7,7 +7,7 @@ Standalone: reads business config from .env, no external DB deps.
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 from fpdf import FPDF

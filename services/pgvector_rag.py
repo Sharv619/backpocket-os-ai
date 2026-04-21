@@ -16,7 +16,7 @@ from sqlalchemy.engine import Engine
 # ═══════════════════════════════════════════════════════════════════════════
 
 DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://backpocket:backpocket@localhost:5432/backpocket"
+    "POSTGRES_DB_URL", "postgresql+psycopg2://backpocket_user:backpocket_password@localhost:5432/backpocket_db"
 )
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
@@ -167,20 +167,23 @@ class PgvectorRAG:
         query_embedding = self.get_embedding(query)
 
         with self.engine.connect() as conn:
+            # Format embedding as Postgres array string to avoid binding cast issues
+            embedding_str = f"[{','.join(map(str, query_embedding))}]"
+            
             sql = """
                 SELECT id, category, title, body, tags,
-                1 - (embedding <=> :embedding::vector) as similarity
+                1 - (embedding <=> CAST(:embedding AS vector)) as similarity
                 FROM knowledge_notes
                 WHERE user_id = :user_id
             """
-            params = {"embedding": query_embedding, "user_id": user_id}
-
+            params = {"embedding": embedding_str, "user_id": user_id}
+            
             if category:
                 sql += " AND category = :category"
                 params["category"] = category
 
-            sql += " ORDER BY embedding <=> :embedding::vector LIMIT 10"
-
+            sql += " ORDER BY embedding <=> CAST(:embedding AS vector) LIMIT 10"
+            
             result = conn.execute(text(sql), params)
             return [dict(r._mapping) for r in result.fetchall()]
 
@@ -253,16 +256,28 @@ def retrieve_from_rag(
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+from services.gemini import get_openrouter_response
+
 async def rag_chat(user_id: str, message: str, twin_type: str = "estimator") -> str:
-    """Chat with RAG-augmented response."""
+    """Chat with RAG-augmented response using OpenRouter."""
     rag = get_rag()
 
-    # Build context
-    context = rag.build_context(message, user_id, twin_type)
+    # Build context (Personality + RAG Knowledge)
+    system_context = rag.build_context(message, user_id, twin_type)
 
-    # TODO: Call Gemini/Ollama with context
-    # For now, return context as response
-    return context
+    # Call AI (prefer OpenRouter auto for cost/quality balance)
+    response = get_openrouter_response(
+        prompt=message,
+        model="openrouter/auto",
+        sys_prompt=system_context,
+        user_id=user_id
+    )
+
+    if not response:
+        # Fallback to a simple message if AI fails
+        return "I'm sorry, I'm having trouble thinking clearly right now. Can you try again?"
+
+    return response
 
 
 # ═══════════════════════════════════════════════════════════════════════════

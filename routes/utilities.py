@@ -5,7 +5,7 @@ from typing import Optional
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 import services.database as db
 from app.models.schemas import CoachAnalyzeRequest, HookRequest, TTSRequest
 
@@ -371,7 +371,8 @@ async def get_current_workflow_stage():
     This function now executes DB queries in a background thread to avoid blocking the event loop.
     """
     try:
-        import sqlite3, asyncio
+        import sqlite3
+        import asyncio
         # Run the DB logic in a thread pool
         def _query():
             conn = sqlite3.connect(db.DB_PATH)

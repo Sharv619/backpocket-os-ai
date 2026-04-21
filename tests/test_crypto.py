@@ -48,7 +48,6 @@ class TestEncryptDecrypt:
         assert encrypt_str("abc") != encrypt_str("xyz")
 
     def test_wrong_key_raises(self):
-        from cryptography.fernet import InvalidToken
         from services.crypto import encrypt_str
         import services.crypto as crypto_mod
         encrypted = encrypt_str("secret")

@@ -14,8 +14,7 @@ Usage:
 """
 
 import logging
-import math
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +66,6 @@ def _run_isolation_forest(
 
 def _centroid_rank(X) -> List[int]:
     """Return indices sorted by distance to centroid (closest first)."""
-    import numpy as np
     centroid = X.mean(axis=0)
     dists = ((X - centroid) ** 2).sum(axis=1) ** 0.5
     return sorted(range(len(dists)), key=lambda i: dists[i])

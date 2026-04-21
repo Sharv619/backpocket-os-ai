@@ -7,7 +7,7 @@ GET  /auth/me        — return current user from token
 """
 
 import logging
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, EmailStr
 
 from services.auth import (

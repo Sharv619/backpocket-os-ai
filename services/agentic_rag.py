@@ -14,9 +14,8 @@ Features:
 
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from datetime import datetime
-import json
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +113,7 @@ class AgenticRAG:
     def select_best_twin(self, email_content: Dict[str, Any], tier: int) -> str:
         """Delegate to the best twin based on email content."""
         subject = email_content.get("subject", "").lower()
-        sender = email_content.get("sender", "").lower()
+        email_content.get("sender", "").lower()
         # Also check snippet/body so routing isn't defeated by vague subject lines
         body_hint = (email_content.get("snippet", "") + " " + email_content.get("body", ""))[:500].lower()
         full_text = subject + " " + body_hint
