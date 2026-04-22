@@ -194,7 +194,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 import os as _os
 _flutter_dist = _os.path.join(_os.path.dirname(__file__), "static_flutter")
 if _os.path.isdir(_flutter_dist):
-    app.mount("/app", StaticFiles(directory=_flutter_dist, html=True), name="flutter")
+    app.mount("/", StaticFiles(directory=_flutter_dist, html=True), name="flutter")
 
 # Route registration
 from routes.auth import router as auth_router
