@@ -13,7 +13,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Flutter SDK
-ENV FLUTTER_VERSION=3.22.0 # Specify a Flutter version
+# Specify a Flutter version
+ENV FLUTTER_VERSION=3.22.0
 ENV PATH="$PATH:/opt/flutter/bin"
 RUN git clone https://github.com/flutter/flutter.git /opt/flutter \
     && /opt/flutter/bin/git checkout $FLUTTER_VERSION \
