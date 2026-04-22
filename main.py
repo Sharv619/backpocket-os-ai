@@ -250,11 +250,6 @@ async def startup_event():
     asyncio.create_task(inbox_polling_loop())
     logger.info("🚀 Background polling loop started automatically")
 
-@app.get("/")
-async def root():
-    return {"message": "BackPocket OS API is running. See /docs for details."}
-
-
 @app.get("/run-poll")
 async def run_poll():
     from services.background import inbox_polling_loop_once
