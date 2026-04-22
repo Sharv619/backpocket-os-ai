@@ -1,13 +1,13 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
-// dart:io is stubbed on Flutter web — safe to import, guarded at runtime via kIsWeb
-import 'dart:io'; // ignore: dart_io_import
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:file_picker/file_picker.dart'; // Import file_picker
 
 import '../theme.dart';
 import '../services/voice_command_service.dart';
@@ -81,6 +81,17 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
     super.dispose();
   }
 
+  void _showSnack(String message, {bool error = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: error ? AppColors.red : AppColors.green,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   Future<void> _handleTextSubmit(String text) async {
     if (text.isEmpty) return;
 
@@ -146,20 +157,45 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
 
     VoiceCommandResponse? response;
 
+    if (path == null) {
+      if (mounted) setState(() => _isProcessing = false);
+      return;
+    }
+
+    PlatformFile platformFile;
     if (kIsWeb) {
-      // flutter_sound web: stop() returns a blob URL — fetch bytes then upload
-      if (path != null && path.isNotEmpty) {
-        try {
-          final blobRes = await http.get(Uri.parse(path));
-          response = await _voiceService.processAudioBytes(blobRes.bodyBytes, 'recording.wav');
-        } catch (_) {}
-      }
-    } else {
-      if (path == null) {
+      // Web: stop() returns a blob URL — fetch bytes
+      try {
+        final blobRes = await http.get(Uri.parse(path));
+        platformFile = PlatformFile(
+          name: 'recording.wav',
+          bytes: blobRes.bodyBytes,
+          size: blobRes.bodyBytes.length,
+        );
+      } catch (e) {
+        _showSnack('Failed to get audio from blob: $e', error: true);
         if (mounted) setState(() => _isProcessing = false);
         return;
       }
-      response = await _voiceService.processAudio(path);
+    } else {
+      // Mobile/Desktop: path is a file path
+      try {
+        final bytes = await File(path).readAsBytes();
+        platformFile = PlatformFile(
+          name: path.split('/').last,
+          bytes: bytes,
+          size: bytes.length,
+          path: path,
+        );
+      } catch (e) {
+        _showSnack('Failed to read recording file: $e', error: true);
+        if (mounted) setState(() => _isProcessing = false);
+        return;
+      }
+    }
+
+    response = await _voiceService.processAudio(platformFile);
+    if (!kIsWeb) { // Clean up native file
       try { File(path).deleteSync(); } catch (_) {}
     }
 
