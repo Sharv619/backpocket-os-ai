@@ -1,6 +1,5 @@
 
 import os
-import sqlite3
 import asyncio
 from unittest.mock import MagicMock, patch
 from services.stripe import (
@@ -9,7 +8,6 @@ from services.stripe import (
     handle_webhook, 
     get_subscription_status,
     PLAN_MONTHLY,
-    PLAN_LIFETIME,
     DB_PATH
 )
 

@@ -24,9 +24,9 @@ class TestBillingTable:
         assert "billing_sessions" in tables
         con.close()
 
-    def test_pilot_price_is_19900(self):
-        from services.stripe import PILOT_PRICE_AUD_CENTS
-        assert PILOT_PRICE_AUD_CENTS == 19900
+    def test_plan_lifetime_is_correct(self):
+        from services.stripe import PLAN_LIFETIME
+        assert PLAN_LIFETIME == "lifetime"
 
 
 class TestCheckoutSession:
@@ -43,9 +43,7 @@ class TestCheckoutSession:
 
         with patch.object(svc, "_stripe", return_value=mock_stripe):
             result = await svc.create_checkout_session(
-                amount=19900,
-                success_url="https://example.com/success",
-                cancel_url="https://example.com/cancel",
+                plan=svc.PLAN_LIFETIME,
                 customer_email="test@example.com",
             )
 
@@ -63,7 +61,7 @@ class TestCheckoutSession:
         mock_stripe.checkout.Session.create.return_value = mock_session
 
         with patch.object(svc, "_stripe", return_value=mock_stripe):
-            await svc.create_checkout_session(customer_email="tradie@example.com")
+            await svc.create_checkout_session(customer_email="tradie@example.com", plan="monthly")
 
         status = svc.get_subscription_status("tradie@example.com")
         assert status["session_id"] == "cs_test_xyz"

@@ -109,13 +109,13 @@ def test_twin_chat():
     r = requests.get(f"{BASE_URL}/api/conversations", timeout=5)
     print_test("Conversations list", r.status_code == 200)
 
-    payload = {"message": "hello"}
-    r = requests.post(f"{BASE_URL}/api/twin-chat", json=payload, timeout=30)
+    payload = {"message": "hello", "twin_type": "estimator"}
+    r = requests.post(f"{BASE_URL}/api/twins/chat", json=payload, timeout=30)
     if r.status_code == 200:
         print_test("Twin chat", True, "Response received")
     else:
         print_test(
-            "Twin chat", False, f"Status: {r.status_code} - likely needs API key"
+            "Twin chat", False, f"Status: {r.status_code} - payload: {payload}"
         )
 
 

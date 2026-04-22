@@ -5,7 +5,6 @@ import base64
 import logging
 import os
 from services.document_vision import (
-    save_document,
     get_all_documents,
     get_document,
     analyze_document,

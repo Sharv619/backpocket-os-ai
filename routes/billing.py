@@ -7,7 +7,6 @@ from services.stripe import (
     get_subscription_status,
     init_billing_table,
     PLAN_MONTHLY,
-    PLAN_LIFETIME,
 )
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])

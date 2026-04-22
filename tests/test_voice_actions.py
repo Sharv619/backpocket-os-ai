@@ -1,6 +1,5 @@
 import os
-import asyncio
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 # Mock env vars
 os.environ["POSTGRES_DB_URL"] = "postgresql://backpocket_user:backpocket_password@localhost:5432/backpocket_db"

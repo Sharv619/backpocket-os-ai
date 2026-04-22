@@ -1,20 +1,8 @@
 import os
 import logging
-from typing import Optional, List, Dict, Any
-from datetime import datetime
+from typing import Optional
 from pydantic import BaseModel
 import services.database as db
-from services.gmail import send_email
-from services.gemini import (
-    triage_email,
-    draft_response,
-    refine_draft,
-    batch_triage_emails,
-    pre_triage_rules,
-)
-from services.whapi import send_notification
-from services.self_check import run_self_check, send_morning_pulse
-from services.local_audit import run_self_audit
 
 
 class ApproveRequest(BaseModel):

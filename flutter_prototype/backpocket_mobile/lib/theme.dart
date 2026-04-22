@@ -27,6 +27,11 @@ class AppColors {
   static const Color red = Color(0xFFEF4444);
   static const Color green = Color(0xFF22C55E);
 
+  // Twin Persona Colors (One-Man Army System)
+  static const Color estimator = Color(0xFF2563EB); // Blue
+  static const Color siteManager = Color(0xFF16A34A); // Green
+  static const Color admin = Color(0xFFDC2626); // Red
+
   // Text — opaque warm tones; pass WCAG AA on all app surfaces
   // textDim  ~11.9:1 on bgStart, ~9.2:1 on surface
   // textMuted ~6.6:1 on bgStart, ~5.1:1 on surface (AA for small text)

@@ -1,4 +1,3 @@
-import asyncio
 import os
 import sqlite3
 from unittest.mock import patch, MagicMock
@@ -8,9 +7,10 @@ from fastapi.testclient import TestClient
 os.environ["BP_API_KEY"] = "test_api_key_123"
 os.environ["POSTGRES_DB_URL"] = "postgresql://backpocket_user:backpocket_password@localhost:5432/backpocket_db"
 
+import services.database as db
 from main import app
 from services.db_router import get_conn, SQLITE_PATH
-from services.stripe import PLAN_MONTHLY, PLAN_LIFETIME
+from services.stripe import PLAN_MONTHLY
 
 client = TestClient(app)
 
@@ -27,6 +27,7 @@ def test_auth_middleware():
     print("✅ Authenticated request permitted (200)")
 
 def test_dual_write_db():
+    db.init_db() # Ensure schema is up-to-date
     print("\n--- Testing 1.3 Dual-Write Postgres & SQLite ---")
     test_user_id = "11111111-1111-1111-1111-111111111111" # Valid UUID
     test_email = "dualwrite@test.com"

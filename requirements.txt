@@ -21,3 +21,6 @@ ollama
 beautifulsoup4
 stripe
 cryptography
+google-genai
+python-jose
+pytest-asyncio

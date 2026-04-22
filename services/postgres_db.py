@@ -25,7 +25,7 @@ from sqlalchemy import (
     Text,
     ForeignKey,
 )
-from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
+from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from sqlalchemy.pool import NullPool
 
 # ═══════════════════════════════════════════════════════════════════════

@@ -84,9 +84,9 @@ class _AgenticRagScreenState extends State<AgenticRagScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
-                      _agentCard('Accountant Twin', 'Handles invoicing, BAS, tax compliance', Icons.account_balance, Colors.blue),
-                      _agentCard('Auditor Twin', 'Reviews documents, verifies compliance', Icons.check_circle, Colors.green),
-                      _agentCard('Admin Twin', 'Email triage, scheduling, automation', Icons.settings, Colors.red),
+                      _agentCard('Estimator Twin', 'Handles measurements, quotes, and lead parsing', Icons.calculate, AppColors.estimator),
+                      _agentCard('Site Manager Twin', 'Manages documents, site photos, and marketing', Icons.construction, AppColors.siteManager),
+                      _agentCard('Admin Twin', 'Email triage, scheduling, automation', Icons.settings, AppColors.admin),
                     ],
                   ),
                 ],

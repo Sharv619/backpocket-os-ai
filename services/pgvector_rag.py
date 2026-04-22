@@ -298,27 +298,27 @@ def reindex_all(user_id: str) -> dict:
             ),
             {"uid": user_id},
         )
-        for row in result.fetchall():
+        for row in result:
             try:
-                rag.ingest("knowledge_notes", row[1], user_id, {"id": row[0]})
-                indexed["knowledge"] += 1
+                rag.ingest("knowledge_notes", str(row[1]), user_id, {"id": row[0]})
+                indexed["knowledge_notes"] += 1
             except Exception as e:
-                print(f"[WARN] Failed to index knowledge {row[0]}: {e}")
+                print(f"[WARN] Failed to index knowledge note {row[0]}: {e}")
 
         # Re-index pending approvals
         result = conn.execute(
             text(
-                "SELECT id, subject, preview FROM pending_approvals WHERE user_id = :uid AND embedding IS NULL"
+                "SELECT id, subject, draft_body FROM pending_approvals WHERE user_id = :uid"
             ),
             {"uid": user_id},
         )
-        for row in result.fetchall():
+        for row in result:
             try:
-                text = f"{row[1]} {row[2]}"
-                rag.ingest("pending_approvals", text, user_id, {"ref_id": str(row[0])})
-                indexed["emails"] += 1
+                combined_text = f"{row[1]} {row[2]}"
+                rag.ingest("pending_approvals", combined_text, user_id, {"ref_id": str(row[0])})
+                indexed["pending_approvals"] += 1
             except Exception as e:
-                print(f"[WARN] Failed to index email {row[0]}: {e}")
+                print(f"[WARN] Failed to index pending approval {row[0]}: {e}")
 
         conn.commit()
 

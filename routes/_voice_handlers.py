@@ -32,9 +32,4 @@ def list_handlers() -> list[str]:
     return list(_HANDLERS.keys())
 
 # Import handler modules to automatically register them via the decorator
-import routes.voice_handlers_dashboard
-import routes.voice_handlers_inbox
-import routes.voice_handlers_construction
-import routes.voice_handlers_misc
-import routes.voice_handlers_cross
 

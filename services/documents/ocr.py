@@ -4,7 +4,6 @@ Extracts text from invoices, receipts, and photos.
 Replaces the broken Paperless-ngx stack with a fast native implementation.
 """
 
-import os
 import logging
 from io import BytesIO
 try:

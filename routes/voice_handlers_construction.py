@@ -8,6 +8,7 @@ import httpx
 
 from routes._voice_handlers import register_handler
 from services.entity_resolver import resolve_entity, resolve_lead_by_id, resolve_quote_by_id
+from services.construction import get_construction_manager
 
 logger = logging.getLogger(__name__)
 

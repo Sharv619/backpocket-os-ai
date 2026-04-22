@@ -77,30 +77,30 @@
 ## 🛠️ PHASE 4: VIBECODING & ORCHESTRATION (The "Speed")
 *Objective: Make the system help us build itself.*
 
-- [ ] **4.1: MCP Restructure**
+- [x] **4.1: MCP Restructure**
     - File: `mcp_servers/*.mjs`
     - Task: Split broken Node monolith into 4 thin servers (Leads, Quotes, Pipeline, Knowledge).
-    - Status: 🔴 NOT STARTED
+    - Status: ✅ COMPLETE (Old src/mcp-wrapper deleted, 4 .mjs servers active, .mcp.json updated)
 
-- [ ] **4.2: Shared Knowledge Hook**
+- [x] **4.2: Shared Knowledge Hook**
     - File: `scripts/git-hooks/post-merge`
     - Task: Auto-capture every git commit into the Twin's permanent memory.
-    - Status: 🔴 NOT STARTED
+    - Status: ✅ COMPLETE (Setup script run, knowledge_notes table created, hook symlinked)
 
 ---
 
 ## 📢 PHASE 5: THE POLISH (Marketing & Coaching)
 *Objective: Add the "WOW" features.*
 
-- [ ] **5.1: Communication Coach Checkers**
+- [x] **5.1: Communication Coach Checkers**
     - File: `services/coach/*.py`
     - Task: Implement Empathy, Authority, and Clarity scanners for AI drafts.
-    - Status: 🔴 NOT STARTED
+    - Status: ✅ COMPLETE (Implemented Authority, Clarity, and Empathy checkers + aggregator in review.py)
 
-- [ ] **5.2: Social Media Scheduler**
+- [x] **5.2: Social Media Scheduler**
     - File: `services/marketing/scheduler.py`
     - Task: Build the queue for Facebook/Instagram delayed posts.
-    - Status: 🔴 NOT STARTED
+    - Status: ✅ COMPLETE (Implemented queue logic and table auto-creation with sqlite)
 
 ---
 

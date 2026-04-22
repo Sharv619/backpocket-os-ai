@@ -2,15 +2,16 @@
 Voice command endpoint tests.
 Run: python -m pytest tests/test_voice_commands.py -v
 """
+import os
+os.environ["BP_API_KEY"] = "test-key-123" # Set for AuthMiddleware bypass
 from fastapi.testclient import TestClient
 from main import app
 
 client = TestClient(app)
-HEADERS = {"X-API-Key": "test"}  # middleware accepts any key in test mode
+HEADERS = {"X-API-Key": "test-key-123"}
 
 
 # ── helpers ────────────────────────────────────────────────────────────────
-
 def voice_cmd(transcript: str, screen: str = "dashboard", session_id: str = "test-001", tab: int = 0):
     return client.post(
         "/api/voice/command",

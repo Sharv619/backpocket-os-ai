@@ -38,6 +38,7 @@ class TwinChatScreen extends StatefulWidget {
 }
 
 class _TwinChatScreenState extends State<TwinChatScreen> {
+  String _selectedTwin = 'estimator';
   final List<Map<String, String>> _messages = [];
   final TextEditingController _ctrl = TextEditingController();
   final ScrollController _scroll = ScrollController();
@@ -168,9 +169,13 @@ class _TwinChatScreenState extends State<TwinChatScreen> {
     try {
       final res = await http
           .post(
-            Uri.parse('${widget.serverUrl}/api/mobile/chat'),
+            Uri.parse('${widget.serverUrl}/api/twins/chat'),
             headers: _headers,
-            body: jsonEncode({'message': text}),
+            body: jsonEncode({
+              'message': text,
+              'twin_type': _selectedTwin,
+              'conversation_id': _activeConvId,
+            }),
           )
           .timeout(const Duration(seconds: 30));
 
@@ -182,6 +187,9 @@ class _TwinChatScreenState extends State<TwinChatScreen> {
             'content': data['response'] as String? ?? 'No response.',
           });
           _sending = false;
+          if (_activeConvId == null && data['conversation_id'] != null) {
+            _activeConvId = data['conversation_id'].toString();
+          }
         });
         _scrollToBottom();
       }
@@ -327,15 +335,27 @@ class _TwinChatScreenState extends State<TwinChatScreen> {
         ),
         child: Column(
           children: [
-            // Header bar with history toggle
+            // Header bar with twin selection
             Container(
               padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
               child: Row(
                 children: [
-                  const Expanded(
-                    child: Text(
-                      'Pip',
-                      style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                  const Text(
+                    'Pip',
+                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(width: 12),
+                  // Twin Selector
+                  Expanded(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          _twinChip('Estimator', 'estimator', AppColors.estimator),
+                          _twinChip('Site Manager', 'site_manager', AppColors.siteManager),
+                          _twinChip('Admin', 'admin', AppColors.admin),
+                        ],
+                      ),
                     ),
                   ),
                   if (_messages.isNotEmpty)
@@ -361,7 +381,10 @@ class _TwinChatScreenState extends State<TwinChatScreen> {
                       controller: _scroll,
                       padding: const EdgeInsets.all(16),
                       itemCount: _messages.length,
-                      itemBuilder: (_, i) => _ChatBubble(msg: _messages[i]),
+                      itemBuilder: (_, i) => _ChatBubble(
+                        msg: _messages[i],
+                        onChoiceSelected: _sendChoice,
+                      ),
                     ),
             ),
             if (_sending)
@@ -498,6 +521,43 @@ class _TwinChatScreenState extends State<TwinChatScreen> {
     );
   }
 
+  Widget _twinChip(String label, String type, Color color) {
+    final active = _selectedTwin == type;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedTwin = type),
+      child: Container(
+        margin: const EdgeInsets.only(right: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: active ? color.withAlpha(51) : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: active ? color : AppColors.border,
+            width: active ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: active ? Colors.white : AppColors.textMuted,
+                fontSize: 11,
+                fontWeight: active ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildWelcome() {
     final suggestions = [
       'What emails need attention today?',
@@ -518,10 +578,10 @@ class _TwinChatScreenState extends State<TwinChatScreen> {
           ),
         ),
         const SizedBox(height: 8),
-        const Center(
+        Center(
           child: Text(
-            'Ask me anything about your inbox',
-            style: TextStyle(color: AppColors.textDim, fontSize: 14),
+            'Ask me anything about your ${_selectedTwin.replaceAll("_", " ")}',
+            style: const TextStyle(color: AppColors.textDim, fontSize: 14),
           ),
         ),
         const SizedBox(height: 12),
@@ -565,6 +625,65 @@ class _TwinChatScreenState extends State<TwinChatScreen> {
       ],
     );
   }
+
+  void _sendChoice(String choice) {
+    if (choice.contains('remember this rule')) {
+      // Handle "Promote to Rule" specifically
+      _promoteLastCorrection();
+    } else {
+      _ctrl.text = choice;
+      _send();
+    }
+  }
+
+  Future<void> _promoteLastCorrection() async {
+    // Find the last assistant message that was a correction
+    String? lastCorrection;
+    for (var i = _messages.length - 1; i >= 0; i--) {
+      if (_messages[i]['role'] == 'assistant') {
+        lastCorrection = _messages[i]['content'];
+        break;
+      }
+    }
+    
+    if (lastCorrection == null) return;
+
+    setState(() {
+      _messages.add({'role': 'user', 'content': 'Yes, remember this rule.'});
+      _sending = true;
+    });
+    _scrollToBottom();
+
+    try {
+      final res = await http.post(
+        Uri.parse('${widget.serverUrl}/api/instructions/promote'),
+        headers: _headers,
+        body: jsonEncode({
+          'instruction_text': lastCorrection.split('[CHOICES:')[0].trim(),
+          'category': 'learned_pattern',
+        }),
+      ).timeout(const Duration(seconds: 10));
+
+      if (mounted) {
+        setState(() {
+          _messages.add({
+            'role': 'assistant',
+            'content': 'Done! I have saved that as a permanent rule. I will follow it from now on.',
+          });
+          _sending = false;
+        });
+        _scrollToBottom();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _messages.add({'role': 'assistant', 'content': 'Error promoting rule: $e'});
+          _sending = false;
+        });
+        _scrollToBottom();
+      }
+    }
+  }
 }
 
 class _ConvTile extends StatelessWidget {
@@ -607,50 +726,82 @@ class _ConvTile extends StatelessWidget {
 
 class _ChatBubble extends StatelessWidget {
   final Map<String, String> msg;
+  final Function(String)? onChoiceSelected;
 
-  const _ChatBubble({required this.msg});
+  const _ChatBubble({required this.msg, this.onChoiceSelected});
 
   @override
   Widget build(BuildContext context) {
     final isUser = msg['role'] == 'user';
+    final content = msg['content'] ?? '';
+    
+    // Extract choices if present: [CHOICES: Opt 1 | Opt 2]
+    List<String> choices = [];
+    String mainText = content;
+    if (content.contains('[CHOICES:')) {
+      final parts = content.split('[CHOICES:');
+      mainText = parts[0].trim();
+      final choicePart = parts[1].split(']')[0];
+      choices = choicePart.split('|').map((s) => s.trim()).toList();
+    }
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+      child: Column(
+        crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
-          if (!isUser) ...[
-            Container(
-              width: 28, height: 28,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [AppColors.amber, AppColors.orange]),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Center(
-                child: Text('BP', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 9)),
-              ),
-            ),
-            const SizedBox(width: 8),
-          ],
-          Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: isUser ? AppColors.orange.withAlpha(51) : AppColors.card,
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(14),
-                  topRight: const Radius.circular(14),
-                  bottomLeft: Radius.circular(isUser ? 14 : 4),
-                  bottomRight: Radius.circular(isUser ? 4 : 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+            children: [
+              if (!isUser) ...[
+                Container(
+                  width: 28, height: 28,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(colors: [AppColors.amber, AppColors.orange]),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Center(
+                    child: Text('BP', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 9)),
+                  ),
                 ),
-                border: Border.all(
-                  color: isUser ? AppColors.orange.withAlpha(76) : AppColors.border,
+                const SizedBox(width: 8),
+              ],
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isUser ? AppColors.orange.withAlpha(51) : AppColors.card,
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(14),
+                      topRight: const Radius.circular(14),
+                      bottomLeft: Radius.circular(isUser ? 14 : 4),
+                      bottomRight: Radius.circular(isUser ? 4 : 14),
+                    ),
+                    border: Border.all(
+                      color: isUser ? AppColors.orange.withAlpha(76) : AppColors.border,
+                    ),
+                  ),
+                  child: _buildContent(mainText),
                 ),
               ),
-              child: _buildContent(msg['content'] ?? ''),
-            ),
+              if (isUser) const SizedBox(width: 8),
+            ],
           ),
-          if (isUser) const SizedBox(width: 8),
+          if (choices.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 36, top: 8),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: choices.map((c) => ActionChip(
+                  label: Text(c, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                  backgroundColor: AppColors.amber.withAlpha(30),
+                  side: const BorderSide(color: AppColors.amber, width: 0.5),
+                  onPressed: () => onChoiceSelected?.call(c),
+                )).toList(),
+              ),
+            ),
         ],
       ),
     );

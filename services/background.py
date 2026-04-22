@@ -50,6 +50,10 @@ async def inbox_polling_loop_once():
         # 🟢 CRM Duty: Sync Lead Conversions
         await loop.run_in_executor(None, process_lead_conversions)
 
+        # 🟢 Marketing Duty: Run Social Media Scheduler
+        from services.marketing.scheduler import run_scheduler_tick
+        await loop.run_in_executor(None, run_scheduler_tick)
+
         # 🧠 Self-Awareness: Check for nudges (Urgent emails pending > 4h)
         await loop.run_in_executor(None, run_self_check)
 

@@ -1,12 +1,11 @@
 import asyncio
 import os
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 # Mock env vars
 os.environ["POSTGRES_DB_URL"] = "postgresql://backpocket_user:backpocket_password@localhost:5432/backpocket_db"
 
 from routes.voice_commands import VoiceCommandRequest, voice_command
-from services.voice_to_actions import process_site_visit_transcript
 
 @patch("services.voice_to_actions.process_site_visit_transcript")
 @patch("routes.voice_commands.classify_intent")

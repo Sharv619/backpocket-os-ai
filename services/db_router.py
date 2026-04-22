@@ -5,7 +5,6 @@ Now supports DUAL-WRITE: writes to both, reads from Postgres (if available).
 import os
 import logging
 import sqlite3
-import threading
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -131,7 +130,7 @@ def get_conn(user_id: str | None = None):
             if user_id:
                 with pg_conn.cursor() as cur:
                     # Set the session variable for RLS
-                    cur.execute(f"SET LOCAL backpocket.user_id = %s", (user_id,))
+                    cur.execute("SET LOCAL backpocket.user_id = %s", (user_id,))
             return DualWriteConnection(pg_conn, sl_conn)
         except Exception as e:
             logger.error(f"Failed to connect to Postgres, falling back to SQLite: {e}")
