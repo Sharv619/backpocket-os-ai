@@ -116,7 +116,7 @@ class VoiceCommandService extends ChangeNotifier {
     }
   }
 
-  Future<String?> transcribeAudio(String audioPath) async {
+  Future<String?> transcribeAudio(PlatformFile platformFile) async {
     _state = VoiceFlowState.transcribing;
     notifyListeners();
 
@@ -129,7 +129,7 @@ class VoiceCommandService extends ChangeNotifier {
           'selected_item_id': _selectedItemId,
           'tab_index': _tabIndex,
         },
-        audioPath: audioPath,
+        // audioPath: platformFile.path, // This would be problematic for web, queue raw bytes if possible
       );
       _errorMessage = 'No reception. Pip saved your recording and will transcribe it when online.';
       _state = VoiceFlowState.queuedOffline;
@@ -139,8 +139,24 @@ class VoiceCommandService extends ChangeNotifier {
 
     try {
       final uri = Uri.parse('$baseUrl/api/voice/transcribe');
-      final request = http.MultipartRequest('POST', uri)
-        ..files.add(await http.MultipartFile.fromPath('audio', audioPath));
+      final request = http.MultipartRequest('POST', uri);
+
+      if (kIsWeb) {
+        // For web, use fromBytes
+        request.files.add(http.MultipartFile.fromBytes(
+          'audio',
+          platformFile.bytes!,
+          filename: platformFile.name,
+        ));
+      } else {
+        // For mobile/desktop, use fromPath (requires dart:io)
+        request.files.add(await http.MultipartFile.fromPath(
+          'audio',
+          platformFile.path!,
+          filename: platformFile.name,
+        ));
+      }
+
       if (apiKey.isNotEmpty) {
         request.headers['X-API-Key'] = apiKey;
       }
@@ -167,46 +183,10 @@ class VoiceCommandService extends ChangeNotifier {
     return null;
   }
 
-  Future<VoiceCommandResponse?> processAudio(String audioPath) async {
-    final transcript = await transcribeAudio(audioPath);
+  Future<VoiceCommandResponse?> processAudio(PlatformFile platformFile) async {
+    final transcript = await transcribeAudio(platformFile);
     if (transcript == null) return null;
     return sendTranscript(transcript);
-  }
-
-  /// Web-safe: upload raw bytes (from blob URL) instead of a file path.
-  Future<VoiceCommandResponse?> processAudioBytes(
-    Uint8List bytes,
-    String filename,
-  ) async {
-    _state = VoiceFlowState.transcribing;
-    notifyListeners();
-
-    try {
-      final uri = Uri.parse('$baseUrl/api/voice/transcribe');
-      final request = http.MultipartRequest('POST', uri)
-        ..files.add(http.MultipartFile.fromBytes('audio', bytes, filename: filename));
-      if (apiKey.isNotEmpty) request.headers['X-API-Key'] = apiKey;
-
-      final streamed = await request.send();
-      final body = await streamed.stream.bytesToString();
-
-      if (streamed.statusCode == 200) {
-        final data = jsonDecode(body);
-        final transcript = data['transcript'] as String?;
-        if (transcript != null && transcript.isNotEmpty) {
-          return sendTranscript(transcript);
-        }
-        _errorMessage = data['error'] ?? 'Empty transcription';
-      } else {
-        _errorMessage = 'Transcription failed: ${streamed.statusCode}';
-      }
-    } catch (e) {
-      _errorMessage = 'Transcription error: $e';
-    }
-
-    _state = VoiceFlowState.error;
-    notifyListeners();
-    return null;
   }
 
   Future<VoiceCommandResponse?> sendConfirmation(String response) async {

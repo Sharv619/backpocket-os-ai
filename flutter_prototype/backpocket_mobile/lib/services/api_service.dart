@@ -1,6 +1,12 @@
 import 'dart:convert';
-import 'dart:io';
+import 'package:flutter/foundation.dart'; // For kIsWeb
+
 import 'package:http/http.dart' as http;
+// Conditional import for File/PlatformFile
+import 'package:file_picker/file_picker.dart'; // For PlatformFile
+
+// Use dart:io for non-web platforms, dart:html for web
+import 'dart:io' if (dart.library.html) 'dart:html';
 
 // ── Exception Handling ──────────────────────────────────────────────────────
 class ApiException implements Exception {
@@ -99,10 +105,26 @@ class ApiService {
   }
 
   // ── Documents ──────────────────────────────────────────────────────────────
-  Future<Map<String, dynamic>> uploadDocument(File file) async {
+  Future<Map<String, dynamic>> uploadDocument(PlatformFile platformFile) async {
     final uri = Uri.parse('$baseUrl/api/documents/upload');
-    final req = http.MultipartRequest('POST', uri)
-      ..files.add(await http.MultipartFile.fromPath('file', file.path));
+    final req = http.MultipartRequest('POST', uri);
+
+    if (kIsWeb) {
+      // For web, use fromBytes
+      req.files.add(http.MultipartFile.fromBytes(
+        'file', // Field name
+        platformFile.bytes!,
+        filename: platformFile.name,
+      ));
+    } else {
+      // For mobile/desktop, use fromPath (requires dart:io)
+      req.files.add(await http.MultipartFile.fromPath(
+        'file', // Field name
+        platformFile.path!,
+        filename: platformFile.name,
+      ));
+    }
+
     final streamed = await req.send();
     final body = await streamed.stream.bytesToString();
     return jsonDecode(body);

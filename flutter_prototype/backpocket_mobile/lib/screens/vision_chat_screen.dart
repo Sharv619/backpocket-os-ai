@@ -1,10 +1,11 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart'; // Import file_picker
+import '../services/api_service.dart'; // Import ApiService
 
 const Color _kBg = Color(0xFF121212);
 const Color _kSurface = Color(0xFF1E1E1E);
@@ -41,15 +42,23 @@ class _Message {
 
 class _VisionChatScreenState extends State<VisionChatScreen> {
   _Phase _phase = _Phase.picker;
-  double _uploadProgress = 0; 
+  double _uploadProgress = 0;
   String _processingLabel = 'Initialising...';
 
+  late final ApiService _apiService; // Initialize ApiService
+
   int? _documentId;
-  String _docContext = ''; 
+  String _docContext = '';
   final List<_Message> _messages = [];
   final TextEditingController _chatCtrl = TextEditingController();
   final ScrollController _scrollCtrl = ScrollController();
   bool _chatSending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _apiService = ApiService(baseUrl: widget.serverUrl, apiKey: widget.apiKey);
+  }
 
   @override
   void dispose() {
@@ -66,47 +75,32 @@ class _VisionChatScreenState extends State<VisionChatScreen> {
         imageQuality: 90,
       );
       if (xfile == null) return;
-      await _processFile(File(xfile.path));
+      await _processFile(xfile); // Pass XFile directly
     } catch (e) {
       _showSnack('Image error: $e', error: true);
     }
   }
 
-  Future<void> _processFile(File file) async {
+  Future<void> _processFile(XFile xfile) async {
     setState(() {
       _phase = _Phase.processing;
       _uploadProgress = 0;
       _processingLabel = 'Uploading document...';
     });
 
-    final headers = <String, String>{
-      if (widget.apiKey.isNotEmpty) 'X-API-Key': widget.apiKey,
-    };
-
     int? docId;
     try {
-      final uri = Uri.parse('${widget.serverUrl}/api/documents/upload');
-      final req = http.MultipartRequest('POST', uri)
-        ..headers.addAll(headers)
-        ..fields['category'] = 'vision'
-        ..files.add(
-          await http.MultipartFile.fromPath(
-            'file',
-            file.path,
-            filename: 'capture_${DateTime.now().millisecondsSinceEpoch}.jpg',
-          ),
-        );
+      final bytes = await xfile.readAsBytes();
+      final platformFile = PlatformFile(
+        name: xfile.name,
+        bytes: bytes,
+        size: bytes.length,
+      );
 
       _animateProgress(0, 0.6, const Duration(milliseconds: 800));
 
-      final streamed = await req.send().timeout(const Duration(seconds: 30));
-      final body = await streamed.stream.bytesToString();
+      final data = await _apiService.uploadDocument(platformFile);
 
-      if (streamed.statusCode != 200) {
-        throw Exception('Upload failed (${streamed.statusCode}): $body');
-      }
-
-      final data = jsonDecode(body) as Map<String, dynamic>;
       if (data['status'] != 'success') {
         throw Exception(data['message'] ?? 'Upload returned non-success');
       }
