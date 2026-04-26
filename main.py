@@ -13,11 +13,34 @@ if sys.platform == "win32":
         pass
 
 import logging
+from collections import deque
+
+# In-memory ring buffer — last 150 log lines, exposed via /api/agentic-rag/logs
+class _PipelineLogHandler(logging.Handler):
+    def __init__(self, maxlen=150):
+        super().__init__()
+        self._buf = deque(maxlen=maxlen)
+
+    def emit(self, record):
+        from datetime import datetime
+        self._buf.appendleft({
+            "ts": datetime.now().strftime("%H:%M:%S"),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        })
+
+    def snapshot(self):
+        return list(self._buf)
+
+pipeline_log_handler = _PipelineLogHandler()
+pipeline_log_handler.setLevel(logging.DEBUG)
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
+logging.getLogger().addHandler(pipeline_log_handler)
 
 import os
 import asyncio

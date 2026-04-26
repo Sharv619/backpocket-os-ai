@@ -100,3 +100,4 @@ def delete_byok_key(user_id: str, provider: str):
     conn.commit()
     conn.close()
     logger.info(f"BYOK: deleted {provider} key for user {user_id[:8]}...")
+

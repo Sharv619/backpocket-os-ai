@@ -492,3 +492,67 @@ async def get_last_thought():
         "thinking": thought,
         "has_content": bool(thought),
     }
+
+
+@router.get("/api/agentic-rag/logs")
+async def get_agentic_rag_logs(limit: int = 80):
+    """Live pipeline logs — real Python log lines from the AI system."""
+    try:
+        from main import pipeline_log_handler
+        lines = pipeline_log_handler.snapshot()[:limit]
+    except Exception:
+        lines = []
+
+    logs = []
+    for entry in lines:
+        msg = entry["msg"]
+        twin = _infer_twin(msg)
+        logs.append({
+            "type": _classify_log(msg),
+            "twin": twin,
+            "model": _twin_model(twin),
+            "action": msg,
+            "detail": "",
+            "ref_id": "",
+            "timestamp": entry["ts"],
+            "level": entry["level"],
+            "logger": entry["logger"],
+        })
+
+    return {"status": "success", "logs": logs, "count": len(logs)}
+
+
+def _classify_log(msg: str) -> str:
+    m = msg.lower()
+    if "selected twin" in m or "routing" in m or "using" in m and "twin" in m:
+        return "routing"
+    if "learned" in m or "pattern" in m or "correction" in m:
+        return "learned"
+    if "triage" in m or "pending" in m or "email" in m:
+        return "triage"
+    if "openrouter" in m or "gemini" in m or "model" in m or "token" in m:
+        return "model_call"
+    if "error" in m or "failed" in m or "exception" in m:
+        return "error"
+    return "info"
+
+
+def _infer_twin(text: str) -> str:
+    text = (text or "").lower()
+    if any(k in text for k in ["invoice", "quote", "payment", "tax", "bas", "gst", "estimat"]):
+        return "estimator"
+    if any(k in text for k in ["audit", "compliance", "review", "verify", "document", "ocr"]):
+        return "site_manager"
+    return "admin"
+
+
+def _infer_twin_from_subject(subject: str) -> str:
+    return _infer_twin(subject)
+
+
+def _twin_model(twin: str) -> str:
+    return {
+        "estimator": "openrouter/auto → Estimator Twin",
+        "site_manager": "openrouter/auto → Site Manager Twin",
+        "admin": "openrouter/auto → Admin Twin",
+    }.get(twin, "openrouter/auto")

@@ -626,6 +626,14 @@ class ApiService {
     return await _handleResponse(res);
   }
 
+  Future<Map<String, dynamic>> getAgenticRagLogs({int limit = 40}) async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/agentic-rag/logs?limit=$limit'),
+      headers: _headers,
+    ).timeout(_tFast);
+    return await _handleResponse(res);
+  }
+
   // ── Blog & Content ────────────────────────────────────────────────────────
   Future<Map<String, dynamic>> generateBlogPost(String title, String theme) async {
     final res = await http.get(
