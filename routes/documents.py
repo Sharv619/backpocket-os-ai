@@ -32,14 +32,27 @@ async def upload_document_and_analyze(request: Request):
     3. Fetches the extracted text from Paperless.
     4. Submits the clean text to a language model for semantic analysis.
     """
-    if not _PAPERLESS_ENABLED:
-        return HTTPException(status_code=503, detail="Paperless-ngx service is not configured.")
-
     try:
-        # Step 0: Extract file content from the request (same as before)
+        # Step 0: Extract file content from the request
         content, filename, category = await _extract_file_from_request(request)
         if len(content) < 100:
             return {"status": "error", "message": "File too small or invalid"}
+
+        if not _PAPERLESS_ENABLED:
+            # No Paperless — save locally and run local AI analysis
+            doc_id = save_document(content, filename, category=category)
+            loop = asyncio.get_event_loop()
+            try:
+                analysis = await loop.run_in_executor(None, analyze_document, doc_id)
+            except Exception:
+                analysis = None
+            return {
+                "status": "success",
+                "document_id": doc_id,
+                "storage": "local",
+                "analysis": analysis,
+                "message": "Document saved locally (Paperless not configured).",
+            }
 
         # Step 1: Upload to Paperless and get a task ID
         loop = asyncio.get_event_loop()

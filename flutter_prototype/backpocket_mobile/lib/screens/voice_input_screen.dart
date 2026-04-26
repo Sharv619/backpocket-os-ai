@@ -131,13 +131,9 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
     VoiceCommandResponse? response;
 
     if (kIsWeb) {
-      // record v5 web: stop() returns a blob URL — fetch bytes then upload
-      if (path != null && path.isNotEmpty) {
-        try {
-          final blobRes = await http.get(Uri.parse(path));
-          response = await _voiceService.processAudioBytes(blobRes.bodyBytes, 'recording.wav');
-        } catch (_) {}
-      }
+      // Web: blob URLs can't be fetched via http package — fall back to text input
+      if (mounted) setState(() { _isProcessing = false; _showTextInput = true; });
+      return;
     } else {
       if (path == null) {
         if (mounted) setState(() => _isProcessing = false);
