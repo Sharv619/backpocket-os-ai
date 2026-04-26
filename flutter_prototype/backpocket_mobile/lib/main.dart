@@ -19,6 +19,7 @@ import 'screens/construction_screen.dart';
 import 'screens/conversations_screen.dart';
 import 'screens/coach_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/voice_input_screen.dart';
 import 'services/voice_command_service.dart';
 import 'widgets/voice_fab.dart';
 import 'widgets/voice_recording_overlay.dart';
@@ -387,7 +388,16 @@ class _AppShellState extends State<AppShell> {
 
   void _onVoiceFabTap() {
     _voiceService?.setScreenContext(_screenNames[_tab], tabIndex: _tab);
-    setState(() => _showVoiceOverlay = true);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => VoiceInputScreen(
+          serverUrl: _serverUrl,
+          apiKey: _apiKey,
+          screenContext: _screenNames[_tab],
+        ),
+      ),
+    );
   }
 
   Future<void> _handleVoiceText(String text) async {

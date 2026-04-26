@@ -199,7 +199,7 @@ async def _handle_confirmation_response(session: VoiceSession, transcript: str) 
             session,
             action_data["intent"],
             action_data["params"],
-            "construction",
+            request.screen_context or session.get("screen_context", "dashboard"),
         )
 
     if any(w in lower for w in NO_WORDS):
