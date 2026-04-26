@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import '../services/api_service.dart';
 import '../theme.dart';
 import '../widgets/workflow_stage_tracker.dart';
+import 'voice_input_screen.dart';
+import 'vision_chat_screen.dart';
 
 class ConstructionScreen extends StatefulWidget {
   final String serverUrl;
