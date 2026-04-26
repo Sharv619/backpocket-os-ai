@@ -19,3 +19,4 @@ itsdangerous
 pyhumps
 ollama
 beautifulsoup4
+google-genai

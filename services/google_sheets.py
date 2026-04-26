@@ -16,7 +16,7 @@ if sys.platform == 'win32':
     except Exception:
         pass
 
-logging.basicConfig(level=logging.INFO, encoding='utf-8')
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']

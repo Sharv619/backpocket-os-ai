@@ -6,8 +6,8 @@ from fastapi.responses import FileResponse
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
-DB_PATH = pathlib.Path(__file__).resolve().parent.parent / "backpocket.db"
-KANBAN_HTML = pathlib.Path(__file__).resolve().parent.parent / "static" / "kanban.html"
+DB_PATH = pathlib.Path(__file__).resolve().parent.parent.parent / "backpocket.db"
+KANBAN_HTML = pathlib.Path(__file__).resolve().parent.parent.parent / "static" / "kanban.html"
 
 
 def _conn():

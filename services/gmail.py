@@ -42,7 +42,7 @@ def _try_decrypt(text: str) -> str:
         pass
     return text
 
-logging.basicConfig(level=logging.INFO, encoding='utf-8')
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def get_gmail_service(token_file='token.json'):

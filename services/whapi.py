@@ -15,7 +15,7 @@ if sys.platform == 'win32':
     except Exception:
         pass
 
-logging.basicConfig(level=logging.INFO, format='%(message)s', encoding='utf-8')
+logging.basicConfig(level=logging.INFO, format='%(message)s')
 
 logger = logging.getLogger(__name__)
 
