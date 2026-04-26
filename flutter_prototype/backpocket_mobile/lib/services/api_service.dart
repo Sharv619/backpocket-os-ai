@@ -709,4 +709,37 @@ class ApiService {
     ).timeout(_tFast);
     return await _handleResponse(res);
   }
+
+  // ── AI Lead Extraction from Email ─────────────────────────────────────────
+  Future<Map<String, dynamic>> extractLeadFromEmail({
+    required String from,
+    required String subject,
+    required String body,
+  }) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/construction/leads/extract'),
+      headers: _headers,
+      body: jsonEncode({'from': from, 'subject': subject, 'body': body}),
+    ).timeout(_tAI);
+    return await _handleResponse(res);
+  }
+
+  // ── Tradie Follow-up Generator ────────────────────────────────────────────
+  Future<Map<String, dynamic>> generateTradieFollowup(int quoteId) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/construction/quotes/$quoteId/tradie-followup'),
+      headers: _headers,
+    ).timeout(_tAI);
+    return await _handleResponse(res);
+  }
+
+  // ── Communication Coach ───────────────────────────────────────────────────
+  Future<Map<String, dynamic>> analyzeCoach(String text) async {
+    final res = await http.post(
+      Uri.parse('$baseUrl/api/coach/analyze'),
+      headers: _headers,
+      body: jsonEncode({'text': text}),
+    ).timeout(_tAI);
+    return await _handleResponse(res);
+  }
 }
