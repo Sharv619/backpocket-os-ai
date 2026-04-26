@@ -87,6 +87,56 @@ async def update_lead_status(lead_id: int, data: dict):
         return {"status": "error", "message": str(e)}
 
 
+CONSTRUCTION_STAGES = [
+    (1, "New Lead",      "Lead received, not yet contacted"),
+    (2, "Contacted",     "Initial contact made with client"),
+    (3, "Site Visit",    "Site inspection scheduled or completed"),
+    (4, "Quoting",       "Quote being prepared"),
+    (5, "Quote Sent",    "Quote sent to client, awaiting response"),
+    (6, "Negotiating",   "Client reviewing, may request changes"),
+    (7, "Accepted",      "Quote accepted, job confirmed"),
+    (8, "In Progress",   "Work underway on site"),
+    (9, "Complete",      "Job done, invoice sent or payment received"),
+]
+
+
+@router.patch("/leads/{lead_id}/stage")
+async def advance_lead_stage(lead_id: int, data: dict):
+    """Set or advance the workflow stage for a lead (FC-1)."""
+    import sqlite3, pathlib
+    db_path = pathlib.Path(__file__).resolve().parent.parent / "backpocket.db"
+    stage = data.get("stage")
+    if stage is None:
+        return {"status": "error", "message": "stage required"}
+    stage = int(stage)
+    if not 1 <= stage <= 9:
+        return {"status": "error", "message": "stage must be 1-9"}
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "UPDATE leads SET workflow_stage = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (stage, lead_id),
+        )
+        conn.commit()
+        conn.close()
+        label = next((s[1] for s in CONSTRUCTION_STAGES if s[0] == stage), "Unknown")
+        return {"status": "success", "lead_id": lead_id, "stage": stage, "label": label}
+    except Exception as e:
+        logger.error(f"Stage update error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@router.get("/stages")
+async def get_construction_stages():
+    """Return the 9-stage construction pipeline definition."""
+    return {
+        "stages": [
+            {"stage": s[0], "label": s[1], "description": s[2]}
+            for s in CONSTRUCTION_STAGES
+        ]
+    }
+
+
 @router.post("/quotes")
 async def create_quote(data: dict):
     """Create a quote for a lead"""

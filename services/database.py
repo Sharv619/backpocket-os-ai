@@ -64,6 +64,13 @@ def init_db():
     except sqlite3.OperationalError:
         pass  # already exists
 
+    # Migration: Add workflow_stage to leads (FC-1 construction pipeline tracker)
+    try:
+        cursor.execute("ALTER TABLE leads ADD COLUMN workflow_stage INTEGER DEFAULT 1")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # already exists
+
     # Seed workflow_stages lookup table for the Flutter UI
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS workflow_stages (
