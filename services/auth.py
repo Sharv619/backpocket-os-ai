@@ -102,16 +102,20 @@ async def get_current_user(
 ) -> AuthUser:
     """
     FastAPI dependency. Extracts Bearer JWT from Authorization header.
-    Dev bypass: if SUPABASE_JWT_SECRET unset and BP_API_KEY matches X-API-Key, returns stub user.
+    Dev bypass: if SUPABASE_JWT_SECRET unset and BP_API_KEY matches X-API-Key header
+    or ?api_key= query param, returns stub admin user.
     """
     # Dev/demo bypass — allows existing Flutter clients to work before Supabase is wired
     if not SUPABASE_JWT_SECRET and _BP_API_KEY:
-        api_key = request.headers.get("x-api-key", "")
+        api_key = (
+            request.headers.get("x-api-key", "")
+            or request.query_params.get("api_key", "")
+        )
         if api_key == _BP_API_KEY:
-            return AuthUser(id="dev-user", email="dev@backpocket.local", role="authenticated")
+            return AuthUser(id="dev-user", email="dev@backpocket.local", role="admin")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing credentials (dev mode: provide X-API-Key)",
+            detail="Missing credentials (dev mode: provide X-API-Key or ?api_key=)",
         )
 
     # Production path — require Bearer JWT
@@ -127,7 +131,10 @@ async def get_current_user(
 
     user_id = payload.get("sub", "")
     email   = payload.get("email", "")
-    role    = payload.get("role", "authenticated")
+    # Check app_metadata first (admin-assigned role), then user_metadata, then JWT root claim
+    app_meta  = payload.get("app_metadata") or {}
+    user_meta = payload.get("user_metadata") or {}
+    role = app_meta.get("role") or user_meta.get("role") or payload.get("role", "authenticated")
 
     if not user_id:
         raise HTTPException(
@@ -213,6 +220,31 @@ def _validate_password(password: str) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Password must be at least 8 characters",
         )
+
+
+# ── RBAC helper ───────────────────────────────────────────────────────────────
+
+def require_role(*roles: str):
+    """
+    FastAPI dependency factory. Raises 403 if the authenticated user's role
+    is not in the allowed set.
+
+    Usage:
+        @app.delete("/api/something")
+        async def delete_it(user: AuthUser = Depends(require_role("admin"))):
+            ...
+    """
+    from fastapi import Depends
+
+    async def checker(user: AuthUser = Depends(get_current_user)) -> AuthUser:
+        if user.role not in roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Role '{user.role}' is not authorised for this action. Required: {list(roles)}",
+            )
+        return user
+
+    return checker
 
 
 # ── Auth configured check (for health endpoint) ───────────────────────────────

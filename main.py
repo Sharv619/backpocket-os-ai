@@ -44,16 +44,19 @@ db.init_db()
 app = FastAPI(title="BackPocket Twin API")
 logger.info("BACKPOCKET TWIN VERSION 2.2 STARTED")
 
-# CORS
+# CORS — allow LAN origins + any configured ngrok/frontend URL
 _LAN_ORIGINS = [
     f"http://{h}:{p}"
     for h in ["localhost", "127.0.0.1", "192.168.1.147"]
     for p in [3000, 8000, 8080, 40243]
 ]
+_ngrok_url = os.getenv("NGROK_URL", "").rstrip("/")
+_frontend_url = os.getenv("FRONTEND_ORIGIN", "")
+_ALLOWED_ORIGINS = _LAN_ORIGINS + [u for u in [_ngrok_url, _frontend_url] if u]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_ALLOWED_ORIGINS if _ALLOWED_ORIGINS else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -64,6 +67,7 @@ app.add_middleware(
 _PUBLIC_PATHS = {
     "/",
     "/health",
+    "/login",
     "/auth/register",
     "/auth/token",
     "/auth/me",         # handled by its own Depends
@@ -98,8 +102,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
             if path.startswith(prefix):
                 return await call_next(request)
 
-        # Only gate /api/* paths
-        if not path.startswith("/api/"):
+        # Only gate /api/* and /admin/api/* paths
+        if not path.startswith("/api/") and not path.startswith("/admin/api/"):
             return await call_next(request)
 
         from services.auth import SUPABASE_JWT_SECRET, verify_jwt
@@ -121,8 +125,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # --- X-API-Key fallback (dev / pre-Supabase Flutter clients) ---
+        # Also accepts ?api_key=xxx query param so phone browsers can use a bookmarked URL
         if _BP_API_KEY:
-            key = request.headers.get("x-api-key", "")
+            key = request.headers.get("x-api-key", "") or request.query_params.get("api_key", "")
             if key == _BP_API_KEY:
                 request.state.user_id = "api-key-user"
                 request.state.user_email = "apikey@backpocket.local"
@@ -253,6 +258,11 @@ async def startup_event():
 @app.get("/")
 async def root():
     return {"message": "BackPocket OS API is running. See /docs for details."}
+
+
+@app.get("/login", include_in_schema=False)
+async def login_page():
+    return FileResponse("static/login.html")
 
 
 @app.get("/run-poll")
