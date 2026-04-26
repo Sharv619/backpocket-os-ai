@@ -16,6 +16,8 @@ import 'screens/blog_screen.dart';
 import 'screens/drive_screen.dart';
 import 'screens/client_crm_screen.dart';
 import 'screens/construction_screen.dart';
+import 'screens/conversations_screen.dart';
+import 'screens/coach_screen.dart';
 import 'screens/settings_screen.dart';
 import 'services/voice_command_service.dart';
 import 'widgets/voice_fab.dart';
@@ -137,6 +139,14 @@ class _BackPocketAppState extends State<BackPocketApp> {
           path: '/settings',
           builder: (context, state) => AppShell(initialTab: 12),
         ),
+        GoRoute(
+          path: '/conversations',
+          builder: (context, state) => AppShell(initialTab: 13),
+        ),
+        GoRoute(
+          path: '/coach',
+          builder: (context, state) => AppShell(initialTab: 14),
+        ),
       ],
     );
   }
@@ -213,6 +223,8 @@ class _AppShellState extends State<AppShell> {
         });
       },
     ),
+    ConversationsScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    CoachScreen(serverUrl: _serverUrl, apiKey: _apiKey),
   ];
 
   Future<void> _loadPrefs() async {
@@ -242,6 +254,8 @@ class _AppShellState extends State<AppShell> {
       {'icon': Icons.rule_outlined, 'label': 'Instructions', 'tab': 10},
       {'icon': Icons.build_outlined, 'label': 'Construction', 'tab': 11},
       {'icon': Icons.settings_outlined, 'label': 'Settings', 'tab': 12},
+      {'icon': Icons.forum_outlined, 'label': 'Conversations', 'tab': 13},
+      {'icon': Icons.record_voice_over_outlined, 'label': 'Coach', 'tab': 14},
     ];
     final chatHistory = twinController.messages
         .where((m) => m['role'] == 'user')
@@ -357,7 +371,7 @@ class _AppShellState extends State<AppShell> {
   static const _screenNames = [
     'dashboard', 'inbox', 'chat', 'documents', 'sops',
     'marketing', 'agentic_rag', 'blog', 'drive', 'client_crm',
-    'instructions', 'construction', 'settings'
+    'instructions', 'construction', 'settings', 'conversations', 'coach'
   ];
 
   // Bottom nav: Home(0), Inbox(1), Chat(2), Jobs(11=Construction), Settings(12)
