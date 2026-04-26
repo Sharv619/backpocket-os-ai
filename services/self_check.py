@@ -1,21 +1,10 @@
 import os
-import sys
-import io
 import logging
 from services.database import get_stale_approvals, mark_nudged
 from services.whapi import send_whatsapp_message, test_whapi_connection
 from services.gmail import test_gmail_connection
 from services.google_sheets import test_sheets_connection, get_todays_portal_updates
 from services.gemini import test_gemini_connection
-
-if sys.platform == 'win32':
-    try:
-        if sys.stdout.buffer is not None:
-            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-        if sys.stderr.buffer is not None:
-            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
-    except Exception:
-        pass
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

@@ -1,6 +1,4 @@
 import os
-import sys
-import io
 import json
 import logging
 from google.oauth2.credentials import Credentials
@@ -8,15 +6,6 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from dotenv import load_dotenv
-
-if sys.platform == 'win32':
-    try:
-        if sys.stdout.buffer is not None:
-            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-        if sys.stderr.buffer is not None:
-            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
-    except Exception:
-        pass
 
 load_dotenv()
 

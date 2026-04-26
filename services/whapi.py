@@ -1,19 +1,8 @@
 import os
-import sys
-import io
 import requests
 import logging
 import datetime
 from typing import Dict, Any, Optional, List
-
-if sys.platform == 'win32':
-    try:
-        if sys.stdout.buffer is not None:
-            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-        if sys.stderr.buffer is not None:
-            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
-    except Exception:
-        pass
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 
