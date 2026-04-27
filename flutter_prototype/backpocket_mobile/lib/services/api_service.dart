@@ -26,6 +26,7 @@ class ApiService {
 
   Map<String, String> get _headers => {
     'Content-Type': 'application/json',
+    // 'ngrok-skip-browser-warning': 'true', // ngrok disabled
     if (apiKey.isNotEmpty) 'X-API-Key': apiKey,
   };
 

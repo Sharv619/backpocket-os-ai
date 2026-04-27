@@ -180,7 +180,7 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   late int _tab;
-  String _serverUrl = 'http://127.0.0.1:8000';
+  String _serverUrl = 'http://localhost:8000'; // Default for local, auto-detected on web
   String _apiKey = '';
   bool _magnifierMode = false;
   VoiceCommandService? _voiceService;
@@ -231,7 +231,19 @@ class _AppShellState extends State<AppShell> {
   Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _serverUrl = prefs.getString('server_url') ?? 'http://127.0.0.1:8000';
+      // String defaultUrl = 'https://criteria-shrine-bulldog.ngrok-free.dev'; // ngrok disabled
+      String defaultUrl = 'http://127.0.0.1:8000';
+      
+      // Auto-detect origin if running on web
+      bool isWeb = identical(0, 0.0);
+      if (isWeb) {
+         // In web mode, the app is served from the backend, 
+         // so we can use the current browser URL as the API base.
+         final uri = Uri.base;
+         defaultUrl = '${uri.scheme}://${uri.host}${uri.hasPort ? ":${uri.port}" : ""}';
+      }
+      
+      _serverUrl = prefs.getString('server_url') ?? defaultUrl;
       _apiKey = prefs.getString('api_key') ?? '';
       _voiceService = VoiceCommandService(baseUrl: _serverUrl, apiKey: _apiKey);
       _pages = _buildPages();

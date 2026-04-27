@@ -315,3 +315,5 @@ def get_blog_generator() -> NarrativeBlogGenerator:
     if _blog_gen is None:
         _blog_gen = NarrativeBlogGenerator()
     return _blog_gen
+
+

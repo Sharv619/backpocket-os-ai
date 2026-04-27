@@ -73,7 +73,8 @@ _LAN_ORIGINS = [
     for h in ["localhost", "127.0.0.1", "192.168.1.147"]
     for p in [3000, 8000, 8080, 40243]
 ]
-_ngrok_url = os.getenv("NGROK_URL", "").rstrip("/")
+# _ngrok_url = os.getenv("NGROK_URL", "").rstrip("/")
+_ngrok_url = ""
 _frontend_url = os.getenv("FRONTEND_ORIGIN", "")
 _ALLOWED_ORIGINS = _LAN_ORIGINS + [u for u in [_ngrok_url, _frontend_url] if u]
 
@@ -276,12 +277,8 @@ async def startup_event():
 
 @app.get("/")
 async def root():
-    return {"message": "BackPocket OS API is running. See /docs for details."}
-
-
-@app.get("/login", include_in_schema=False)
-async def login_page():
-    return FileResponse("static/login.html")
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/app/")
 
 
 @app.get("/run-poll")
