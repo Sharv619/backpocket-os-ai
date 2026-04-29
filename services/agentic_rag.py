@@ -217,10 +217,10 @@ The story should subtly weave in business themes without being preachy."""
         self.client = self._get_ai_client()
 
     def _get_ai_client(self):
-        """Get AI client (OpenRouter preferred)."""
-        openrouter_key = os.getenv("OPENROUTER_API_KEY")
-        if openrouter_key:
-            return "openrouter"
+        """Get AI client (OpenAI/Codex preferred, Gemini fallback, OpenRouter last)."""
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if openai_key:
+            return "openai"
 
         from services.gemini import get_gemini_client
 
@@ -228,7 +228,32 @@ The story should subtly weave in business themes without being preachy."""
         if gemini:
             return "gemini"
 
+        openrouter_key = os.getenv("OPENROUTER_API_KEY")
+        if openrouter_key:
+            return "openrouter"
+
         return None
+
+    @staticmethod
+    def _extract_openai_output_text(payload: Dict[str, Any]) -> str:
+        text = payload.get("output_text")
+        if isinstance(text, str) and text.strip():
+            return text.strip()
+
+        output = payload.get("output", [])
+        chunks: list[str] = []
+        if isinstance(output, list):
+            for item in output:
+                if not isinstance(item, dict):
+                    continue
+                for content in item.get("content", []) or []:
+                    if (
+                        isinstance(content, dict)
+                        and content.get("type") == "output_text"
+                        and isinstance(content.get("text"), str)
+                    ):
+                        chunks.append(content["text"])
+        return "\n".join(chunks).strip()
 
     def generate_blog_post(
         self, title: str, theme: str = "entrepreneurship", company_name: str = ""
@@ -244,7 +269,27 @@ Theme: {theme}
 Write an evocative, narrative blog post that feels like a premium storytelling experience."""
 
         try:
-            if self.client == "openrouter":
+            if self.client == "openai":
+                import requests
+
+                model = os.getenv("OPENAI_SUCCESS_STORY_MODEL", "gpt-5-codex")
+                response = requests.post(
+                    "https://api.openai.com/v1/responses",
+                    headers={
+                        "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": model,
+                        "input": prompt,
+                    },
+                    timeout=60,
+                )
+                response.raise_for_status()
+                content = self._extract_openai_output_text(response.json())
+                if not content:
+                    raise RuntimeError("OpenAI returned empty blog content")
+            elif self.client == "openrouter":
                 import requests
 
                 response = requests.post(
@@ -263,9 +308,21 @@ Write an evocative, narrative blog post that feels like a premium storytelling e
                 )
                 response.raise_for_status()
                 content = response.json()["choices"][0]["message"]["content"]
+            elif self.client == "gemini":
+                from services.gemini import get_gemini_client
+
+                client = get_gemini_client()
+                if not client:
+                    raise RuntimeError("Gemini client unavailable")
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=prompt,
+                )
+                content = response.text.strip() if response and response.text else ""
+                if not content:
+                    raise RuntimeError("Gemini returned empty blog content")
             else:
-                # Fallback to Gemini
-                content = "Blog post would be generated here with Gemini API."
+                raise RuntimeError("No blog generation provider configured")
 
             return {
                 "title": title,

@@ -26,11 +26,13 @@ async def upload_document_and_analyze(request: Request):
     """
     New workflow (Native MVP OCR + Local AI Extractor):
     1. Reads the uploaded file bytes.
-    2. Runs native PyPDF2 extraction (or flags for Gemini Vision).
-    3. Runs the local Ollama extractor to parse line items and save to DB.
+    2. Saves the document to the local database to get a valid doc_id.
+    3. Runs native PyPDF2 extraction (or flags for Gemini Vision).
+    4. Runs the local Ollama extractor to parse line items and save to DB.
     """
     from services.documents.ocr import process_document
     from services.documents.extractor import extract_document_entities
+    from services.document_vision import save_document
     
     try:
         content, filename, category = await _extract_file_from_request(request)
@@ -39,20 +41,23 @@ async def upload_document_and_analyze(request: Request):
 
         mime_type = "application/pdf" if filename.lower().endswith(".pdf") else "image/jpeg"
         
+        # Save the document first so we have a valid ID for the /analyze endpoint
+        doc_id = save_document(content, filename, category)
+
         # 1. OCR Extraction
         ocr_result = process_document(content, filename, mime_type)
         
-        # 2. AI Extraction (if we got text)
+        # 2. AI Extraction (if we got text natively)
         extracted_data = {}
         if ocr_result["status"] == "success":
             user_id = getattr(request.state, "user_id", "00000000-0000-0000-0000-000000000000")
-            # We don't have a quote_id to link it to yet, just throwing it in the DB as a loose payment/expense
             extracted_data = extract_document_entities(ocr_result["content"], filename, user_id=user_id)
 
+        # Always return success so the frontend proceeds to call /analyze/{doc_id}
         return {
-            "status": extracted_data.get("status", ocr_result["status"]),
-            "message": "Document processed natively.",
-            "document_id": extracted_data.get("payment_id", "temp_id"),
+            "status": "success",
+            "message": "Document uploaded successfully.",
+            "document_id": doc_id,
             "ocr_content": ocr_result["content"],
             "filename": filename,
             "extracted_data": extracted_data
@@ -60,7 +65,6 @@ async def upload_document_and_analyze(request: Request):
 
     except Exception as e:
         logger.error(f"Native OCR upload error: {e}")
-        # Use HTTPException's error handling if it's one of those, otherwise generic error
         if isinstance(e, HTTPException):
             raise
         return {"status": "error", "message": str(e)}
@@ -83,7 +87,8 @@ async def _extract_file_from_request(request: Request):
     elif "multipart" in ct:
         form = await request.form()
         upload = form.get("file")
-        if not isinstance(upload, UploadFile): raise ValueError("No file field in form")
+        if upload is None or not hasattr(upload, "filename"):
+            raise ValueError("No file field in form")
         filename = upload.filename or "document.jpg"
         category = str(form.get("category", "other"))
         content = await upload.read()
@@ -247,6 +252,37 @@ async def analyze_material_endpoint(
         return result
     except Exception as e:
         logger.error(f"Material analysis error: {e}")
+        return {"status": "error", "message": str(e)}
+
+@router.post("/query")
+async def vision_query_endpoint(
+    request: Request,
+    file: UploadFile = File(...),
+    query: str = Query(...),
+):
+    """
+    Prompt 2: Photo-to-Query (Measurements/Materials).
+    Accepts multipart/form-data upload (image file) + query string.
+    """
+    from services.document_vision import vision_query_gemini
+    try:
+        # Safe file buffering (Prompt 2 requirement)
+        content = await file.read()
+        if not content:
+            raise HTTPException(status_code=400, detail="Empty image file")
+            
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, vision_query_gemini, content, query)
+        
+        if "error" in result:
+            return {"status": "error", "message": result["error"]}
+            
+        return {
+            "status": "success",
+            "data": result
+        }
+    except Exception as e:
+        logger.error(f"Vision query error: {e}")
         return {"status": "error", "message": str(e)}
 
 

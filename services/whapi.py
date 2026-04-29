@@ -303,8 +303,10 @@ def send_pending_items_summary():
     send_whatsapp_message(founder_phone, msg)
 
 
+from services.gemini import OWNER_NAME
+
 def send_morning_nudge():
-    """8 AM daily: Remind Steve of any overnight pending drafts."""
+    """8 AM daily: Remind the owner of any overnight pending drafts."""
     import services.database as db
     pending_refs = [r for r in db.get_all_pending_refs() if not r.startswith("FIND-")]
     founder_phone = os.getenv("FOUNDER_PHONE", "")
@@ -313,7 +315,7 @@ def send_morning_nudge():
     
     
     if pending_refs:
-        lines = ["☀️ *Good morning, Steve!*\n"]
+        lines = [f"☀️ *Good morning, {OWNER_NAME}!*\n"]
         lines.append(f"You have *{len(pending_refs)} email(s)* waiting for review:\n")
         
         # Group by tier
@@ -331,7 +333,7 @@ def send_morning_nudge():
         lines.append("\n💡 Reply *pending* to see all, or open dashboard for details.")
         msg = "\n".join(lines)
     else:
-        msg = "☀️ *Good morning, Steve!* 🎉 Your inbox is clear — no pending emails!"
+        msg = f"☀️ *Good morning, {OWNER_NAME}!* 🎉 Your inbox is clear — no pending emails!"
     
     send_whatsapp_message(founder_phone, msg)
 

@@ -3,6 +3,7 @@ import sys
 import io
 import json
 import logging
+import base64
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -45,13 +46,67 @@ def _try_decrypt(text: str) -> str:
 logging.basicConfig(level=logging.INFO, encoding='utf-8')
 logger = logging.getLogger(__name__)
 
+
+def _decode_gmail_text(data: str) -> str:
+    """Decode a Gmail base64url body chunk into plain text."""
+    if not data:
+        return ""
+    try:
+        padded = data + "=" * (-len(data) % 4)
+        return base64.urlsafe_b64decode(padded.encode("utf-8")).decode(
+            "utf-8", errors="ignore"
+        )
+    except Exception:
+        return ""
+
+
+def _extract_gmail_body(payload: dict) -> str:
+    """Extract the best-available human-readable body from a Gmail payload."""
+    if not payload:
+        return ""
+
+    mime_type = payload.get("mimeType", "")
+    body_data = payload.get("body", {}).get("data", "")
+    parts = payload.get("parts", []) or []
+
+    if mime_type == "text/plain" and body_data:
+        return _decode_gmail_text(body_data).strip()
+
+    if mime_type == "text/html" and body_data:
+        from bs4 import BeautifulSoup
+
+        html = _decode_gmail_text(body_data)
+        return BeautifulSoup(html, "html.parser").get_text(separator="\n").strip()
+
+    for part in parts:
+        text = _extract_gmail_body(part)
+        if text:
+            return text
+
+    if body_data:
+        return _decode_gmail_text(body_data).strip()
+
+    return ""
+
 def get_gmail_service(token_file='token.json'):
     """Builds and returns the Gmail API service object for a specific token."""
     creds = None
     if os.path.exists(token_file):
         with open(token_file, 'r') as f:
             raw = _try_decrypt(f.read().strip())
-        creds = Credentials.from_authorized_user_info(json.loads(raw), SCOPES)
+        if raw:
+            try:
+                token_data = json.loads(raw)
+                if not token_data:
+                    logger.warning(f"Skipping empty JSON token file: {token_file}")
+                    return None
+                creds = Credentials.from_authorized_user_info(token_data, SCOPES)
+            except Exception as e:
+                logger.warning(f"Skipping invalid token file {token_file}: {e}")
+                return None
+        else:
+            logger.warning(f"Skipping empty token file: {token_file}")
+            return None
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
@@ -112,8 +167,8 @@ def get_unread_emails(token_file='token.json'):
         
         # Use in:inbox to catch ALL inbox tabs (Primary, Updates, Forums, etc.)
         # This ensures ATO, ASIC, Stripe and other Tier 2 emails in the Updates tab are never missed.
-        query = 'in:inbox is:unread -category:promotions -category:social'
-        results = service.users().messages().list(userId='me', q=query, maxResults=20).execute()
+        query = 'in:inbox -category:promotions -category:social'
+        results = service.users().messages().list(userId='me', q=query, maxResults=100).execute()
         messages = results.get('messages', [])
         
         email_data = []
@@ -132,6 +187,7 @@ def get_unread_emails(token_file='token.json'):
             brand_identity = to_header if to_header else delivered_to or 'Unknown'
             
             snippet = msg_details.get('snippet', '')
+            body = _extract_gmail_body(msg_details.get('payload', {}))
             
             # Detect attachments
             has_attachments = False
@@ -167,12 +223,16 @@ def get_unread_emails(token_file='token.json'):
                 "clean_email": clean_sender.lower(),
                 "delivered_to": clean_to.lower() if clean_to else "unknown", # Accurate Brand Identity
                 "snippet": snippet,
+                "body": body,
                 "has_attachments": has_attachments
             })
             
         return email_data
     except Exception as e:
-        logger.error(f"Error fetching unread emails: {e}")
+        if "invalid_grant" in str(e) or "expired" in str(e).lower():
+            logger.debug(f"Gmail token expired for this account — re-auth needed")
+        else:
+            logger.error(f"Error fetching unread emails: {e}")
         return []
 
 def send_email(to, subject, body_text, from_alias=None, token_file='token.json'):
@@ -336,6 +396,47 @@ def search_emails(query, token_file='token.json', max_results=5):
         return found_data
     except Exception as e:
         logger.error(f"Error searching emails: {e}")
+        return []
+
+def get_attachments(msg_id, token_file='token.json'):
+    """Fetches attachments for a specific message."""
+    try:
+        service = get_gmail_service(token_file)
+        if not service:
+            return []
+        
+        msg = service.users().messages().get(userId='me', id=msg_id).execute()
+        parts = msg.get('payload', {}).get('parts', [])
+        
+        attachments = []
+        
+        def process_parts(parts_list):
+            for p in parts_list:
+                if p.get('filename') and p.get('body', {}).get('attachmentId'):
+                    att_id = p['body']['attachmentId']
+                    filename = p['filename']
+                    mime_type = p.get('mimeType', '')
+                    
+                    # Fetch attachment data
+                    att = service.users().messages().attachments().get(
+                        userId='me', messageId=msg_id, id=att_id
+                    ).execute()
+                    
+                    import base64
+                    data = base64.urlsafe_b64decode(att['data'].encode('UTF-8'))
+                    
+                    attachments.append({
+                        "filename": filename,
+                        "mime_type": mime_type,
+                        "data": data
+                    })
+                if 'parts' in p:
+                    process_parts(p['parts'])
+        
+        process_parts(parts)
+        return attachments
+    except Exception as e:
+        logger.error(f"Error fetching attachments: {e}")
         return []
 
 def rescue_to_inbox(msg_id, token_file='token.json'):

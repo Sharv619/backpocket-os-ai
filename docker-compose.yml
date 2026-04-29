@@ -5,49 +5,49 @@ version: "3.8"
 #   docker-compose up -d            # start everything
 #   docker-compose logs -f api      # watch backend logs
 #   docker-compose restart api      # hot-restart after code change
-#
-# Flutter web build must be done first:
-#   cd flutter_prototype/backpocket_mobile && flutter build web --release
-# Output lands in static_flutter/ (already gitignored for binaries).
 
 services:
 
-  # ── Python FastAPI backend ────────────────────────────────────────────────
+  # ── Python FastAPI backend + static Flutter serving ──────────────────────
   api:
     build:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
     env_file: .env
+    network_mode: host
+    environment:
+      - POSTGRES_DB_URL=postgresql+psycopg2://backpocket_user:backpocket_password@localhost:5433/backpocket_db
+      - OLLAMA_HOST=http://localhost:11434
     volumes:
-      # Persist the SQLite DB and uploads outside the container
       - ./backpocket.db:/app/backpocket.db
       - ./uploads:/app/uploads
       - ./documents:/app/documents
-      # OAuth tokens (Gmail etc) stay on host
       - ./token.json:/app/token.json
       - ./token_ywa.json:/app/token_ywa.json
-    ports:
-      - "8000:8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-    networks:
-      - backpocket
 
-  # ── Flutter web (nginx) ───────────────────────────────────────────────────
-  web:
-    image: nginx:alpine
+  # ── Vector DB (pgvector) ─────────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
     restart: unless-stopped
-    volumes:
-      - ./static_flutter:/usr/share/nginx/html:ro
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    environment:
+      POSTGRES_USER: backpocket_user
+      POSTGRES_PASSWORD: backpocket_password
+      POSTGRES_DB: backpocket_db
     ports:
-      - "80:80"
-    depends_on:
-      - api
+      - "5433:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U backpocket_user -d backpocket_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     networks:
       - backpocket
 
@@ -109,7 +109,9 @@ networks:
     driver: bridge
 
 volumes:
+  pg_data:
   paperless_redis:
   paperless_pg:
   paperless_data:
   paperless_media:
+

@@ -1,0 +1,14 @@
+[0:00-0:15]
+Meet BackPocket OS. While big tech tries to sell you generic chatbots, we built a digital bodyguard for the Australian tradie. This is the first sovereign AI operating system that automates the "paperwork hell" of running a trade business.
+
+[0:15-0:35]
+Under the hood, we use a "Dual-Brain" architecture. For high-speed logic, we utilize Gemini 2.5 Flash. But the shocking part? This isn't just "in the cloud." The entire backend runs on a local Mini-PC using FastAPI and Docker. Your data never leaves your site. If the internet dies, our Ollama fallback takes over locally.
+
+[0:35-0:55]
+Watch the Admin Twin. It patrols your Gmail every 15 seconds, triaging leads and drafting replies in your specific voice using RAG—Retrieval Augmented Generation. Need a status update? Our Site Manager Twin uses Multimodal Vision to analyze job site photos, calculating floor areas and material lists directly from an image.
+
+[0:55-1:15]
+Tired of typing? Use the Site Visit mode. Just speak to your phone. Our pipeline converts voice-to-logic, extracting scope items and generating ATO-compliant PDF invoices in seconds. Everything is indexed into a PostgreSQL pgvector database, creating a "Sovereign Knowledge Bank" of your entire business history.
+
+[1:15-1:30]
+The next phase? We’re moving these LLMs fully on-device. Imagine 100% offline automation with zero latency. This isn’t just an app—it’s digital sovereignty in your back pocket. BackPocket OS. Work hard, let the Twin do the rest.

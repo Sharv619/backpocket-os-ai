@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BackPocket OS - AI Workflows</title>
+    <!-- Use Tailwind for rapid styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Use LeaderLine for the smooth, curved black connecting lines just like the image -->
+    <script src="https://cdn.jsdelivr.net/npm/leader-line-new@1.1.9/leader-line.min.js"></script>
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        
+        /* The "Browser Window" wrapper */
+        .browser-mockup {
+            border: 4px solid #1e40af;
+            border-radius: 12px;
+            background: #f0f9ff;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            margin: 2rem auto;
+            max-width: 1400px;
+            min-height: 800px;
+            position: relative;
+        }
+
+        .browser-header {
+            background: #1e40af;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            padding: 0 1rem;
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+        }
+
+        .browser-dots {
+            display: flex;
+            gap: 8px;
+        }
+
+        .dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #fff;
+            opacity: 0.8;
+        }
+
+        .workflow-canvas {
+            padding: 40px;
+            position: relative;
+            height: 760px;
+        }
+
+        /* Node Styling to match the image */
+        .node {
+            position: absolute;
+            background: #93c5fd; /* Light blue */
+            border: 3px solid #1e3a8a;
+            border-radius: 16px;
+            padding: 1.5rem;
+            width: 220px;
+            box-shadow: 4px 6px 0px rgba(30, 58, 138, 0.2);
+            z-index: 10;
+            transition: transform 0.2s;
+        }
+        
+        .node:hover {
+            transform: translateY(-5px);
+        }
+
+        .node-header {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #1e3a8a;
+            background: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            border: 2px solid #1e3a8a;
+            display: inline-block;
+            margin-bottom: 12px;
+            font-weight: bold;
+            position: absolute;
+            top: -15px;
+            left: 50%;
+            transform: translateX(-50%);
+            white-space: nowrap;
+        }
+
+        .node-content {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .mock-line {
+            height: 8px;
+            background: rgba(255,255,255,0.6);
+            border-radius: 4px;
+        }
+        .mock-line.short { width: 60%; }
+        .mock-line.long { width: 90%; }
+
+        /* Icons styling */
+        .icon-badge {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            background: white;
+            border: 3px solid #000;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            z-index: 20;
+        }
+
+        /* Navigation Pills for Workflows */
+        .workflow-tabs {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            padding: 20px 0;
+            background: rgba(255,255,255,0.5);
+            border-bottom: 2px solid #bae6fd;
+        }
+
+        .tab-btn {
+            padding: 10px 20px;
+            background: white;
+            border: 2px solid #1e40af;
+            border-radius: 20px;
+            font-weight: bold;
+            color: #1e40af;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .tab-btn.active {
+            background: #1e40af;
+            color: white;
+        }
+
+        /* Hide all canvases except active */
+        .canvas-layer { display: none; }
+        .canvas-layer.active { display: block; }
+    </style>
+</head>
+<body>
+
+    <div class="text-center mt-8">
+        <h1 class="text-4xl font-extrabold text-blue-900 tracking-tight">BackPocket OS</h1>
+        <p class="text-lg text-blue-700 mt-2 font-medium">Automated "Three Twins" AI Workflows</p>
+    </div>
+
+    <div class="browser-mockup">
+        <div class="browser-header">
+            <div class="browser-dots">
+                <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+            </div>
+        </div>
+
+        <div class="workflow-tabs" id="tabs">
+            <button class="tab-btn active" onclick="showFlow('triage')">1. Email Triage</button>
+            <button class="tab-btn" onclick="showFlow('approval')">2. Action & Approval</button>
+            <button class="tab-btn" onclick="showFlow('onboarding')">3. Lead Capture</button>
+            <button class="tab-btn" onclick="showFlow('twinchat')">4. Twin Brain RAG</button>
+            <button class="tab-btn" onclick="showFlow('diagnostic')">5. Health Diagnostic</button>
+        </div>
+
+        <div class="workflow-canvas relative" id="canvas-container">
+            
+            <!-- FLOW 1: EMAIL TRIAGE -->
+            <div id="flow-triage" class="canvas-layer active">
+                <div class="node" id="t1" style="top: 150px; left: 100px;">
+                    <div class="node-header">Fetch Inbox</div>
+                    <div class="icon-badge" style="top: -20px; right: -20px; color: #ef4444;"><i class="fa-brands fa-google"></i></div>
+                    <div class="node-content">
+                        <div class="mock-line long"></div><div class="mock-line short"></div>
+                        <p class="text-sm font-bold text-blue-900 mt-2">Gmail & IMAP Sync</p>
+                    </div>
+                </div>
+
+                <div class="node" id="t2" style="top: 300px; left: 450px; height: 200px;">
+                    <div class="node-header">Gemini Triage</div>
+                    <div class="icon-badge" style="top: 50%; left: -25px; transform: translateY(-50%); color: #8b5cf6;"><i class="fa-solid fa-brain"></i></div>
+                    <div class="node-content">
+                        <div class="mock-line long"></div><div class="mock-line"></div><div class="mock-line short"></div>
+                        <p class="text-sm font-bold text-blue-900 mt-4">Classify Tier 1-5<br>Inject Context</p>
+                    </div>
+                </div>
+
+                <div class="node" id="t3" style="top: 100px; left: 800px;">
+                    <div class="node-header">Draft Generate</div>
+                    <div class="icon-badge" style="bottom: -20px; left: -20px; color: #eab308;"><i class="fa-solid fa-lightbulb"></i></div>
+                    <div class="node-content">
+                        <div class="mock-line long"></div><div class="mock-line short"></div>
+                        <p class="text-sm font-bold text-blue-900 mt-2">Auto-Write Reply</p>
+                    </div>
+                </div>
+
+                <div class="node" id="t4" style="top: 400px; left: 950px;">
+                    <div class="node-header">Push to Human</div>
+                    <div class="icon-badge" style="top: -20px; right: 20px; color: #22c55e;"><i class="fa-brands fa-whatsapp"></i></div>
+                    <div class="node-content">
+                        <div class="mock-line"></div><div class="mock-line short"></div>
+                        <p class="text-sm font-bold text-blue-900 mt-2">Dashboard Queue & WhatsApp</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FLOW 2: APPROVAL -->
+            <div id="flow-approval" class="canvas-layer">
+                <div class="node" id="a1" style="top: 250px; left: 100px;">
+                    <div class="node-header">Human Command</div>
+                    <div class="icon-badge" style="top: -20px; right: -20px; color: #3b82f6;"><i class="fa-solid fa-user-check"></i></div>
+                    <div class="node-content">
+                        <div class="mock-line long"></div><div class="mock-line short"></div>
+                        <p class="text-sm font-bold text-blue-900 mt-2">"Approve" or "Revise"</p>
+                    </div>
+                </div>
+                <div class="node" id="a2" style="top: 100px; left: 500px;">
+                    <div class="node-header">Execute Action</div>
+                    <div class="icon-badge" style="bottom: -20px; left: -20px; color: #eab308;"><i class="fa-solid fa-bolt"></i></div>
+                    <div class="node-content">
+                        <div class="mock-line long"></div><div class="mock-line"></div>
+                        <p class="text-sm font-bold text-blue-900 mt-2">Send Email / Archive</p>
+                    </div>
+                </div>
+                <div class="node" id="a3" style="top: 400px; left: 500px;">
+                    <div class="node-header">Self-Correction</div>
+                    <div class="icon-badge" style="top: -20px; right: -20px; color: #8b5cf6;"><i class="fa-solid fa-rotate-left"></i></div>
+                    <div class="node-content">
+                        <div class="mock-line"></div><div class="mock-line short"></div>
+                        <p class="text-sm font-bold text-blue-900 mt-2">Log feedback to DB</p>
+                    </div>
+                </div>
+                <div class="node" id="a4" style="top: 250px; left: 900px;">
+                    <div class="node-header">Action History</div>
+                    <div class="icon-badge" style="bottom: -20px; right: -20px; color: #10b981;"><i class="fa-solid fa-database"></i></div>
+                    <div class="node-content">
+                        <div class="mock-line long"></div><div class="mock-line short"></div>
+                        <p class="text-sm font-bold text-blue-900 mt-2">Update Sheets</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Add other flows similarly... for brevity I'll add the remaining 3 quickly -->
+            <!-- FLOW 3: ONBOARDING -->
+            <div id="flow-onboarding" class="canvas-layer">
+                <div class="node" id="o1" style="top: 200px; left: 150px;">
+                    <div class="node-header">Lead Capture</div>
+                    <div class="icon-badge" style="top: -20px; left: -20px; color: #f97316;"><i class="fa-solid fa-users"></i></div>
+                    <div class="node-content"><div class="mock-line long"></div><p class="text-sm font-bold text-blue-900 mt-2">Email parsing</p></div>
+                </div>
+                <div class="node" id="o2" style="top: 200px; left: 550px;">
+                    <div class="node-header">Scoring MQL</div>
+                    <div class="icon-badge" style="top: -20px; right: -20px; color: #ef4444;"><i class="fa-solid fa-bullseye"></i></div>
+                    <div class="node-content"><div class="mock-line"></div><p class="text-sm font-bold text-blue-900 mt-2">Extract details</p></div>
+                </div>
+                <div class="node" id="o3" style="top: 200px; left: 950px;">
+                    <div class="node-header">Change Status</div>
+                    <div class="icon-badge" style="bottom: -20px; right: -20px; color: #eab308;"><i class="fa-solid fa-trophy"></i></div>
+                    <div class="node-content"><div class="mock-line"></div><p class="text-sm font-bold text-blue-900 mt-2">Add to CRM / Sheets</p></div>
+                </div>
+            </div>
+
+             <!-- FLOW 4: TWIN CHAT -->
+             <div id="flow-twinchat" class="canvas-layer">
+                <div class="node" id="tw1" style="top: 200px; left: 150px;">
+                    <div class="node-header">Chat Message</div>
+                    <div class="icon-badge" style="top: -20px; left: -20px; color: #3b82f6;"><i class="fa-solid fa-comment-dots"></i></div>
+                    <div class="node-content"><div class="mock-line long"></div><p class="text-sm font-bold text-blue-900 mt-2">Voice / Text input</p></div>
+                </div>
+                <div class="node" id="tw2" style="top: 200px; left: 550px;">
+                    <div class="node-header">ChromaDB RAG</div>
+                    <div class="icon-badge" style="bottom: -20px; left: 50%; color: #8b5cf6;"><i class="fa-solid fa-network-wired"></i></div>
+                    <div class="node-content"><div class="mock-line"></div><p class="text-sm font-bold text-blue-900 mt-2">Load Memory</p></div>
+                </div>
+                <div class="node" id="tw3" style="top: 200px; left: 950px;">
+                    <div class="node-header">Twin Generate</div>
+                    <div class="icon-badge" style="top: -20px; right: -20px; color: #10b981;"><i class="fa-solid fa-robot"></i></div>
+                    <div class="node-content"><div class="mock-line"></div><p class="text-sm font-bold text-blue-900 mt-2">Gemini / Ollama</p></div>
+                </div>
+            </div>
+
+            <!-- FLOW 5: DIAGNOSTIC -->
+            <div id="flow-diagnostic" class="canvas-layer">
+                <div class="node" id="d1" style="top: 200px; left: 150px;">
+                    <div class="node-header">Trigger Check</div>
+                    <div class="icon-badge" style="top: -20px; left: -20px; color: #eab308;"><i class="fa-solid fa-clock"></i></div>
+                    <div class="node-content"><div class="mock-line long"></div><p class="text-sm font-bold text-blue-900 mt-2">Cron Schedule</p></div>
+                </div>
+                <div class="node" id="d2" style="top: 200px; left: 550px;">
+                    <div class="node-header">System Tests</div>
+                    <div class="icon-badge" style="bottom: -20px; left: 50%; color: #ef4444;"><i class="fa-solid fa-stethoscope"></i></div>
+                    <div class="node-content"><div class="mock-line"></div><p class="text-sm font-bold text-blue-900 mt-2">API, DB, Auth Check</p></div>
+                </div>
+                <div class="node" id="d3" style="top: 200px; left: 950px;">
+                    <div class="node-header">Report Alert</div>
+                    <div class="icon-badge" style="top: -20px; right: -20px; color: #22c55e;"><i class="fa-solid fa-file-waveform"></i></div>
+                    <div class="node-content"><div class="mock-line"></div><p class="text-sm font-bold text-blue-900 mt-2">WhatsApp Status</p></div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // Store LeaderLine instances
+        let lines = [];
+        const lineOptions = {
+            color: '#000', 
+            size: 3, 
+            path: 'fluid', 
+            endPlug: 'arrow3',
+            endPlugSize: 2,
+            startSocket: 'right',
+            endSocket: 'left'
+        };
+
+        function drawLines(flowId) {
+            // Remove existing lines
+            lines.forEach(l => l.remove());
+            lines = [];
+
+            if(flowId === 'triage') {
+                lines.push(new LeaderLine(document.getElementById('t1'), document.getElementById('t2'), lineOptions));
+                lines.push(new LeaderLine(document.getElementById('t2'), document.getElementById('t3'), {...lineOptions, startSocket: 'top', endSocket: 'bottom'}));
+                lines.push(new LeaderLine(document.getElementById('t2'), document.getElementById('t4'), {...lineOptions, startSocket: 'bottom', endSocket: 'left'}));
+            }
+            if(flowId === 'approval') {
+                lines.push(new LeaderLine(document.getElementById('a1'), document.getElementById('a2'), {...lineOptions, endSocket: 'bottom'}));
+                lines.push(new LeaderLine(document.getElementById('a1'), document.getElementById('a3'), {...lineOptions, endSocket: 'top'}));
+                lines.push(new LeaderLine(document.getElementById('a2'), document.getElementById('a4'), {...lineOptions, startSocket: 'right', endSocket: 'top'}));
+                lines.push(new LeaderLine(document.getElementById('a3'), document.getElementById('a4'), {...lineOptions, startSocket: 'right', endSocket: 'bottom'}));
+            }
+            if(flowId === 'onboarding') {
+                lines.push(new LeaderLine(document.getElementById('o1'), document.getElementById('o2'), lineOptions));
+                lines.push(new LeaderLine(document.getElementById('o2'), document.getElementById('o3'), lineOptions));
+            }
+            if(flowId === 'twinchat') {
+                lines.push(new LeaderLine(document.getElementById('tw1'), document.getElementById('tw2'), lineOptions));
+                lines.push(new LeaderLine(document.getElementById('tw2'), document.getElementById('tw3'), lineOptions));
+            }
+            if(flowId === 'diagnostic') {
+                lines.push(new LeaderLine(document.getElementById('d1'), document.getElementById('d2'), lineOptions));
+                lines.push(new LeaderLine(document.getElementById('d2'), document.getElementById('d3'), lineOptions));
+            }
+        }
+
+        function showFlow(flowId) {
+            // Update tabs
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+
+            // Update canvases
+            document.querySelectorAll('.canvas-layer').forEach(layer => layer.classList.remove('active'));
+            document.getElementById('flow-' + flowId).classList.add('active');
+
+            // Draw lines after a tiny delay so DOM is visible
+            setTimeout(() => drawLines(flowId), 50);
+        }
+
+        // Initialize first flow
+        window.onload = () => {
+            setTimeout(() => drawLines('triage'), 100);
+        };
+    </script>
+</body>
+</html>

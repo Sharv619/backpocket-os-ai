@@ -111,7 +111,8 @@ class _VisionChatScreenState extends State<VisionChatScreen> {
         throw Exception(data['message'] ?? 'Upload returned non-success');
       }
 
-      docId = data['document_id'] as int?;
+      final rawDocId = data['document_id'];
+      docId = rawDocId != null ? int.tryParse(rawDocId.toString()) : null;
       _documentId = docId;
       setState(() => _processingLabel = 'Analysing with AI...');
       _animateProgress(0.6, 0.9, const Duration(milliseconds: 600));
@@ -134,11 +135,18 @@ class _VisionChatScreenState extends State<VisionChatScreen> {
           .timeout(const Duration(seconds: 60));
 
       final data = jsonDecode(res.body) as Map<String, dynamic>;
-      final analysis =
-          (data['analysis'] as String?) ??
-          (data['result'] as String?) ??
-          (data['message'] as String?) ??
-          'Analysis complete.';
+      
+      String analysis = 'Analysis complete.';
+      final rawAnalysis = data['analysis'] ?? data['result'] ?? data['message'];
+      
+      if (rawAnalysis != null) {
+        if (rawAnalysis is String) {
+          analysis = rawAnalysis;
+        } else {
+          // If it's a Map (JSON), pretty print it
+          analysis = const JsonEncoder.withIndent('  ').convert(rawAnalysis);
+        }
+      }
 
       _animateProgress(0.9, 1.0, const Duration(milliseconds: 300));
       await Future<void>.delayed(const Duration(milliseconds: 400));

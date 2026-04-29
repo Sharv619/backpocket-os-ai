@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 import logging
 import os
 import asyncio
@@ -67,14 +67,14 @@ def _sanitize_token_file(name: str) -> str | None:
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("/pending")
-async def mobile_pending():
+async def mobile_pending(request: Request):
     """Return pending emails in a simplified format for mobile clients."""
     try:
         conn = __import__("sqlite3").connect(db.DB_PATH, timeout=10)
         conn.row_factory = __import__("sqlite3").Row
         cur = conn.cursor()
         cur.execute(
-            "SELECT ref_id, sender, subject, draft_body, tier, created_at, ai_reasoning, suggested_actions "
+            "SELECT ref_id, message_id, sender, subject, draft_body, email_body, tier, created_at, ai_reasoning, suggested_actions "
             "FROM pending_approvals WHERE status = 'pending' ORDER BY tier, created_at DESC"
         )
         rows = cur.fetchall()
@@ -82,12 +82,15 @@ async def mobile_pending():
 
         now = datetime.utcnow()
         items = []
+        pending_message_ids = set()
         for r in rows:
             try:
                 created = datetime.strptime(r["created_at"][:19], "%Y-%m-%d %H:%M:%S")
                 age_hours = round((now - created).total_seconds() / 3600, 1)
             except Exception:
                 age_hours = 0
+            if r["message_id"]:
+                pending_message_ids.add(r["message_id"])
             items.append(
                 {
                     "ref_id": r["ref_id"],
@@ -97,11 +100,64 @@ async def mobile_pending():
                     "tier_label": _TIER_LABELS.get(str(r["tier"]), "MEDIUM"),
                     "preview": (r["draft_body"] or "")[:120],
                     "draft_body": r["draft_body"] or "",
+                    "email_body": r["email_body"] or "",
                     "age_hours": age_hours,
                     "ai_reasoning": r["ai_reasoning"] or "",
                     "suggested_actions": r["suggested_actions"] or "",
+                    "is_demo_item": False,
                 }
             )
+
+        show_demo_all = request.query_params.get("show_all") == "1"
+        if show_demo_all:
+            from services.gmail import get_all_account_tokens, get_unread_emails
+            from services.imap import get_all_imap_configs, get_unread_emails_imap
+
+            live_items = []
+            for token_file in get_all_account_tokens():
+                for email in get_unread_emails(token_file):
+                    msg_id = email.get("id", "")
+                    if msg_id and msg_id in pending_message_ids:
+                        continue
+                    live_items.append(
+                        {
+                            "ref_id": f"live:{msg_id}",
+                            "sender": email.get("clean_email") or email.get("sender", "Unknown"),
+                            "subject": email.get("subject", ""),
+                            "tier": 4,
+                            "tier_label": "DEMO",
+                            "preview": email.get("snippet", "")[:120],
+                            "draft_body": "",
+                            "email_body": (email.get("body") or email.get("snippet") or "").strip(),
+                            "age_hours": 0,
+                            "ai_reasoning": "Live inbox item shown for demo mode.",
+                            "suggested_actions": "",
+                            "is_demo_item": True,
+                        }
+                    )
+            for config_file in get_all_imap_configs():
+                for email in get_unread_emails_imap(config_file):
+                    msg_id = email.get("id", "")
+                    if msg_id and msg_id in pending_message_ids:
+                        continue
+                    live_items.append(
+                        {
+                            "ref_id": f"live:{msg_id}",
+                            "sender": email.get("clean_email") or email.get("sender", "Unknown"),
+                            "subject": email.get("subject", ""),
+                            "tier": 4,
+                            "tier_label": "DEMO",
+                            "preview": email.get("snippet", "")[:120],
+                            "draft_body": "",
+                            "email_body": (email.get("body") or email.get("snippet") or "").strip(),
+                            "age_hours": 0,
+                            "ai_reasoning": "Live inbox item shown for demo mode.",
+                            "suggested_actions": "",
+                            "is_demo_item": True,
+                        }
+                    )
+
+            items.extend(live_items)
         return {"count": len(items), "items": items}
     except Exception as e:
         logger.error(f"mobile_pending error: {e}")

@@ -233,7 +233,7 @@ Next month's already looking pretty full, so keen to lock you in
 if you're ready to go. Give me a call if you've got any questions.
 
 Cheers,
-[Your Name]
+Himanshu Lade
 ```
 
 **Emergency Repair (2 days post-quote):**
@@ -246,7 +246,7 @@ to chat about timing.
 
 Let me know!
 
-[Your Name]
+Himanshu Lade
 ```
 
 **Deck Build (7 days post-quote):**
@@ -257,7 +257,7 @@ Haven't heard back on the deck quote yet. Still want to chat through
 the options? I'm free for a quick call this Friday if that works.
 
 Cheers,
-[Your Name]
+Himanshu Lade
 ```
 
 ### Customization Options

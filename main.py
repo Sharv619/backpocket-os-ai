@@ -36,10 +36,25 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+# ── Environment Security Lock ────────────────────────────────────────────────
+AUTHORIZED_ARCHITECTS = ["hlade03@gmail.com", "ladehimanshoe@gmail.com"]
+if os.getenv("ARCHITECT_EMAIL") not in AUTHORIZED_ARCHITECTS:
+    print("\n" + "!" * 50)
+    print("FATAL: UNAUTHORIZED ENVIRONMENT DETECTED.")
+    print("System Locked. Please contact the Architect.")
+    print("!" * 50 + "\n")
+    os._exit(1) # Immediate hard exit to prevent any execution
+
 # ruff: noqa: E402
 import services.database as db
+import services.postgres_db as pg_db
 
 db.init_db()
+try:
+    pg_db.init_db()
+    logger.info("PostgreSQL tables initialized")
+except Exception as e:
+    logger.error(f"Failed to initialize PostgreSQL tables: {e}")
 
 app = FastAPI(title="BackPocket Twin API")
 logger.info("BACKPOCKET TWIN VERSION 2.2 STARTED")
@@ -190,12 +205,6 @@ async def disable_cache(request: Request, call_next):
     return response
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
-# Flutter web app — built assets copied here by CI/CD
-import os as _os
-_flutter_dist = _os.path.join(_os.path.dirname(__file__), "static_flutter")
-if _os.path.isdir(_flutter_dist):
-    app.mount("/", StaticFiles(directory=_flutter_dist, html=True), name="flutter")
-
 # Route registration
 from routes.auth import router as auth_router
 from routes.admin import router as admin_router
@@ -275,6 +284,12 @@ async def test_buttons():
     res = whatsapp_service.send_buttons(founder_phone, test_text, buttons)
     return {"status": "success", "whapi_response": res}
 
+
+# Flutter web app — fallback for SPA
+import os as _os
+_flutter_dist = _os.path.join(_os.path.dirname(__file__), "static_flutter")
+if _os.path.isdir(_flutter_dist):
+    app.mount("/", StaticFiles(directory=_flutter_dist, html=True), name="flutter")
 
 if __name__ == "__main__":
     import uvicorn

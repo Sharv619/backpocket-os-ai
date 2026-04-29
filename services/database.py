@@ -65,6 +65,18 @@ def init_db():
     except sqlite3.OperationalError:
         pass  # already exists
 
+    try:
+        cursor.execute("ALTER TABLE pending_approvals ADD COLUMN tradie_category TEXT")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # already exists
+
+    try:
+        cursor.execute("ALTER TABLE pending_approvals ADD COLUMN email_body TEXT")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # already exists
+
     # Seed workflow_stages lookup table for the Flutter UI
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS workflow_stages (
@@ -335,8 +347,8 @@ def save_pending_approval(ref_id, data):
     try:
         cursor.execute('''
             INSERT OR REPLACE INTO pending_approvals
-            (ref_id, message_id, thread_id, sender, subject, draft_body, delivered_to, tier, workflow_stage, ai_reasoning, suggested_actions)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (ref_id, message_id, thread_id, sender, subject, draft_body, delivered_to, tier, workflow_stage, ai_reasoning, suggested_actions, tradie_category, email_body)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             ref_id,
             data['message_id'],
@@ -349,6 +361,8 @@ def save_pending_approval(ref_id, data):
             data.get('workflow_stage', 'draft'),
             data.get('ai_reasoning', ''),
             data.get('suggested_actions', ''),
+            data.get('tradie_category', ''),
+            data.get('email_body', ''),
         ))
         conn.commit()
         conn.close()

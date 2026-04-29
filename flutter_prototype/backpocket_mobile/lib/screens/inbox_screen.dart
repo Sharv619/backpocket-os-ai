@@ -82,6 +82,23 @@ class _InboxScreenState extends State<InboxScreen> {
     }
   }
 
+  Future<void> _manualSync() async {
+    setState(() => _loading = true);
+    try {
+      // Trigger background poll on server
+      await http.get(Uri.parse('${widget.serverUrl}/run-poll'), headers: _headers);
+      
+      // Wait a moment for processing, then fetch updated list
+      await Future.delayed(const Duration(seconds: 2));
+      await _fetchPending();
+      
+      _showSnack('Syncing complete', success: true);
+    } catch (e) {
+      _showSnack('Sync error: $e', success: false);
+      setState(() => _loading = false);
+    }
+  }
+
   Future<void> _approve(String refId, String sender, String subject) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -227,8 +244,22 @@ class _InboxScreenState extends State<InboxScreen> {
                 ),
               ),
               GestureDetector(
-                onTap: _fetchPending,
-                child: const Icon(Icons.refresh, color: AppColors.textMuted, size: 18),
+                onTap: _manualSync,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.amber.withAlpha(30),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.amber.withAlpha(100)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.sync, color: AppColors.amber, size: 14),
+                      SizedBox(width: 4),
+                      Text('Sync Now', style: TextStyle(color: AppColors.amber, fontSize: 11, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),
@@ -278,7 +309,8 @@ class _InboxCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tier = item['tier'] as int? ?? 3;
-    final tierLabel = _tierLabels[tier] ?? 'MEDIUM';
+    final demoItem = item['is_demo_item'] == true;
+    final tierLabel = demoItem ? 'DEMO' : (_tierLabels[tier] ?? 'MEDIUM');
     final tierColor = _tierColors[tier] ?? AppColors.amber;
     final ageHours = (item['age_hours'] as num?)?.toDouble() ?? 0.0;
     final preview = item['preview'] as String? ?? '';
@@ -362,23 +394,32 @@ class _InboxCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: GestureDetector(
-                      onTap: onApprove,
+                      onTap: demoItem ? onTap : onApprove,
                       child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 11),
                         decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [AppColors.orange, Color(0xFFEA580C)],
-                          ),
+                          gradient: demoItem
+                              ? const LinearGradient(
+                                  colors: [AppColors.surface, Color(0xFF3B2A18)],
+                                )
+                              : const LinearGradient(
+                                  colors: [AppColors.orange, Color(0xFFEA580C)],
+                                ),
                           borderRadius: BorderRadius.circular(10),
+                          border: demoItem ? Border.all(color: AppColors.border) : null,
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.check_circle_outline, color: Colors.white, size: 16),
-                            SizedBox(width: 6),
+                            Icon(
+                              demoItem ? Icons.visibility_outlined : Icons.check_circle_outline,
+                              color: Colors.white,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 6),
                             Text(
-                              'Verify & Send',
-                              style: TextStyle(
+                              demoItem ? 'Read Email' : 'Verify & Send',
+                              style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 13,
@@ -444,6 +485,9 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
   late TextEditingController _draftCtrl;
   String _sender = '';
   String _subject = '';
+  String _emailBody = '';
+
+  bool get _isDemoItem => widget.item['is_demo_item'] == true;
 
   Map<String, String> get _headers => {
     'Content-Type': 'application/json',
@@ -455,10 +499,15 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
     super.initState();
     _sender = widget.item['sender'] as String? ?? '';
     _subject = widget.item['subject'] as String? ?? '';
+    _emailBody = widget.item['email_body'] as String? ?? '';
     final existing = widget.item['draft_body'] as String? ??
         widget.item['preview'] as String? ?? '';
     _draftCtrl = TextEditingController(text: existing);
-    _fetchDraft();
+    if (_isDemoItem) {
+      _loadingDraft = false;
+    } else {
+      _fetchDraft();
+    }
   }
 
   @override
@@ -486,6 +535,7 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
         if (body.isNotEmpty) _draftCtrl.text = body;
         _sender = draft['sender'] as String? ?? _sender;
         _subject = draft['subject'] as String? ?? _subject;
+        _emailBody = draft['email_body'] as String? ?? _emailBody;
       }
     } catch (_) {}
     if (mounted) setState(() => _loadingDraft = false);
@@ -686,11 +736,11 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
-          'Review Draft',
+          'Review Email',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
         ),
         actions: [
-          if (!_archiving)
+          if (!_archiving && !_isDemoItem)
             IconButton(
               icon: const Icon(Icons.archive_outlined, color: AppColors.textMuted, size: 20),
               onPressed: _archive,
@@ -753,12 +803,19 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      const Icon(Icons.person_outline, color: AppColors.textMuted, size: 14),
+                      const Icon(
+                        Icons.person_outline,
+                        color: AppColors.textMuted,
+                        size: 14,
+                      ),
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
                           _sender,
-                          style: const TextStyle(color: AppColors.textDim, fontSize: 13),
+                          style: const TextStyle(
+                            color: AppColors.textDim,
+                            fontSize: 13,
+                          ),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -790,6 +847,30 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
                   ),
                   const SizedBox(height: 20),
                   const Text(
+                    'Original Email',
+                    style: TextStyle(
+                      color: AppColors.amber, fontSize: 12,
+                      fontWeight: FontWeight.w600, letterSpacing: 0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: SelectableText(
+                      _emailBody.trim().isNotEmpty
+                          ? _emailBody.trim()
+                          : 'Full email text is not available for this item yet.',
+                      style: const TextStyle(color: AppColors.textDim, fontSize: 13, height: 1.5),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
                     'AI Draft Reply (editable)',
                     style: TextStyle(
                       color: AppColors.amber, fontSize: 12,
@@ -801,11 +882,14 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
                     controller: _draftCtrl,
                     maxLines: null,
                     minLines: 8,
+                    readOnly: _isDemoItem,
                     style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.6),
                     decoration: InputDecoration(
                       filled: true,
                       fillColor: AppColors.card,
-                      hintText: 'No draft yet. Type a response...',
+                      hintText: _isDemoItem
+                          ? 'No AI draft stored for this live demo email.'
+                          : 'No draft yet. Type a response...',
                       hintStyle: const TextStyle(color: AppColors.textMuted),
                       contentPadding: const EdgeInsets.all(16),
                       border: OutlineInputBorder(
@@ -834,105 +918,128 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
                     const SizedBox(height: 10),
                     _buildSuggestedActions(widget.item['suggested_actions']),
                   ],
-                  const SizedBox(height: 24),
-                  // Action buttons
-                  SizedBox(
-                    width: double.infinity,
-                    child: GestureDetector(
-                      onTap: _approving ? null : _doApprove,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        decoration: BoxDecoration(
-                          gradient: _approving ? null
-                              : const LinearGradient(colors: [AppColors.orange, Color(0xFFEA580C)]),
-                          color: _approving ? AppColors.surface : null,
-                          borderRadius: BorderRadius.circular(14),
-                          border: _approving ? Border.all(color: AppColors.border) : null,
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            if (_approving)
-                              const SizedBox(width: 18, height: 18,
-                                child: CircularProgressIndicator(color: AppColors.amber, strokeWidth: 2))
-                            else
-                              const Icon(Icons.send_rounded, color: Colors.white, size: 18),
-                            const SizedBox(width: 10),
-                            Text(
-                              _approving ? 'Sending...' : 'Verify & Send',
-                              style: TextStyle(
-                                color: _approving ? AppColors.textDim : Colors.white,
-                                fontWeight: FontWeight.bold, fontSize: 15,
+                  if (!_isDemoItem) ...[
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      child: GestureDetector(
+                        onTap: _approving ? null : _doApprove,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          decoration: BoxDecoration(
+                            gradient: _approving ? null
+                                : const LinearGradient(colors: [AppColors.orange, Color(0xFFEA580C)]),
+                            color: _approving ? AppColors.surface : null,
+                            borderRadius: BorderRadius.circular(14),
+                            border: _approving ? Border.all(color: AppColors.border) : null,
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              if (_approving)
+                                const SizedBox(width: 18, height: 18,
+                                  child: CircularProgressIndicator(color: AppColors.amber, strokeWidth: 2))
+                              else
+                                const Icon(Icons.send_rounded, color: Colors.white, size: 18),
+                              const SizedBox(width: 10),
+                              Text(
+                                _approving ? 'Sending...' : 'Verify & Send',
+                                style: TextStyle(
+                                  color: _approving ? AppColors.textDim : Colors.white,
+                                  fontWeight: FontWeight.bold, fontSize: 15,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: _saving ? null : _saveDraft,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            decoration: BoxDecoration(
-                              color: AppColors.surface,
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: AppColors.amber.withAlpha(76)),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                if (_saving)
-                                  const SizedBox(width: 14, height: 14,
-                                    child: CircularProgressIndicator(color: AppColors.amber, strokeWidth: 2))
-                                else
-                                  const Icon(Icons.save_outlined, color: AppColors.amber, size: 16),
-                                const SizedBox(width: 8),
-                                Text(
-                                  _saving ? 'Saving...' : 'Save Draft',
-                                  style: const TextStyle(
-                                    color: AppColors.amber, fontWeight: FontWeight.w600, fontSize: 13,
-                                  ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: _saving ? null : _saveDraft,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              decoration: BoxDecoration(
+                                color: AppColors.surface,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: AppColors.amber.withAlpha(76),
                                 ),
-                              ],
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  if (_saving)
+                                    const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                        color: AppColors.amber,
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  else
+                                    const Icon(
+                                      Icons.save_outlined,
+                                      color: AppColors.amber,
+                                      size: 16,
+                                    ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    _saving ? 'Saving...' : 'Save Draft',
+                                    style: const TextStyle(
+                                      color: AppColors.amber,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: _archive,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            decoration: BoxDecoration(
-                              color: AppColors.surface,
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: AppColors.border),
-                            ),
-                            child: const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.archive_outlined, color: AppColors.textDim, size: 16),
-                                SizedBox(width: 8),
-                                Text(
-                                  'Archive',
-                                  style: TextStyle(
-                                    color: AppColors.textDim, fontWeight: FontWeight.w600, fontSize: 13,
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: _archive,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              decoration: BoxDecoration(
+                                color: AppColors.surface,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: AppColors.border),
+                              ),
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.archive_outlined,
+                                    color: AppColors.textDim,
+                                    size: 16,
                                   ),
-                                ),
-                              ],
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Archive',
+                                    style: TextStyle(
+                                      color: AppColors.textDim,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 32),
+                  const SizedBox(height: 16),
                 ],
               ),
             ),

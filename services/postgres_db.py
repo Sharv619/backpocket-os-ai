@@ -227,7 +227,11 @@ def get_db() -> PostgresDB:
 
 def init_db() -> None:
     """Initialize database tables."""
-    Base.metadata.create_all(get_db().engine)
+    engine = get_db().engine
+    with engine.connect() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        conn.commit()
+    Base.metadata.create_all(engine)
 
 
 # ═══════════════════════════════════════════════════════════════════════

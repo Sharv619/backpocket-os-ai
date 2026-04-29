@@ -1,0 +1,38 @@
+# Git
+.git/
+.gitignore
+
+# Python / Virtual Environment
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.so
+
+# Environments
+.env
+
+# Flutter / Dart
+.dart_tool/
+build/
+.pub-cache/
+.pub/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Node
+node_modules/
+npm-debug.log
+
+# IDEs and OS junk
+.vscode/
+.idea/
+*.DS_Store
+
+# Project artifacts
+backpocket.db
+uploads/
+documents/
+paperless_export/
+paperless_consume/

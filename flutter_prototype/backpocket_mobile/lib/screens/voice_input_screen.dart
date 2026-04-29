@@ -56,7 +56,9 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
       apiKey: widget.apiKey,
     );
     _voiceService.setScreenContext(widget.screenContext);
-    _initRecorder();
+    _initRecorder().then((_) {
+      if (_isRecorderInitialized && mounted) _startRecording();
+    });
   }
 
   Future<void> _initRecorder() async {
@@ -228,55 +230,77 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
               label: const Text('Invoice', style: TextStyle(color: AppColors.amber, fontSize: 13)),
               onPressed: _showInvoiceSheet,
             ),
-          IconButton(
-            icon: Icon(
-              _showTextInput ? Icons.mic_rounded : Icons.keyboard_rounded,
-              color: AppColors.textDim,
-            ),
-            onPressed: () => setState(() => _showTextInput = !_showTextInput),
-          ),
         ],
       ),
       body: SafeArea(
         child: Column(
           children: [
-            Expanded(child: _buildConversation()),
+            Expanded(
+              child: _conversation.isNotEmpty
+                  ? _buildConversation()
+                  : _buildVoicePrompt(),
+            ),
             if (_response?.needsConfirmation == true) _buildConfirmBar(),
             if (_response?.followUpPrompt != null &&
                 _response?.needsConfirmation != true)
               _buildFollowUpHint(),
             if (_isProcessing) _buildProcessingArea(),
-            if (!_isRecording && !_isProcessing) _buildInputArea(),
             if (_isRecording) _buildRecordingArea(),
+            if (!_isRecording && !_isProcessing) _buildVoiceButton(),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildConversation() {
-    if (_conversation.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.mic_rounded, color: AppColors.amber.withAlpha(77), size: 64),
-            const SizedBox(height: 16),
-            const Text(
-              'Say something or type a command',
-              style: TextStyle(color: AppColors.textMuted, fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              '"Show me my leads"\n"Create a quote for the Penrith job"\n"What\'s my pipeline?"',
-              style: TextStyle(color: AppColors.textMuted, fontSize: 13),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      );
-    }
+  Widget _buildVoicePrompt() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.graphic_eq_rounded, color: AppColors.amber.withAlpha(77), size: 80),
+          const SizedBox(height: 20),
+          const Text(
+            'Tap to speak',
+            style: TextStyle(color: AppColors.cream, fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '"Log a new enquiry from David"\n"Create a quote for the Penrith job"\n"What\'s my pipeline?"',
+            style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
 
+  Widget _buildVoiceButton() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: const BoxDecoration(
+        color: AppColors.card,
+        border: Border(top: BorderSide(color: AppColors.border)),
+      ),
+      child: GestureDetector(
+        onTap: _startRecording,
+        child: Container(
+          width: 72,
+          height: 72,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppColors.orange,
+            boxShadow: [
+              BoxShadow(color: AppColors.orange.withAlpha(77), blurRadius: 20, spreadRadius: 4),
+            ],
+          ),
+          child: const Icon(Icons.mic_rounded, color: Colors.white, size: 36),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConversation() {
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       itemCount: _conversation.length,
@@ -369,44 +393,7 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
   }
 
   Widget _buildInputArea() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: const BoxDecoration(
-        color: AppColors.card,
-        border: Border(top: BorderSide(color: AppColors.border)),
-      ),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.mic_rounded, color: AppColors.orange),
-            onPressed: _startRecording,
-          ),
-          Expanded(
-            child: TextField(
-              controller: _textController,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: _response?.followUpPrompt ?? 'Type a voice command...',
-                hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 14),
-                filled: true,
-                fillColor: AppColors.surface,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              ),
-              onSubmitted: _handleTextSubmit,
-            ),
-          ),
-          const SizedBox(width: 8),
-          IconButton(
-            icon: const Icon(Icons.send_rounded, color: AppColors.orange),
-            onPressed: () => _handleTextSubmit(_textController.text),
-          ),
-        ],
-      ),
-    );
+    return _buildVoiceButton();
   }
 
   Widget _buildProcessingArea() {

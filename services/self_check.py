@@ -4,6 +4,7 @@ import io
 import logging
 from services.database import get_stale_approvals, mark_nudged
 from services.whapi import send_whatsapp_message, test_whapi_connection
+from services.gemini import OWNER_NAME
 from services.gmail import test_gmail_connection
 from services.google_sheets import test_sheets_connection, get_todays_portal_updates
 from services.gemini import test_gemini_connection
@@ -95,7 +96,7 @@ def send_morning_pulse():
         else:
             pulse_msg += "\n"
             
-        pulse_msg += "Zero-cost & Scalable. Have a productive day, Steve! 🚀"
+        pulse_msg += f"Zero-cost & Scalable. Have a productive day, {OWNER_NAME}! 🚀"
         
         clean_phone = "".join(filter(str.isdigit, founder_phone))
         send_whatsapp_message(clean_phone, pulse_msg)

@@ -126,7 +126,9 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
         await Future.delayed(const Duration(seconds: 3));
       } else {
         // Local storage: trigger AI analysis
-        final docId = result['document_id'];
+        final rawDocId = result['document_id'];
+        final docId = rawDocId != null ? int.tryParse(rawDocId.toString()) : null;
+        
         if (docId != null) {
           await http
               .post(
@@ -656,8 +658,16 @@ class _LocalDocCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasAnalysis =
-        (doc['ai_analysis'] as String? ?? '').isNotEmpty;
+    final rawAnalysis = doc['ai_analysis'];
+    String analysisText = '';
+    if (rawAnalysis != null) {
+      if (rawAnalysis is String) {
+        analysisText = rawAnalysis;
+      } else {
+        analysisText = const JsonEncoder.withIndent('  ').convert(rawAnalysis);
+      }
+    }
+    final hasAnalysis = analysisText.isNotEmpty;
     final status = doc['status'] as String? ?? 'pending';
 
     return GestureDetector(
@@ -677,7 +687,7 @@ class _LocalDocCard extends StatelessWidget {
                 children: [
                   if (hasAnalysis)
                     Text(
-                      doc['ai_analysis'] as String,
+                      analysisText,
                       style: const TextStyle(color: AppColors.textDim, fontSize: 14),
                     )
                   else
@@ -764,7 +774,7 @@ class _LocalDocCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  doc['ai_analysis'] as String,
+                  analysisText,
                   style: const TextStyle(
                       color: AppColors.textDim,
                       fontSize: 12,

@@ -189,6 +189,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(height: 12),
                   _buildGrowthStats(),
+                  const SizedBox(height: 32),
+                  const SizedBox(height: 16),
                 ],
               ),
             ),

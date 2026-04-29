@@ -24,3 +24,5 @@ cryptography
 google-genai
 python-jose
 pytest-asyncio
+fpdf2
+psycopg2-binary

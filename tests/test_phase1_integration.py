@@ -86,6 +86,7 @@ def test_rag_chat(mock_openrouter):
     
     assert res.status_code == 200
     assert res.json()["response"] == "This is a RAG-augmented response."
+    assert res.json()["conversation_id"]
     print("✅ AI Chat successfully routed through Postgres vector RAG")
 
 @patch("services.stripe._stripe")

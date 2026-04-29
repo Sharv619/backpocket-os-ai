@@ -41,6 +41,27 @@ def _init_marketing_table():
 _init_marketing_table()
 
 
+def _init_blog_posts_table():
+    con = sqlite3.connect(DB)
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS blog_posts (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            title       TEXT NOT NULL,
+            theme       TEXT,
+            company     TEXT,
+            content     TEXT NOT NULL,
+            style       TEXT,
+            source      TEXT DEFAULT 'blog_generator',
+            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    con.commit()
+    con.close()
+
+
+_init_blog_posts_table()
+
+
 class SocialPostRequest(BaseModel):
     job_description: str
     suburb: str
@@ -107,21 +128,19 @@ async def create_gbp_post(request: GBPPostRequest):
 
         post_text = None
 
-        post_text = get_openrouter_response(
-            prompt,
-            model="google/gemini-2.5-flash",
-            sys_prompt="You are a local tradie marketing assistant. Write punchy, local GBP posts.",
-        )
+        client = get_gemini_client()
+        if client:
+            response = client.models.generate_content(
+                model="gemini-2.5-flash", contents=prompt
+            )
+            post_text = response.text.strip() if response and response.text else None
 
         if not post_text:
-            client = get_gemini_client()
-            if client:
-                response = client.models.generate_content(
-                    model="gemini-2.5-flash", contents=prompt
-                )
-                post_text = (
-                    response.text.strip() if response and response.text else None
-                )
+            post_text = get_openrouter_response(
+                prompt,
+                model="google/gemini-2.5-flash",
+                sys_prompt="You are a local tradie marketing assistant. Write punchy, local GBP posts.",
+            )
 
         if not post_text:
             post_text = (
@@ -194,17 +213,25 @@ async def get_marketing_insights():
 
 
 def _ai_generate(prompt: str, sys_prompt: str, fallback: str) -> str:
-    """Shared AI generation with OpenRouter → Gemini → static fallback."""
+    """Shared AI generation with Gemini → OpenRouter → static fallback."""
     from services.gemini import get_openrouter_response, get_gemini_client
-    text = get_openrouter_response(prompt, model="google/gemini-2.5-flash", sys_prompt=sys_prompt)
+    text = None
+    client = get_gemini_client()
+    if client:
+        try:
+            r = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+            )
+            text = r.text.strip() if r and r.text else None
+        except Exception:
+            pass
     if not text:
-        client = get_gemini_client()
-        if client:
-            try:
-                r = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-                text = r.text.strip() if r and r.text else None
-            except Exception:
-                pass
+        text = get_openrouter_response(
+            prompt,
+            model="google/gemini-2.5-flash",
+            sys_prompt=sys_prompt,
+        )
     return text or fallback
 
 
@@ -219,6 +246,27 @@ def _save_post(platform: str, activity_type: str, job_description: str, suburb: 
     con.commit()
     con.close()
     return aid
+
+
+def _save_blog_post(
+    title: str,
+    content: str,
+    theme: str = "",
+    company: str = "",
+    style: str = "wine_commercial_narrative",
+    source: str = "blog_generator",
+) -> int:
+    con = sqlite3.connect(DB)
+    cur = con.cursor()
+    cur.execute(
+        """INSERT INTO blog_posts (title, theme, company, content, style, source)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (title, theme, company, content, style, source),
+    )
+    post_id = cur.lastrowid
+    con.commit()
+    con.close()
+    return post_id
 
 
 @router.post("/api/marketing/facebook-post")
@@ -299,13 +347,89 @@ async def generate_startup_story(data: dict):
         if result.get("error"):
             return {"error": result["error"]}
 
+        post_id = _save_blog_post(
+            title=result.get("title", title),
+            content=result.get("content", ""),
+            theme=theme,
+            company=company_name,
+            style=result.get("style", "wine_commercial_narrative"),
+            source="startup_story",
+        )
+
         return {
+            "id": post_id,
             "title": result.get("title", title),
             "content": result.get("content", ""),
             "company": company_name,
+            "theme": theme,
             "style": result.get("style", "wine_commercial_narrative"),
             "created_at": result.get("created_at", datetime.now().isoformat()),
         }
     except Exception as e:
         logger.error(f"Error generating startup story: {e}")
         return {"error": str(e)}
+
+
+@router.get("/api/blog/generate")
+async def generate_blog_post(title: str, theme: str = "entrepreneurship"):
+    try:
+        from services.agentic_rag import get_blog_generator
+
+        clean_title = title.strip() or "Untitled Story"
+        clean_theme = theme.strip() or "entrepreneurship"
+
+        generator = get_blog_generator()
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            functools.partial(
+                generator.generate_blog_post,
+                title=clean_title,
+                theme=clean_theme,
+            ),
+        )
+
+        if result.get("error"):
+            return {"error": result["error"]}
+
+        post_id = _save_blog_post(
+            title=result.get("title", clean_title),
+            content=result.get("content", ""),
+            theme=clean_theme,
+            company=result.get("company", ""),
+            style=result.get("style", "wine_commercial_narrative"),
+            source="blog_post",
+        )
+
+        return {
+            "id": post_id,
+            "title": result.get("title", clean_title),
+            "theme": clean_theme,
+            "content": result.get("content", ""),
+            "style": result.get("style", "wine_commercial_narrative"),
+            "created_at": result.get("created_at", datetime.now().isoformat()),
+        }
+    except Exception as e:
+        logger.error(f"Error generating blog post: {e}")
+        return {"error": str(e)}
+
+
+@router.get("/api/blog/library")
+async def get_blog_library(limit: int = 30):
+    try:
+        con = sqlite3.connect(DB)
+        con.row_factory = sqlite3.Row
+        cur = con.cursor()
+        cur.execute(
+            """SELECT id, title, theme, company, content, style, source, created_at
+               FROM blog_posts
+               ORDER BY created_at DESC
+               LIMIT ?""",
+            (limit,),
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+        con.close()
+        return {"items": rows, "count": len(rows)}
+    except Exception as e:
+        logger.error(f"Error loading blog library: {e}")
+        return {"error": str(e), "items": [], "count": 0}

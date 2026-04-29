@@ -17,7 +17,18 @@ def generate_ref_id():
     conn = db.sqlite3.connect(db.DB_PATH)
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT ref_id FROM pending_approvals WHERE ref_id LIKE ? ORDER BY ref_id DESC LIMIT 1",
+        """
+        SELECT ref_id FROM (
+            SELECT ref_id FROM pending_approvals
+            UNION ALL
+            SELECT ref_id FROM action_history
+            UNION ALL
+            SELECT ref_id FROM corrections
+        )
+        WHERE ref_id LIKE ?
+        ORDER BY ref_id DESC
+        LIMIT 1
+        """,
         (f"{prefix}-%",),
     )
     row = cursor.fetchone()

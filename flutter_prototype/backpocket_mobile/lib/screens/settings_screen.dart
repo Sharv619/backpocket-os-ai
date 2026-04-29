@@ -14,7 +14,7 @@ class SettingsScreen extends StatefulWidget {
 
   const SettingsScreen({
     super.key,
-    this.serverUrl = 'http://127.0.0.1:8000',
+    this.serverUrl = 'http://192.168.1.147:8000',
     this.apiKey = '',
     this.onSettingsChanged,
   });
@@ -274,7 +274,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _SettingsField(
                 controller: _ownerNameController,
                 label: 'Your Name',
-                hint: 'e.g. Steve',
+                hint: 'e.g. User',
                 icon: Icons.person_outline,
               ),
             ],
@@ -310,7 +310,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _SettingsField(
                 controller: _serverUrlController,
                 label: 'Server URL',
-                hint: 'https://your-server.com or http://127.0.0.1:8000',
+                hint: 'https://your-server.com or http://192.168.1.147:8000',
                 icon: Icons.dns_outlined,
               ),
               const SizedBox(height: 8),
@@ -587,6 +587,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _InfoRow(label: 'Version', value: '2.3'),
               _InfoRow(label: 'Platform', value: 'Business OS'),
               _InfoRow(label: 'Theme', value: '5am Warehouse'),
+              _InfoRow(
+                label: 'Live Demo',
+                value: 'hlade03@gmail.com for live demo',
+              ),
             ],
           ),
           const SizedBox(height: 24),
@@ -603,6 +607,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _InfoRow(label: 'Chat', value: '/api/mobile/chat'),
             ],
           ),
+          const SizedBox(height: 32),
+          const SizedBox(height: 24),
         ],
       ),
     );

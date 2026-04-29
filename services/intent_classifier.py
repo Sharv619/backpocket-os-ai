@@ -6,7 +6,8 @@ Gemini-powered intent classification + entity extraction for voice commands.
 import json
 import logging
 import re
-from services.gemini import get_gemini_client
+import os
+from services.gemini import get_gemini_client, get_ollama_response
 
 logger = logging.getLogger(__name__)
 
@@ -131,32 +132,46 @@ async def classify_intent(
     available_entities: dict | None = None,
 ) -> dict:
     """Classify a voice transcript into an intent with extracted entities."""
-    client = get_gemini_client()
-    if not client:
-        return _fallback(transcript)
+    try:
+        provider = os.getenv("AI_PROVIDER", "ollama").lower()
 
-    session_info = ""
-    if session_state and session_state.get("state") == "COLLECTING":
-        session_info = (
-            f"\nACTIVE SESSION: Collecting params for intent '{session_state['intent']}'. "
-            f"Already collected: {session_state.get('collected_params', {})}. "
-            f"Still need: {session_state.get('missing_params', [])}. "
-            f"The user is likely answering: '{session_state.get('next_question', '')}'"
+        session_info = ""
+        if session_state and session_state.get("state") == "COLLECTING":
+            session_info = (
+                f"\nACTIVE SESSION: Collecting params for intent '{session_state['intent']}'. "
+                f"Already collected: {session_state.get('collected_params', {})}. "
+                f"Still need: {session_state.get('missing_params', [])}. "
+                f"The user is likely answering: '{session_state.get('next_question', '')}'"
+            )
+
+        entity_context = ""
+        if available_entities:
+            entity_context = f"\nAVAILABLE DATA CONTEXT:\n{json.dumps(available_entities, default=str)[:2000]}"
+
+        prompt = (
+            f"Current screen: {screen_context}\n"
+            f"{session_info}\n"
+            f"{entity_context}\n\n"
+            + _BASE_PROMPT
+            + f'\n\nCommand: "{transcript}"'
         )
 
-    entity_context = ""
-    if available_entities:
-        entity_context = f"\nAVAILABLE DATA CONTEXT:\n{json.dumps(available_entities, default=str)[:2000]}"
+        # Try Ollama first if configured
+        if provider == "ollama":
+            try:
+                res = get_ollama_response(prompt, json_mode=True)
+                if res:
+                    cleaned = re.sub(r"```json|```", "", res).strip()
+                    result = json.loads(cleaned)
+                    return result
+            except Exception as e:
+                logger.warning(f"Ollama intent classification failed: {e}")
 
-    prompt = (
-        f"Current screen: {screen_context}\n"
-        f"{session_info}\n"
-        f"{entity_context}\n\n"
-        + _BASE_PROMPT
-        + f'\n\nCommand: "{transcript}"'
-    )
+        # Fallback to Gemini
+        client = get_gemini_client()
+        if not client:
+            return _fallback(transcript)
 
-    try:
         from google.genai import types as genai_types
         response = client.models.generate_content(
             model="gemini-2.5-flash",

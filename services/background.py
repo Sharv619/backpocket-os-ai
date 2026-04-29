@@ -20,7 +20,7 @@ async def inbox_polling_loop():
         try:
             await inbox_polling_loop_once()
             consecutive_errors = 0  # Reset on success
-            await asyncio.sleep(60)
+            await asyncio.sleep(15) # Increased frequency from 60s to 15s
         except Exception as e:
             consecutive_errors += 1
             import traceback
@@ -41,7 +41,7 @@ async def inbox_polling_loop_once():
     """Patrols ALL connected business accounts and performs Zen Cleanup/Admin logic."""
     loop = asyncio.get_running_loop()
     try:
-        logger.info("🛡️ GLOBAL POLL: Starting Patrol...")
+        logger.debug("🛡️ GLOBAL POLL: Starting Patrol...")
 
         from services.google_sheets import process_lead_conversions
         from services.gmail import get_all_account_tokens, get_unread_emails
@@ -70,18 +70,24 @@ async def inbox_polling_loop_once():
         # 🕵️ ACCOUNT PATROL (Concurrent 4x Speed)
         async def fetch_acc(acc):
             t_file, a_type = acc["file"], acc["type"]
-            logger.info(f"🕵️ PATROLLING Account: {t_file} ({a_type})")
-            if a_type == "gmail":
+            try:
+                if a_type == "gmail":
+                    return (
+                        await loop.run_in_executor(None, get_unread_emails, t_file),
+                        t_file,
+                        a_type,
+                    )
                 return (
-                    await loop.run_in_executor(None, get_unread_emails, t_file),
+                    await loop.run_in_executor(None, get_unread_emails_imap, t_file),
                     t_file,
                     a_type,
                 )
-            return (
-                await loop.run_in_executor(None, get_unread_emails_imap, t_file),
-                t_file,
-                a_type,
-            )
+            except Exception as e:
+                if "invalid_grant" in str(e) or "expired" in str(e).lower():
+                    logger.debug(f"Token expired for {t_file} — skipping")
+                else:
+                    logger.warning(f"Fetch failed for {t_file}: {e}")
+                return ([], t_file, a_type)
 
         account_results = await asyncio.gather(*(fetch_acc(a) for a in all_accounts))
 
@@ -145,7 +151,7 @@ async def inbox_polling_loop_once():
 
         global LAST_PATROL_TIME
         LAST_PATROL_TIME = datetime.now().strftime("%I:%M %p")
-        logger.info(f"🛡️ PATROL COMPLETE at {LAST_PATROL_TIME}")
+        logger.debug(f"🛡️ PATROL COMPLETE at {LAST_PATROL_TIME}")
     except Exception as e:
         logger.error(f"Error in global poll: {e}")
 
@@ -264,14 +270,26 @@ async def process_triaged_email(email, triage, loop):
     # Log all activity to the main Action Log (which also handles tier-routing)
     await loop.run_in_executor(None, log_activity, log_data, "Action_Log")
 
-    # --- TIER 1 / 2 / 3 (CHERRY'S REFINED RULES - UPDATED FOR DEMO) ---
-    if tier in [1, 2, 3]:
+    # --- TIER 1 / 2 (ACTION QUEUE + DRAFT) ---
+    if tier in [1, 2]:
         from routes.email import generate_ref_id
         ref_id = generate_ref_id()
 
-        # ... (is_doc_signed / is_call / is_new_client checks)
+        # Attachment Handling (Prompt 1)
+        attachments = []
+        if email.get("has_attachments"):
+            from services.gmail import get_attachments
+            attachments = await loop.run_in_executor(None, get_attachments, msg_id, token_file)
+            
+            for att in attachments:
+                if att.get("mime_type", "").startswith("image/"):
+                    from services.document_vision import save_document, analyze_document
+                    doc_id = await loop.run_in_executor(None, save_document, att["data"], att["filename"], triage.get("tradie_category", "Site Photo"))
+                    # Trigger async analysis
+                    asyncio.create_task(loop.run_in_executor(None, analyze_document, doc_id))
+                    logger.info(f"📸 Image routed to vision service: {att['filename']} (DocID: {doc_id})")
 
-        # For the demo, let's draft for Tier 1, 2, and 3
+        # Draft only for actionable tiers that should hit the approval queue.
         hist_context = await loop.run_in_executor(
             None, get_historical_context, clean_email
         )
@@ -301,10 +319,11 @@ async def process_triaged_email(email, triage, loop):
                 "draft_body": draft_body,
                 "delivered_to": f"{email.get('delivered_to', 'unknown')}|{token_file}",
                 "tier": str(tier),
-                "workflow_stage": "draft",
+                "workflow_stage": "1", # Prompt 1: workflow_stage = 1
                 "email_body": email_body[:5000],
                 "suggested_actions": json.dumps(suggested_actions),
                 "ai_reasoning": ai_reasoning,
+                "tradie_category": triage.get("tradie_category", "Other"),
             },
         )
 
@@ -351,7 +370,7 @@ async def process_triaged_email(email, triage, loop):
         #     if is_existing_client:
         #         logger.info(f"AUTO-ACK: Would send acknowledgement to existing client {clean_email}")
 
-    # --- TIER 3 / 4 (ARCHIVE & LOG) ---
+    # --- TIER 3 / 4 (LOG / ARCHIVE, NO APPROVAL QUEUE) ---
     elif tier == 3 or tier == 4:
         has_activity, is_portal = (
             triage.get("has_activity"),
@@ -488,4 +507,3 @@ async def background_scheduler():
         except Exception as e:
             logger.error(f"Scheduler Error: {e}")
         await asyncio.sleep(300)
-

@@ -5,6 +5,7 @@ Replaces services/agentic_rag.py using Postgres pgvector for embeddings.
 
 import os
 import json
+import logging
 from typing import Optional
 
 import requests
@@ -22,6 +23,8 @@ DATABASE_URL = os.getenv(
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
 
+logger = logging.getLogger(__name__)
+
 # ═══════════════════════════════════════════════════════════════════════════════════
 # pgvector RAG
 # ═══════════════════════════════════════════════════════════════════════════
@@ -34,8 +37,9 @@ class PgvectorRAG:
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._engine = create_engine(DATABASE_URL)
+            instance = super().__new__(cls)
+            instance._engine = create_engine(DATABASE_URL)
+            cls._instance = instance
         return cls._instance
 
     @property
@@ -70,8 +74,8 @@ class PgvectorRAG:
         with self.engine.connect() as conn:
             if table == "knowledge_notes":
                 result = conn.execute(
-                    text("""
-                        INSERT INTO knowledge_notes (user_id, body, tags, author_email, embedding)
+                    text(f"""
+                        INSERT INTO {table} (user_id, body, tags, author_email, embedding)
                         VALUES (:user_id, :body, :tags, :author_email, :embedding::vector)
                         RETURNING id
                     """),
@@ -87,8 +91,8 @@ class PgvectorRAG:
                 )
             elif table == "pending_approvals":
                 result = conn.execute(
-                    text("""
-                        INSERT INTO pending_approvals 
+                    text(f"""
+                        INSERT INTO {table} 
                         (user_id, ref_id, sender, subject, preview, tier, embedding)
                         VALUES (:user_id, :ref_id, :sender, :subject, :preview, :tier, :embedding::vector)
                         RETURNING id
@@ -122,12 +126,12 @@ class PgvectorRAG:
         with self.engine.connect() as conn:
             if table == "knowledge_notes":
                 result = conn.execute(
-                    text("""
+                    text(f"""
                         SELECT id, body, tags, 
-                        1 - (embedding <=> :embedding::vector) as similarity
-                        FROM knowledge_notes
+                        1 - (CAST(embedding AS vector) <=> :embedding::vector) as similarity
+                        FROM {table}
                         WHERE user_id = :user_id
-                        ORDER BY embedding <=> :embedding::vector
+                        ORDER BY CAST(embedding AS vector) <=> :embedding::vector
                         LIMIT :n
                     """),
                     {
@@ -138,12 +142,12 @@ class PgvectorRAG:
                 )
             elif table == "pending_approvals":
                 result = conn.execute(
-                    text("""
+                    text(f"""
                         SELECT id, subject, preview, tier,
-                        1 - (embedding <=> :embedding::vector) as similarity
-                        FROM pending_approvals
+                        1 - (CAST(embedding AS vector) <=> :embedding::vector) as similarity
+                        FROM {table}
                         WHERE user_id = :user_id
-                        ORDER BY embedding <=> :embedding::vector
+                        ORDER BY CAST(embedding AS vector) <=> :embedding::vector
                         LIMIT :n
                     """),
                     {
@@ -172,7 +176,7 @@ class PgvectorRAG:
             
             sql = """
                 SELECT id, category, title, body, tags,
-                1 - (embedding <=> CAST(:embedding AS vector)) as similarity
+                1 - (CAST(embedding AS vector) <=> CAST(:embedding AS vector)) as similarity
                 FROM knowledge_notes
                 WHERE user_id = :user_id
             """
@@ -182,7 +186,7 @@ class PgvectorRAG:
                 sql += " AND category = :category"
                 params["category"] = category
 
-            sql += " ORDER BY embedding <=> CAST(:embedding AS vector) LIMIT 10"
+            sql += " ORDER BY CAST(embedding AS vector) <=> CAST(:embedding AS vector) LIMIT 10"
             
             result = conn.execute(text(sql), params)
             return [dict(r._mapping) for r in result.fetchall()]
@@ -195,13 +199,34 @@ class PgvectorRAG:
     ) -> str:
         """Build RAG context for Twin AI."""
         personality = {
-            "estimator": """You are Pip, the BackPocket estimator twin. 
-Be friendly, practical, and help with tax and invoicing.""",
-            "site_manager": """You are Pip, the BackPocket site_manager twin.
-Be thorough, detail-oriented, and help with compliance.""",
-            "admin": """You are Pip, the BackPocket admin twin.
-Be efficient, organized, and help with operations.""",
-        }.get(twin_type, "You are Pip, the BackPocket AI assistant.")
+            "estimator": """You are Pip, BackPocket's estimator twin for Australian tradies.
+Sound like a sharp operator in the business, not a generic AI assistant.
+Default style:
+- direct, grounded, practical
+- short paragraphs or bullets only when useful
+- no corporate fluff, no hype, no "as an AI", no robot disclaimers
+- do the math cleanly and show assumptions when quoting, pricing, margin, GST, labour, or markup
+- if details are missing, ask only for the exact missing inputs
+- use AUD and Australian construction/business language naturally""",
+            "site_manager": """You are Pip, BackPocket's site manager twin for Australian tradies.
+Sound experienced, operational, and no-nonsense.
+Default style:
+- practical field advice, not generic AI wording
+- structured, concise, safety-aware
+- no corporate fluff, no "as an AI", no filler
+- focus on sequencing, risks, materials, compliance, defects, and next actions""",
+            "admin": """You are Pip, BackPocket's admin twin for Australian tradies.
+Sound like a switched-on operations manager inside the business.
+Default style:
+- concise, clear, useful
+- no generic AI phrasing, no fake enthusiasm, no padded intros
+- help with follow-ups, scheduling, inbox triage, client comms, and keeping things moving
+- when drafting copy, make it sound human and owner-led, not templated""",
+        }.get(
+            twin_type,
+            """You are Pip from BackPocket.
+Be direct, useful, and human. Never sound like a generic AI assistant.""",
+        )
 
         # Get relevant knowledge
         results = self.search_knowledge(query, user_id)
@@ -258,26 +283,116 @@ def retrieve_from_rag(
 
 from services.gemini import get_openrouter_response
 
-async def rag_chat(user_id: str, message: str, twin_type: str = "estimator") -> str:
-    """Chat with RAG-augmented response using OpenRouter."""
+async def rag_chat(
+    user_id: str,
+    message: str,
+    twin_type: str = "estimator",
+    conversation_id: Optional[str] = None,
+) -> dict:
+    """Chat with RAG-augmented response while preserving Twin conversation history."""
     rag = get_rag()
-
-    # Build context (Personality + RAG Knowledge)
     system_context = rag.build_context(message, user_id, twin_type)
+    from services.memory import (
+        auto_title_if_needed,
+        create_conversation,
+        get_conversation_messages,
+        save_message_instant,
+    )
 
-    # Call AI (prefer OpenRouter auto for cost/quality balance)
+    if not conversation_id:
+        conversation_id = create_conversation(source="twin")
+
+    save_message_instant(conversation_id, "user", message)
+    prior_messages = get_conversation_messages(conversation_id, limit=12)
+    history = [
+        {"role": msg["role"], "content": msg["content"]}
+        for msg in prior_messages[:-1]
+        if msg.get("role") in {"user", "assistant"} and msg.get("content")
+    ]
+
+    # Layer 1: Gemini (free, fast)
+    try:
+        from services.gemini import get_gemini_client
+        client = get_gemini_client()
+        if client:
+            history_lines = []
+            for msg in history[-8:]:
+                speaker = "User" if msg["role"] == "user" else "Pip"
+                history_lines.append(f"{speaker}: {msg['content']}")
+
+            full_prompt = (
+                f"{system_context}\n\n"
+                "Stay consistent with the existing thread. Match the user's tone.\n"
+                "Do not reset into a generic assistant voice.\n"
+            )
+            if history_lines:
+                full_prompt += "\nRecent conversation:\n" + "\n".join(history_lines)
+            full_prompt += f"\n\nUser: {message}\nPip:"
+            resp = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=full_prompt,
+            )
+            if resp and resp.text:
+                response_text = resp.text.strip()
+                save_message_instant(conversation_id, "assistant", response_text)
+                auto_title_if_needed(conversation_id)
+                return {
+                    "response": response_text,
+                    "conversation_id": conversation_id,
+                    "twin_type": twin_type,
+                }
+    except Exception as e:
+        logger.warning(f"Gemini failed in rag_chat: {e}")
+
+    # Layer 2: OpenRouter
     response = get_openrouter_response(
-        prompt=message,
+        prompt=(
+            "Keep the response grounded and consistent with this thread.\n\n"
+            + "\n".join(
+                f"{'User' if msg['role'] == 'user' else 'Pip'}: {msg['content']}"
+                for msg in history[-8:]
+            )
+            + f"\nUser: {message}\nPip:"
+        ),
         model="openrouter/auto",
         sys_prompt=system_context,
         user_id=user_id
     )
+    if response:
+        response_text = response.strip()
+        save_message_instant(conversation_id, "assistant", response_text)
+        auto_title_if_needed(conversation_id)
+        return {
+            "response": response_text,
+            "conversation_id": conversation_id,
+            "twin_type": twin_type,
+        }
 
-    if not response:
-        # Fallback to a simple message if AI fails
-        return "I'm sorry, I'm having trouble thinking clearly right now. Can you try again?"
+    # Layer 3: Ollama local
+    try:
+        import ollama as _ollama
+        msgs = [{"role": "system", "content": system_context}] + history[-8:] + [
+            {"role": "user", "content": message}
+        ]
+        resp = _ollama.chat(model=os.getenv("OLLAMA_MODEL", "llama3.2"), messages=msgs)
+        response_text = resp["message"]["content"].strip()
+        save_message_instant(conversation_id, "assistant", response_text)
+        auto_title_if_needed(conversation_id)
+        return {
+            "response": response_text,
+            "conversation_id": conversation_id,
+            "twin_type": twin_type,
+        }
+    except Exception as e:
+        logger.warning(f"Ollama fallback failed in rag_chat: {e}")
 
-    return response
+    response_text = "I hit a model error just then. Send that again and I'll retry clean."
+    save_message_instant(conversation_id, "assistant", response_text)
+    return {
+        "response": response_text,
+        "conversation_id": conversation_id,
+        "twin_type": twin_type,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════

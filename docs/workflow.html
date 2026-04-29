@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BackPocket OS - End-to-End AI Workflow</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/leader-line-new@1.1.9/leader-line.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            min-height: 100vh;
+            overflow-x: hidden;
+            margin: 0;
+            padding: 2rem;
+        }
+        
+        .browser-mockup {
+            border: 4px solid #1e40af;
+            border-radius: 12px;
+            background: #f0f9ff;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            max-width: 1600px;
+            margin: 0 auto;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .browser-header {
+            background: #1e40af;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            padding: 0 1rem;
+            justify-content: space-between;
+        }
+
+        .browser-dots { display: flex; gap: 8px; }
+        .dot { width: 12px; height: 12px; border-radius: 50%; background: #fff; opacity: 0.8; }
+        .browser-title { color: white; font-weight: 600; font-size: 14px; opacity: 0.9; }
+
+        .workflow-canvas {
+            padding: 40px;
+            position: relative;
+            height: 950px;
+            background-image: radial-gradient(#93c5fd 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        .node {
+            position: absolute;
+            background: #93c5fd;
+            border: 3px solid #1e3a8a;
+            border-radius: 16px;
+            padding: 1.5rem;
+            width: 240px;
+            box-shadow: 4px 6px 0px rgba(30, 58, 138, 0.2);
+            z-index: 10;
+            transition: transform 0.2s;
+        }
+        
+        .node:hover { transform: translateY(-5px); z-index: 30; }
+
+        .node.highlight { background: #bfdbfe; border-color: #2563eb; }
+        .node.database { background: #fef08a; border-color: #a16207; }
+        .node.action { background: #bbf7d0; border-color: #166534; }
+        .node.ai { background: #e9d5ff; border-color: #6b21a8; }
+
+        .node-header {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: inherit;
+            background: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            border: 2px solid currentcolor;
+            display: inline-block;
+            margin-bottom: 12px;
+            font-weight: bold;
+            position: absolute;
+            top: -15px;
+            left: 50%;
+            transform: translateX(-50%);
+            white-space: nowrap;
+        }
+
+        .node-content { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+        .mock-line { height: 8px; background: rgba(255,255,255,0.8); border-radius: 4px; }
+        .mock-line.short { width: 50%; }
+        .mock-line.long { width: 90%; }
+        .node.database .mock-line { background: rgba(0,0,0,0.1); }
+        .node.action .mock-line { background: rgba(0,0,0,0.1); }
+        .node.ai .mock-line { background: rgba(0,0,0,0.1); }
+
+        .icon-badge {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            background: white;
+            border: 3px solid currentcolor;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            z-index: 20;
+        }
+
+        .node-title { font-weight: 800; font-size: 1.1rem; margin-top: 5px; color: #111827; }
+        .node-desc { font-size: 0.8rem; color: #4b5563; line-height: 1.3; }
+
+    </style>
+</head>
+<body>
+
+    <div class="browser-mockup">
+        <div class="browser-header">
+            <div class="browser-dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+            <div class="browser-title">Admin Twin / End-to-End Email Automation</div>
+            <div style="width: 50px;"></div>
+        </div>
+
+        <div class="workflow-canvas" id="canvas">
+            
+            <!-- COLUMN 1: Ingestion -->
+            <div class="node" id="n1" style="top: 80px; left: 50px;">
+                <div class="node-header">TRIGGER</div>
+                <div class="icon-badge" style="top: -20px; left: -20px; color: #ea4335;"><i class="fa-brands fa-google"></i></div>
+                <div class="node-content">
+                    <div class="node-title">New Email</div>
+                    <p class="node-desc">Gmail/IMAP Fetch. New thread detected.</p>
+                </div>
+            </div>
+
+            <!-- COLUMN 2: Parsing -->
+            <div class="node highlight" id="n2" style="top: 250px; left: 250px;">
+                <div class="node-header">PROCESSING</div>
+                <div class="icon-badge" style="top: -20px; right: -20px; color: #2563eb;"><i class="fa-solid fa-file-code"></i></div>
+                <div class="node-content">
+                    <div class="node-title">Data Extraction</div>
+                    <p class="node-desc">Strip HTML, extract sender details, scan for PDF/Image attachments.</p>
+                </div>
+            </div>
+
+            <!-- COLUMN 3: Memory / Context -->
+            <div class="node database" id="n3" style="top: 80px; left: 550px;">
+                <div class="node-header">VECTOR RAG</div>
+                <div class="icon-badge" style="bottom: -20px; left: -20px; color: #a16207;"><i class="fa-solid fa-brain"></i></div>
+                <div class="node-content">
+                    <div class="node-title">Twin Memory</div>
+                    <p class="node-desc">ChromaDB search. Retrieve past interactions & context about this client.</p>
+                </div>
+            </div>
+
+            <div class="node database" id="n4" style="top: 420px; left: 550px;">
+                <div class="node-header">SQL LOOKUP</div>
+                <div class="icon-badge" style="top: 50%; right: -25px; transform: translateY(-50%); color: #a16207;"><i class="fa-solid fa-server"></i></div>
+                <div class="node-content">
+                    <div class="node-title">Global Rules</div>
+                    <p class="node-desc">SQLite fetch for Sender-Specific Instructions (e.g. "always CC foreman").</p>
+                </div>
+            </div>
+
+            <!-- COLUMN 4: AI Analysis -->
+            <div class="node ai" id="n5" style="top: 250px; left: 900px;">
+                <div class="node-header">GEMINI FLASH</div>
+                <div class="icon-badge" style="top: -20px; left: -20px; color: #6b21a8;"><i class="fa-solid fa-microchip"></i></div>
+                <div class="node-content">
+                    <div class="node-title">Intent Classifier</div>
+                    <p class="node-desc">Is this a Lead? An Invoice? A Question? Maps to system taxonomy.</p>
+                </div>
+            </div>
+
+            <!-- COLUMN 5: Branching / Generation -->
+            <div class="node highlight" id="n6" style="top: 80px; left: 1250px;">
+                <div class="node-header">DECISION</div>
+                <div class="icon-badge" style="top: -20px; right: -20px; color: #dc2626;"><i class="fa-solid fa-sort-amount-down"></i></div>
+                <div class="node-content">
+                    <div class="node-title">Tier Scoring</div>
+                    <p class="node-desc">Ranked 1 (Urgent) to 5 (Spam) based on semantic priority.</p>
+                </div>
+            </div>
+
+            <div class="node ai" id="n7" style="top: 550px; left: 1250px;">
+                <div class="node-header">GEMINI FLASH</div>
+                <div class="icon-badge" style="bottom: -20px; left: -20px; color: #6b21a8;"><i class="fa-solid fa-pen-nib"></i></div>
+                <div class="node-content">
+                    <div class="node-title">Draft Response</div>
+                    <p class="node-desc">Auto-writes reply mimicking Steve's style using injected rules.</p>
+                </div>
+            </div>
+
+            <!-- BOTTOM ROW: Human in the loop & Execution (Right to Left flow) -->
+            <div class="node action" id="n10" style="top: 350px; left: 1250px;">
+                <div class="node-header">AUTOMATION</div>
+                <div class="icon-badge" style="bottom: -20px; right: -20px; color: #166534;"><i class="fa-solid fa-table"></i></div>
+                <div class="node-content">
+                    <div class="node-title">Data Sync</div>
+                    <p class="node-desc">Extract Lead details and post directly to Google Sheets / Stripe.</p>
+                </div>
+            </div>
+
+            <div class="node highlight" id="n8" style="top: 750px; left: 900px;">
+                <div class="node-header">HUMAN QUEUE</div>
+                <div class="icon-badge" style="top: -20px; right: -20px; color: #2563eb;"><i class="fa-solid fa-user-clock"></i></div>
+                <div class="node-content">
+                    <div class="node-title">Wait for Approval</div>
+                    <p class="node-desc">Draft pended to Web Dashboard. Requires "Approve" or "Revise".</p>
+                </div>
+            </div>
+
+            <div class="node action" id="n9" style="top: 750px; left: 1250px;">
+                <div class="node-header">ALERT</div>
+                <div class="icon-badge" style="bottom: -20px; right: -20px; color: #22c55e;"><i class="fa-brands fa-whatsapp"></i></div>
+                <div class="node-content">
+                    <div class="node-title">Tier 1 Ping</div>
+                    <p class="node-desc">Immediate WhatsApp webhook sent to Steve with Approve button.</p>
+                </div>
+            </div>
+
+            <div class="node action" id="n11" style="top: 750px; left: 550px;">
+                <div class="node-header">EXECUTION</div>
+                <div class="icon-badge" style="top: -20px; left: -20px; color: #166534;"><i class="fa-solid fa-paper-plane"></i></div>
+                <div class="node-content">
+                    <div class="node-title">Fire Action</div>
+                    <p class="node-desc">Gmail API triggered. Reply sent, original thread archived.</p>
+                </div>
+            </div>
+
+            <div class="node database" id="n12" style="top: 750px; left: 150px;">
+                <div class="node-header">CONTINUOUS LEARNING</div>
+                <div class="icon-badge" style="bottom: -20px; left: -20px; color: #a16207;"><i class="fa-solid fa-recycle"></i></div>
+                <div class="node-content">
+                    <div class="node-title">Correction Loop</div>
+                    <p class="node-desc">Any edits made by Steve are logged to DB to improve next draft.</p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        window.onload = () => {
+            const opt = { color: '#1e3a8a', size: 3, path: 'fluid', endPlug: 'arrow3', dropShadow: true };
+            const aiOpt = { color: '#6b21a8', size: 3, path: 'fluid', endPlug: 'arrow3', dash: {animation: true} };
+            const actionOpt = { color: '#166534', size: 3, path: 'fluid', endPlug: 'arrow3' };
+
+            setTimeout(() => {
+                // Ingestion to Parsing
+                new LeaderLine(document.getElementById('n1'), document.getElementById('n2'), {...opt, startSocket: 'right', endSocket: 'left'});
+                
+                // Parsing to Memory & Rules
+                new LeaderLine(document.getElementById('n2'), document.getElementById('n3'), {...opt, startSocket: 'top', endSocket: 'left'});
+                new LeaderLine(document.getElementById('n2'), document.getElementById('n4'), {...opt, startSocket: 'bottom', endSocket: 'left'});
+                
+                // Memory & Rules to Intent
+                new LeaderLine(document.getElementById('n3'), document.getElementById('n5'), {...aiOpt, startSocket: 'right', endSocket: 'top'});
+                new LeaderLine(document.getElementById('n4'), document.getElementById('n5'), {...aiOpt, startSocket: 'right', endSocket: 'bottom'});
+                
+                // Intent to Tier & Sheets Sync
+                new LeaderLine(document.getElementById('n5'), document.getElementById('n6'), {...opt, startSocket: 'top', endSocket: 'left'});
+                new LeaderLine(document.getElementById('n5'), document.getElementById('n10'), {...actionOpt, startSocket: 'right', endSocket: 'left'});
+                
+                // Tier to Draft & WhatsApp
+                new LeaderLine(document.getElementById('n6'), document.getElementById('n7'), {...aiOpt, startSocket: 'bottom', endSocket: 'top'});
+                new LeaderLine(document.getElementById('n6'), document.getElementById('n9'), {...actionOpt, startSocket: 'right', endSocket: 'right', path: 'grid'});
+
+                // Draft to Human Queue
+                new LeaderLine(document.getElementById('n7'), document.getElementById('n8'), {...opt, startSocket: 'bottom', endSocket: 'right'});
+                
+                // WhatsApp to Human Queue
+                new LeaderLine(document.getElementById('n9'), document.getElementById('n8'), {...actionOpt, startSocket: 'left', endSocket: 'right'});
+
+                // Human to Execution
+                new LeaderLine(document.getElementById('n8'), document.getElementById('n11'), {...actionOpt, startSocket: 'left', endSocket: 'right'});
+                
+                // Execution to Correction Loop
+                new LeaderLine(document.getElementById('n11'), document.getElementById('n12'), {...opt, startSocket: 'left', endSocket: 'right'});
+                
+                // Correction loop back to Memory (Long curved line)
+                new LeaderLine(document.getElementById('n12'), document.getElementById('n3'), {
+                    color: '#a16207', size: 3, path: 'magnet', endPlug: 'arrow3', dash: {animation: true},
+                    startSocket: 'top', endSocket: 'top'
+                });
+
+            }, 200);
+        };
+    </script>
+</body>
+</html>

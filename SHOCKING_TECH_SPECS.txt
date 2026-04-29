@@ -1,0 +1,17 @@
+1. SOVEREIGN DUAL-BRAIN ARCHITECTURE:
+Uses Gemini 2.5 Flash for multimodal reasoning, with an automatic hardware fallback to local Ollama (Llama 3) for 100% data sovereignty.
+
+2. REAL-TIME ADMIN PATROL:
+Background workers written in FastAPI poll connected accounts every 15 seconds. It doesn't just notify; it drafts context-aware replies using historical RAG.
+
+3. MULTIMODAL PHOTO-TO-QUERY:
+Users upload site photos; the system uses Vision LLMs to extract "Construction Entities" (measurements, materials, damage) without manual input.
+
+4. VECTORIZED KNOWLEDGE BANK:
+Uses PostgreSQL with the pgvector extension to index every git commit, every email, and every site visit, allowing the "Twin" to learn the business's DNA.
+
+5. PHASE 2 - FULL OFFLINE EDGE AI:
+Roadmap includes deploying quantized 4-bit GGUF models directly onto mobile hardware using MediaPipe, enabling automation in remote areas without 4G/5G.
+
+6. ATO-COMPLIANT VOICE INVOICING:
+A zero-friction pipeline that takes raw speech, parses labor/material costs via LLM, and outputs a formatted PDF stored in an encrypted local volume.

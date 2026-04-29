@@ -133,7 +133,7 @@ async def site_visit_transcript(request: QuoteDraftRequest, req: Request) -> dic
     """
     from services.voice_to_actions import process_site_visit_transcript
     
-    user_id = getattr(req.state, "user_id", "default_user")
+    user_id = getattr(req.state, "user_id", "00000000-0000-0000-0000-000000000000")
     transcript = request.transcript
     
     if not transcript:

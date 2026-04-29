@@ -191,6 +191,7 @@ class _TwinChatScreenState extends State<TwinChatScreen> {
             _activeConvId = data['conversation_id'].toString();
           }
         });
+        _loadConversations();
         _scrollToBottom();
       }
     } catch (e) {
@@ -209,6 +210,7 @@ class _TwinChatScreenState extends State<TwinChatScreen> {
       _messages.clear();
       _activeConvId = null;
     });
+    _loadConversations();
   }
 
   void _scrollToBottom() {
@@ -506,13 +508,20 @@ class _TwinChatScreenState extends State<TwinChatScreen> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    'AI-generated suggestions. Steve remains the final authority.',
-                    style: TextStyle(color: AppColors.textDim, fontSize: 10),
-                    textAlign: TextAlign.center,
+                  Center(
+                    child: Text.rich(
+                      TextSpan(
+                        children: [
+                          const TextSpan(
+                            text: 'AI-generated suggestions. User remains the final authority.\n',
+                            style: TextStyle(color: AppColors.textDim, fontSize: 10),
+                          ),
+                        ],
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
                   ),
-                  const SizedBox(height: 4),
-                ],
+                  const SizedBox(height: 4),                ],
               ),
             ),
           ],

@@ -63,7 +63,7 @@ Be proactive. Offer specific help and follow through on tasks.""",
 
 def get_ai_provider():
     """Reads the AI_PROVIDER from .env and returns the correct service class instance."""
-    provider = os.getenv("AI_PROVIDER", "openrouter").lower()
+    provider = os.getenv("AI_PROVIDER", "ollama").lower()
 
     if provider == "ollama":
         from services.ollama_service import OllamaService
@@ -175,32 +175,46 @@ rag = RAGContextBuilder()
 # ── LLM call ──────────────────────────────────────────────────────────────────
 
 def _call_llm(system_context: str, messages: list[dict]) -> str:
-    """Gemini first, Ollama fallback, static fallback."""
+    """Ollama first if configured, else Gemini then Ollama fallback."""
+    provider = os.getenv("AI_PROVIDER", "ollama").lower()
+
+    # Try Ollama first if it's the preferred provider
+    if provider == "ollama":
+        try:
+            import ollama as _ollama
+            msgs = [{"role": "system", "content": system_context}] + messages
+            resp = _ollama.chat(model=os.getenv("OLLAMA_MODEL", "llama3.2"), messages=msgs)
+            return resp["message"]["content"]
+        except Exception as e:
+            logger.warning(f"Ollama failed as primary: {e}")
+
     # Try Gemini
     try:
         from google import genai
-        client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-        history = []
-        for m in messages[:-1]:  # all but last user turn
-            history.append({"role": m["role"], "parts": [{"text": m["content"]}]})
-        last_msg = messages[-1]["content"]
-        full_prompt = system_context + "\n\n" + last_msg
-        resp = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=full_prompt,
-        )
-        return resp.text
+        client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+        if client:
+            history = []
+            for m in messages[:-1]:  # all but last user turn
+                history.append({"role": m["role"], "parts": [{"text": m["content"]}]})
+            last_msg = messages[-1]["content"]
+            full_prompt = system_context + "\n\n" + last_msg
+            resp = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=full_prompt,
+            )
+            return resp.text
     except Exception as e:
         logger.warning(f"Gemini failed in twin engine: {e}")
 
-    # Try Ollama
-    try:
-        import ollama as _ollama
-        msgs = [{"role": "system", "content": system_context}] + messages
-        resp = _ollama.chat(model=os.getenv("OLLAMA_MODEL", "all-minilm:l6-v2"), messages=msgs)
-        return resp["message"]["content"]
-    except Exception as e:
-        logger.warning(f"Ollama failed in twin engine: {e}")
+    # Final Ollama fallback if not already tried as primary
+    if provider != "ollama":
+        try:
+            import ollama as _ollama
+            msgs = [{"role": "system", "content": system_context}] + messages
+            resp = _ollama.chat(model=os.getenv("OLLAMA_MODEL", "llama3.2"), messages=msgs)
+            return resp["message"]["content"]
+        except Exception as e:
+            logger.warning(f"Ollama fallback failed: {e}")
 
     return "I'm having trouble connecting to the AI right now. Please try again in a moment."
 

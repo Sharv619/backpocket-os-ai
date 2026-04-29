@@ -647,6 +647,14 @@ class ApiService {
     return await _handleResponse(res);
   }
 
+  Future<Map<String, dynamic>> getBlogLibrary({int limit = 30}) async {
+    final res = await http.get(
+      Uri.parse('$baseUrl/api/blog/library?limit=$limit'),
+      headers: _headers,
+    ).timeout(_tAI);
+    return await _handleResponse(res);
+  }
+
   // ── Drive Integration ─────────────────────────────────────────────────────
   Future<Map<String, dynamic>> syncDriveToRag(
     String folderId, {

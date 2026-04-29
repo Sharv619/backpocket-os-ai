@@ -1,4 +1,4 @@
-package com.backpocket.backpocket_mobile
+package com.backpocket.os
 
 import io.flutter.embedding.android.FlutterActivity
 

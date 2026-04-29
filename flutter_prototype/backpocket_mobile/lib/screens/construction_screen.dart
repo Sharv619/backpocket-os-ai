@@ -436,7 +436,7 @@ class _ConstructionScreenState extends State<ConstructionScreen>
     return Stack(
       children: [
         _leads.isEmpty
-            ? Center(child: Text('No leads yet.\nTap mic to log a new enquiry.',
+            ? Center(child: Text('No leads yet.\nTap below to log a new enquiry.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey[400])))
             : RefreshIndicator(
@@ -461,7 +461,7 @@ class _ConstructionScreenState extends State<ConstructionScreen>
             onPressed: _openVoiceEnquiry,
             backgroundColor: AppColors.orange,
             foregroundColor: Colors.white,
-            icon: const Icon(Icons.mic),
+            icon: const Icon(Icons.keyboard_voice),
             label: const Text('New Enquiry', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ),
@@ -509,7 +509,7 @@ class _ConstructionScreenState extends State<ConstructionScreen>
             },
             backgroundColor: AppColors.orange,
             foregroundColor: Colors.white,
-            icon: const Icon(Icons.receipt_long),
+            icon: const Icon(Icons.keyboard_voice),
             label: const Text('Voice Invoice', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ),

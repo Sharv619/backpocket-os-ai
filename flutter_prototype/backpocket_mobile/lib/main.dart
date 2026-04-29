@@ -171,7 +171,7 @@ class AppShell extends StatefulWidget {
 }
 class _AppShellState extends State<AppShell> {
   late int _tab;
-  String _serverUrl = 'http://127.0.0.1:8000';
+  String _serverUrl = 'http://192.168.1.147:8000';
   String _apiKey = '';
   bool _magnifierMode = false;
   VoiceCommandService? _voiceService;
@@ -237,7 +237,7 @@ class _AppShellState extends State<AppShell> {
   Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _serverUrl = prefs.getString('server_url') ?? 'http://127.0.0.1:8000';
+      _serverUrl = prefs.getString('server_url') ?? 'http://192.168.1.147:8000';
       _apiKey = prefs.getString('api_key') ?? '';
       _voiceService = VoiceCommandService(baseUrl: _serverUrl, apiKey: _apiKey);
       _pages = _buildPages();
@@ -366,9 +366,17 @@ class _AppShellState extends State<AppShell> {
               ),
             ),
             const Divider(color: AppColors.border, height: 1),
-            // Removed duplicate Settings entry – already included in navItems list above.
-            // The Settings item is now only present once in the drawer navigation.
-            // This ensures a single source of truth for its routing and selection state.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: Text(
+                'hlade03@gmail.com for live demo',
+                style: const TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 11,
+                  height: 1.4,
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -530,14 +538,7 @@ class _AppShellState extends State<AppShell> {
           BottomNavigationBarItem(icon: Icon(Icons.settings_outlined), label: 'Settings'),
         ],
       ),
-      floatingActionButton: _voiceService != null
-          ? VoiceFab(
-              voiceService: _voiceService!,
-              onTap: _onVoiceFabTap,
-              onLongPress: () => setState(() => _showVoiceOverlay = true),
-            )
-          : null,
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      floatingActionButton: null,
     );
   }
 }

@@ -29,6 +29,72 @@ VISION_MODELS = [
 ]
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
 
+# ── Paperless-ngx OCR config ─────────────────────────────────────────────────
+PAPERLESS_URL = os.getenv("PAPERLESS_URL", "http://localhost:8010")
+PAPERLESS_TOKEN = os.getenv("PAPERLESS_TOKEN", "")
+
+
+def _ocr_via_paperless(file_path: str, timeout: int = 120) -> str | None:
+    """Upload image to Paperless-ngx, wait for OCR, return extracted text."""
+    if not PAPERLESS_TOKEN:
+        logger.debug("PAPERLESS_TOKEN not set — skipping Paperless OCR")
+        return None
+    headers = {"Authorization": f"Token {PAPERLESS_TOKEN}"}
+    try:
+        with open(file_path, "rb") as f:
+            resp = requests.post(
+                f"{PAPERLESS_URL}/api/documents/post_document/",
+                headers=headers,
+                files={"document": f},
+                timeout=30,
+            )
+        if resp.status_code not in (200, 202):
+            logger.warning(f"Paperless upload failed: {resp.status_code}")
+            return None
+        raw = resp.json()
+        task_id = raw if isinstance(raw, str) else raw.get("task_id", "")
+        logger.info(f"Paperless OCR task: {task_id}")
+
+        import time
+        for i in range(timeout // 3):
+            time.sleep(3)
+            task_resp = requests.get(
+                f"{PAPERLESS_URL}/api/tasks/",
+                headers=headers, timeout=10,
+            )
+            if task_resp.status_code != 200:
+                continue
+            all_tasks = task_resp.json()
+            results = all_tasks if isinstance(all_tasks, list) else all_tasks.get("results", [])
+            for t in results:
+                if t.get("task_id") != task_id:
+                    continue
+                if t.get("status") == "SUCCESS" and t.get("related_document"):
+                    doc_id = t["related_document"]
+                    doc_resp = requests.get(
+                        f"{PAPERLESS_URL}/api/documents/{doc_id}/",
+                        headers=headers, timeout=10,
+                    )
+                    if doc_resp.status_code == 200:
+                        content = doc_resp.json().get("content", "")
+                        if content.strip():
+                            logger.info(f"Paperless OCR success: {len(content)} chars")
+                            return content
+                    return None
+                elif t.get("status") == "FAILURE":
+                    logger.warning(f"Paperless OCR task failed: {t.get('result')}")
+                    return None
+                elif t.get("status") in ("STARTED", "PENDING"):
+                    if i % 5 == 0:
+                        logger.info(f"Paperless OCR still processing... ({i*3}s)")
+                    break
+        logger.warning("Paperless OCR timed out after 120s")
+        return None
+    except Exception as e:
+        logger.warning(f"Paperless OCR error: {e}")
+        return None
+
+
 # Known valid image magic bytes
 _IMAGE_MAGIC = {
     b"\xff\xd8\xff": "jpeg",
@@ -257,19 +323,32 @@ def analyze_document(doc_id, custom_prompt: str | None = None):
     used_model = None
 
     # ---------------------------------------------------------------------
-    # Vision model call – Ollama first, fallback to OpenRouter, then OCR.
+    # Vision cascade: Paperless OCR → Ollama moondream → OpenRouter → RAG
     # ---------------------------------------------------------------------
-    try:
-        logger.info(f"Vision analysis: trying {OLLAMA_VISION_MODEL} for doc {doc_id}")
-        response = ollama.chat(
-            model=OLLAMA_VISION_MODEL,
-            messages=[{"role": "user", "content": prompt, "images": [image_b64]}],
-        )
-        ai_response = response["message"]["content"]
-        used_model = f"ollama/{OLLAMA_VISION_MODEL}"
-        logger.info(f"Vision analysis success with {OLLAMA_VISION_MODEL} ({len(ai_response)} chars)")
-    except Exception as e:
-        logger.warning(f"Ollama vision failed: {e}. Trying OpenRouter fallback...")
+
+    # Layer 1: Paperless-ngx OCR (fast, local, no GPU needed)
+    if not ai_response:
+        ocr_text = _ocr_via_paperless(file_path)
+        if ocr_text:
+            ai_response = f"[Paperless OCR]\n{ocr_text.strip()}"
+            used_model = "paperless_ocr"
+
+    # Layer 2: Ollama moondream (local vision, needs GPU/CPU time)
+    if not ai_response:
+        try:
+            logger.info(f"Vision analysis: trying {OLLAMA_VISION_MODEL} for doc {doc_id}")
+            response = ollama.chat(
+                model=OLLAMA_VISION_MODEL,
+                messages=[{"role": "user", "content": prompt, "images": [image_b64]}],
+            )
+            ai_response = response["message"]["content"]
+            used_model = f"ollama/{OLLAMA_VISION_MODEL}"
+            logger.info(f"Vision analysis success with {OLLAMA_VISION_MODEL} ({len(ai_response)} chars)")
+        except Exception as e:
+            logger.warning(f"Ollama vision failed: {e}")
+
+    # Layer 3: OpenRouter cloud vision (costs money)
+    if not ai_response:
         for model in VISION_MODELS:
             try:
                 ai_response = _call_openrouter_vision(image_b64, prompt, model)
@@ -278,24 +357,8 @@ def analyze_document(doc_id, custom_prompt: str | None = None):
             except Exception as e2:
                 logger.warning(f"OpenRouter vision {model} failed: {e2}")
 
-    # ---------------------------------------------------------------------
-    # If all vision attempts failed, fall back to OCR then RAG.
-    # ---------------------------------------------------------------------
+    # Layer 4: RAG fallback
     if not ai_response:
-        try:
-            from PIL import Image
-            import pytesseract
-            temp_image_path = os.path.join(TEMP_PATH, f"ocr_{doc_id}.png")
-            with open(temp_image_path, "wb") as f_ocr:
-                f_ocr.write(base64.b64decode(image_b64))
-            ocr_text = pytesseract.image_to_string(Image.open(temp_image_path))
-            ai_response = f"[OCR FALLBACK]\n{ocr_text.strip()}"
-            used_model = "local_ocr"
-            logger.info("Vision fallback: Tesseract OCR succeeded")
-        except Exception as ocr_err:
-            logger.warning(f"OCR fallback failed: {ocr_err}")
-        # RAG fallback if OCR also failed
-        if not ai_response:
             logger.warning(f"[VISION] All models failed for doc {doc_id}. Attempting RAG fallback.")
             try:
                 from services.agentic_rag import get_agentic_rag
@@ -335,15 +398,23 @@ def analyze_document(doc_id, custom_prompt: str | None = None):
     try:
         entity_prompt = _construction_entity_prompt()
         entity_response = None
-        # Re‑use the same model that succeeded earlier for consistency.
-        if used_model.startswith("ollama"):
+        if used_model == "paperless_ocr":
+            from services.gemini import get_gemini_client
+            client = get_gemini_client()
+            if client:
+                resp = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=f"{entity_prompt}\n\nDocument text:\n{ai_response}",
+                    config={"response_mime_type": "application/json"},
+                )
+                entity_response = resp.text if resp and resp.text else None
+        elif used_model.startswith("ollama"):
             response = ollama.chat(
                 model=OLLAMA_VISION_MODEL,
                 messages=[{"role": "user", "content": entity_prompt, "images": [image_b64]}],
             )
             entity_response = response["message"]["content"]
         else:
-            # OpenRouter fallback – use the same model that succeeded earlier.
             entity_response = _call_openrouter_vision(image_b64, entity_prompt, used_model.split('/')[-1])
         # Ensure JSON validity then store.
         try:
@@ -471,3 +542,48 @@ def analyze_building_image(image_b64: str, analysis_type: str = "material") -> d
         return result
     except _json.JSONDecodeError:
         return {"analysis_type": analysis_type, "raw": raw, "parse_error": "Could not parse JSON from AI response"}
+
+def vision_query_gemini(image_bytes: bytes, user_query: str) -> dict:
+    """
+    Prompt 2: Multimodal Photo-to-Query logic.
+    Uses Gemini 2.5 Flash for material estimation/measurements.
+    """
+    from services.gemini import get_gemini_client
+    import PIL.Image
+    import io
+    import json as _json
+
+    client = get_gemini_client()
+    if not client:
+        return {"error": "Gemini client not initialized"}
+
+    try:
+        img = PIL.Image.open(io.BytesIO(image_bytes))
+        
+        prompt = f"""
+        User Query: {user_query}
+        
+        Analyze this site photo and answer the user's query with a focus on construction accuracy.
+        You MUST return a strict JSON structure containing:
+        {{
+          "estimated_measurements": {{ "key": "value" }}, 
+          "required_materials": ["item1", "item2"], 
+          "confidence_score": float (0.0 to 1.0),
+          "analysis": "brief explanation"
+        }}
+        Return ONLY the JSON.
+        """
+        
+        # Using the new google-genai SDK format
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[prompt, img],
+            config={"response_mime_type": "application/json"}
+        )
+        
+        if response and response.text:
+            return _json.loads(response.text)
+        return {"error": "Empty response from Gemini"}
+    except Exception as e:
+        logger.error(f"vision_query_gemini error: {e}")
+        return {"error": str(e)}

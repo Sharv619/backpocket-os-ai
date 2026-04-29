@@ -1,11 +1,10 @@
 import logging
+import os
 from fastapi import APIRouter, Request
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-
-from services.pgvector_rag import rag_chat
 
 @router.get("/api/twins")
 async def get_twins():
@@ -16,25 +15,107 @@ async def get_twins():
 
 @router.post("/api/twins/chat")
 async def twins_chat(request: Request):
-    """Chat with a specialized twin using Postgres pgvector RAG."""
+    """Twin chat endpoint using the older mobile-chat style prompt path."""
     try:
         data = await request.json()
         message = data.get("message", "")
         twin_type = data.get("twin_type", "estimator")
-        # Note: Postgres RAG currently doesn't handle conversation history in rag_chat
-        # but we should at least get the response working.
-        
+        conversation_id = data.get("conversation_id")
+
         if not message:
             return {"error": "message is required"}, 400
 
-        user_id = getattr(request.state, "user_id", "default_user")
-        
-        response_text = await rag_chat(user_id, message, twin_type)
-        
+        from services.memory import (
+            auto_title_if_needed,
+            create_conversation,
+            get_conversation_messages,
+            save_message_instant,
+        )
+        from services.twin_brain import build_twin_context
+
+        if not conversation_id:
+            conversation_id = create_conversation(source="twin")
+
+        save_message_instant(conversation_id, "user", message)
+        prior_messages = get_conversation_messages(conversation_id, limit=12)
+        history = [
+            {"role": msg["role"], "content": msg["content"]}
+            for msg in prior_messages[:-1]
+            if msg.get("role") in {"user", "assistant"} and msg.get("content")
+        ]
+
+        context = ""
+        try:
+            context = build_twin_context()
+        except Exception:
+            pass
+
+        _owner = os.getenv("BP_OWNER_NAME", "the founder")
+        _sector = os.getenv("BP_BUSINESS_TYPE", "business")
+        twin_hint = {
+            "estimator": "Focus on quoting, pricing, scope, margin, and commercial judgement.",
+            "site_manager": "Focus on delivery, sequencing, materials, risks, defects, and site operations.",
+            "admin": "Focus on inbox, follow-ups, scheduling, and practical business admin.",
+        }.get(twin_type, "")
+
+        system_prompt = (
+            f"You are BackPocket OS for {_owner}. "
+            f"You help run a {_sector} in a direct, Australian-practical way. "
+            "Do not sound like a generic AI assistant. "
+            "No hype, no filler, no 'as an AI'. "
+            "Keep replies human, switched-on, and useful.\n\n"
+            f"{twin_hint}\n\n"
+            f"{context}"
+        )
+
+        reply = None
+
+        if os.getenv("FORCE_OLLAMA_DEMO") == "1":
+            import ollama
+
+            response = ollama.chat(
+                model="llama3.2:1b",
+                messages=[{"role": "system", "content": system_prompt}] + history[-8:] + [
+                    {"role": "user", "content": message}
+                ],
+            )
+            reply = response["message"]["content"]
+        else:
+            from services.gemini import get_gemini_client
+            from google.genai import types as genai_types
+
+            client = get_gemini_client()
+            if not client:
+                reply = "AI not available — check GEMINI_API_KEY."
+            else:
+                conversation_text = "\n".join(
+                    f"{'User' if msg['role'] == 'user' else 'BackPocket'}: {msg['content']}"
+                    for msg in history[-8:]
+                )
+                prompt = message
+                if conversation_text:
+                    prompt = (
+                        "Continue this existing conversation naturally.\n\n"
+                        f"{conversation_text}\n"
+                        f"User: {message}"
+                    )
+
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=prompt,
+                    config=genai_types.GenerateContentConfig(
+                        system_instruction=system_prompt
+                    ),
+                )
+                reply = response.text or "Sorry, no response generated."
+
+        save_message_instant(conversation_id, "assistant", reply)
+        auto_title_if_needed(conversation_id)
+
         return {
-            "response": response_text,
+            "response": reply,
             "twin_type": twin_type,
-            "conversation_id": data.get("conversation_id", "default_conv")
+            "conversation_id": conversation_id,
         }
     except Exception as e:
         logger.error(f"Twins chat error: {e}", exc_info=True)

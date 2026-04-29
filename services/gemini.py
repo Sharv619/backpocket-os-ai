@@ -612,6 +612,43 @@ def pre_triage_rules(email_content):
     if len(snippet.split()) > 10:
         return None
 
+    # 0. Known low-value product notifications and newsletters
+    low_value_sender_keywords = [
+        "newsletters-noreply@linkedin.com",
+        "notifications@github.com",
+        "noreply@github.com",
+        "googleplay-noreply@google.com",
+        "playpartners-noreply@google.com",
+        "notify@mail.notion.so",
+        "news@alphasignal.ai",
+    ]
+    low_value_subject_keywords = [
+        "order receipt",
+        "google play order receipt",
+        "run failed:",
+        "a third-party oauth application has been added",
+        "page shared with you",
+        "special report",
+        "cheat sheet",
+        "live now",
+    ]
+    if any(k in sender_email for k in low_value_sender_keywords):
+        tier = 5 if any(k in subject for k in ["special report", "cheat sheet", "live now"]) else 4
+        return {
+            "tier": tier,
+            "reason": "Automated rule: Known low-value notification/newsletter sender.",
+            "actionable_items": "None",
+            "is_portal_update": tier == 4,
+        }
+    if any(k in subject for k in low_value_subject_keywords):
+        tier = 5 if any(k in subject for k in ["special report", "cheat sheet", "live now"]) else 4
+        return {
+            "tier": tier,
+            "reason": "Automated rule: Known low-value notification/newsletter subject.",
+            "actionable_items": "None",
+            "is_portal_update": tier == 4,
+        }
+
     # 1. Obvious Spam (Tier 5)
     spam_keywords = [
         "unsubscribe",
@@ -669,9 +706,30 @@ def triage_email(email_content, client_context=None):
         if pre_triage:
             return pre_triage
 
-        # --- LAYER 1: GEMINI (PAID/LIMITED) ---
+        # --- LAYER 1: OLLAMA (PRIORITY IF CONFIGURED) ---
+        provider = os.getenv("AI_PROVIDER", "ollama").lower()
+        if provider == "ollama":
+            fallback_prompt = (
+                f"Triage this email based on these tiers:\n"
+                f"Tier 1: Active Clients\n"
+                f"Tier 2: Govt/Assoc\n"
+                f"Tier 3: Suppliers\n"
+                f"Tier 4: Portals\n"
+                f"Tier 5: Spam\n\n"
+                f"Subject: {email_content.get('subject')}\n"
+                f"Snippet: {email_content.get('snippet')}\n\n"
+                f"Return JSON: {{\"tier\": 1, \"reason\": \"...\", \"actionable_items\": \"...\"}}"
+            )
+            ollama_res = get_ollama_response(fallback_prompt, json_mode=True)
+            if ollama_res:
+                try:
+                    return json.loads(ollama_res)
+                except Exception:
+                    pass
+
+        # --- LAYER 2: GEMINI / OPENROUTER (FALLBACK) ---
         client = get_gemini_client()
-        if not client:
+        if not client and provider != "ollama":
             return {"tier": 5, "reason": "Gemini client not initialized"}
 
         context_str = (
@@ -835,44 +893,50 @@ Generate a concise (2-4 sentences), professional response draft. Sign off as {OW
 
 
 def draft_response(email_content, tier, historical_context="", client_info=None):
-    """Generates a professional draft response using cost-optimized ML router.
+    """Generates a professional draft response using cost-optimized ML router."""
+    provider = os.getenv("AI_PROVIDER", "ollama").lower()
+    
+    # Respect provider setting
+    if provider == "ollama":
+        try:
+            subject = email_content.get("subject", "")
+            snippet = email_content.get("snippet", "")
+            prompt = f"Write a professional email draft as {OWNER_NAME} replying to this:\nSubject: {subject}\nSnippet: {snippet}\nKeep it brief and friendly."
+            
+            ollama_res = get_ollama_response(prompt)
+            if ollama_res and ollama_res != "Error generating draft.":
+                logger.info("💾 Used Ollama for draft")
+                return ollama_res
+        except Exception as e:
+            logger.warning(f"Ollama failed: {e}")
+            return "Error generating draft with Ollama."
 
-    Strategy:
-    1. Low-entropy emails: Use template
-    2. Medium-entropy: Use Ollama (local, no cost)
-    3. High-entropy: Use OpenRouter/Gemini
-    """
     # Cost optimization: Check if full AI is needed
     entropy = calculate_entropy(
         email_content.get("subject", "") + " " + email_content.get("snippet", "")
     )
     logger.info(f"📊 Email entropy: {entropy} (Tier {tier})")
 
+
     if not _should_use_full_ai(email_content, tier) and entropy < 3.0 and tier != 1:
         # Simple template for low-complexity emails (but NOT for Tier 1 important clients)
         logger.info("💰 Using template (low entropy, saves API cost)")
-        email_content.get("subject", "")
         return "Thanks for reaching out. I'll review this and get back to you shortly."
 
-    # Try Ollama first (local, cheap) – note that this uses the generic prompt (subject + snippet).
-    try:
-        ollama_res = get_ollama_response(
-            email_content.get("subject", "") + " " + email_content.get("snippet", "")
-        )
-        if ollama_res and ollama_res != "Error generating draft.":
-            logger.info("💾 Used Ollama for draft (local) before OpenRouter")
-            return ollama_res
-    except Exception as e:
-        logger.warning(f"Ollama failed: {e}")
+    # If provider is gemini, jump straight to it. If it's ollama but failed, fallback logic follows.
+    if provider != "gemini":
+        # Try Ollama first (local, cheap) – note that this uses the generic prompt (subject + snippet).
+        try:
+            ollama_res = get_ollama_response(
+                email_content.get("subject", "") + " " + email_content.get("snippet", "")
+            )
+            if ollama_res and ollama_res != "Error generating draft.":
+                logger.info("💾 Used Ollama for draft (local) before OpenRouter")
+                return ollama_res
+        except Exception as e:
+            logger.warning(f"Ollama failed: {e}")
 
-    # Fallback to OpenRouter if Ollama didn't produce a draft.
-    openrouter_draft = _draft_response_openrouter(
-        email_content, tier, historical_context, client_info
-    )
-    if openrouter_draft:
-        return openrouter_draft
-
-    # Fall back to Gemini (may be rate limited)
+    # Primary choice: Gemini Flash
     try:
         client = get_gemini_client()
         if not client:
@@ -885,11 +949,12 @@ def draft_response(email_content, tier, historical_context="", client_info=None)
         )
         client_info.get("first_name", "there") if client_info else "there"
 
-        # Load Steve's Style Guide from file
+        # Load the style guide and inject it into the prompt.
+        style_guide = ""
         style_path = os.path.join("docs", "CHERRY_STYLE.txt")
         if os.path.exists(style_path):
             with open(style_path, "r", encoding="utf-8") as f:
-                f.read()
+                style_guide = f.read().strip()
 
         # Load corrections history for learning (especially for Tier 1 clients)
         corrections_context = ""
@@ -938,22 +1003,23 @@ def draft_response(email_content, tier, historical_context="", client_info=None)
 
         # Get sender-specific instructions for Twin
         sender_instructions = ""
+        sender_record = None
         if email_sender:
             try:
                 import services.database as db
 
-                sender_info = db.get_sender_instruction(email_sender)
-                if sender_info and sender_info.get("instructions"):
-                    sender_instructions = f"\n\nSPECIAL INSTRUCTIONS FOR THIS SENDER:\n{sender_info['instructions']}\n"
-                    if sender_info.get("category"):
-                        sender_instructions += f"Category: {sender_info['category']}\n"
+                sender_record = db.get_sender_instruction(email_sender)
+                if sender_record and sender_record.get("instructions"):
+                    sender_instructions = f"\n\nSPECIAL INSTRUCTIONS FOR THIS SENDER:\n{sender_record['instructions']}\n"
+                    if sender_record.get("category"):
+                        sender_instructions += f"Category: {sender_record['category']}\n"
             except Exception as e:
                 logger.warning(f"Could not load sender instructions: {e}")
 
         # Extract sender's name from email for personalization
-        sender_info = email_content.get("sender", "")
+        sender_text = email_content.get("sender", "")
         sender_name = "there"
-        if sender_info and "@" in sender_info:
+        if sender_text and "@" in sender_text:
             # Try to get name from sender info - could be "Name <email>" format
             from_name = email_content.get("from_name", "")
             if from_name:
@@ -969,7 +1035,7 @@ def draft_response(email_content, tier, historical_context="", client_info=None)
             inst_text = sender_instructions.lower()
             if (
                 "builder tracker" in inst_text
-                or "builder" in sender_info.get("category", "").lower()
+                or "builder" in (sender_record or {}).get("category", "").lower()
             ):
                 suggested_actions.append(
                     {
@@ -991,6 +1057,9 @@ def draft_response(email_content, tier, historical_context="", client_info=None)
         You are {OWNER_NAME}, founder of BackPocket OS — an AI Business Operating System.
         Rewrite this email AS IF YOU wrote it.
 
+        STYLE GUIDE (follow this voice closely):
+        {style_guide}
+
         MANDATORY SELF-CHECK RULES:
         - Only write facts from the email, don't hallucinate
         - If unsure about something, ask the user
@@ -1011,7 +1080,7 @@ def draft_response(email_content, tier, historical_context="", client_info=None)
         ORIGINAL EMAIL:
         Subject: {email_content.get("subject")}
         From: {email_content.get("sender", "")}
-        Body: {email_content.get("snippet")}
+        Body: {email_content.get("body") or email_content.get("snippet")}
 
         Rewrite {OWNER_NAME}'s reply (use their first name if known):
         """
@@ -1025,28 +1094,58 @@ def draft_response(email_content, tier, historical_context="", client_info=None)
         return {
             "draft": response_text,
             "suggested_actions": suggested_actions,
-            "sender_instructions": sender_info.get("instructions", "")
-            if sender_info
+            "sender_instructions": sender_record.get("instructions", "")
+            if sender_record
             else "",
         }
     except Exception as e:
-        logger.error(f"GEMINI DRAFT FAIL: {e}. Falling back to Ollama...")
+        logger.error(f"GEMINI DRAFT FAIL: {e}. Falling back to OpenRouter/Ollama...")
+
+    # Fallback 1: OpenRouter
+    openrouter_draft = _draft_response_openrouter(
+        email_content, tier, historical_context, client_info
+    )
+    if openrouter_draft:
+        return openrouter_draft
+
+    # Fallback 2: Ollama
+    try:
         fallback_prompt = (
             email_content.get("subject", "") + " " + email_content.get("snippet", "")
         )
         ollama_res = get_ollama_response(fallback_prompt)
         if ollama_res:
             return ollama_res
-        return "Error generating draft."
+    except Exception as e:
+        logger.warning(f"Ollama draft fallback failed: {e}")
+    return "Error generating draft."
 
 
 def refine_draft(email_content, original_draft, feedback):
     """Refines an existing draft based on founder's feedback."""
     prompt = f"Refine: {original_draft}\nFeedback: {feedback}"
+    
+    provider = os.getenv("AI_PROVIDER", "ollama").lower()
+    if provider == "ollama":
+        ollama_res = get_ollama_response(prompt)
+        if ollama_res:
+            return ollama_res
+        return "Ollama failed to refine draft."
+
     try:
         client = get_gemini_client()
-        if not client:
+        if not client and provider != "ollama":
             return "Gemini client not initialized."
+
+        # If gemini is not specified as primary, try Ollama first for cost savings
+        if provider != "gemini":
+            try:
+                ollama_res = get_ollama_response(prompt)
+                if ollama_res and ollama_res != "Error generating draft.":
+                    return ollama_res
+            except Exception:
+                pass
+
 
         # Load previous corrections to learn Steve's preferences
         corrections_learn = ""
@@ -1115,13 +1214,31 @@ def batch_triage_emails(emails_list: list):
         logger.info("Batch triage called with empty list.")
         return {}
 
+    provider = os.getenv("AI_PROVIDER", "ollama").lower()
+    if provider == "ollama":
+        fallback_results = {}
+        for email in emails_list:
+            msg_id = email.get("id")
+            # Reuse the triage prompt logic for individual emails
+            prompt = f"Triage email:\nSubject: {email.get('subject')}\nSnippet: {email.get('snippet')}\nReturn JSON."
+            ollama_res = get_ollama_response(prompt, json_mode=True)
+            if ollama_res:
+                try:
+                    fallback_results[msg_id] = json.loads(ollama_res)
+                except Exception:
+                    fallback_results[msg_id] = {"tier": 5, "reason": "Ollama parse error"}
+            else:
+                fallback_results[msg_id] = {"tier": 5, "reason": "Ollama error"}
+        return fallback_results
+
     try:
         client = get_gemini_client()
-        if not client:
+        if not client and provider != "ollama":
             return {
                 e.get("id"): {"tier": 5, "reason": "Gemini not initialized"}
                 for e in emails_list
             }
+
 
         # Stringify the batch for the prompt
         emails_str = ""
@@ -1142,6 +1259,12 @@ def batch_triage_emails(emails_list: list):
     - TIER 4 (PORTAL / UPDATES / DIGESTS): Suitedash Digests. Action: Log & Archive.
     - TIER 5 (SPAM): Anything else (Marketing, Promo, Unsubscribe). Action: Trash.
 
+    SPECIAL CATEGORIZATION FOR TRADIES (If email mentions images or has context of a job site):
+    - "Invoice": Financial document for materials or labor.
+    - "Site Photo": Photo of a room, backyard, or job progress.
+    - "Sketch": Drawings or plans for a project.
+    - "General Inquiry": Question about quotes or availability.
+
         EMAILS TO ANALYZE:
         {emails_str}
 
@@ -1149,13 +1272,15 @@ def batch_triage_emails(emails_list: list):
         You MUST return a JSON object where each key is the MESSAGE_ID provided above.
         The value for each key must be the triage data object.
         
-        "reason" field must be a short, professional explanation of WHY this tier was chosen (e.g., "Regular supplier invoice requiring payment" or "High-value lead from potential new client").
+        "reason" field must be a short, professional explanation of WHY this tier was chosen.
+        "tradie_category" field MUST be one of: "Invoice", "Site Photo", "Sketch", "General Inquiry", or "Other".
         
         Example:
         {{
           "msg_id_abc": {{
             "tier": 1, 
             "reason": "Direct inquiry from active client regarding new project.", 
+            "tradie_category": "General Inquiry",
             "action_plan": "Draft response and schedule site visit",
             "is_urgent": false,
             "is_expense": false,
