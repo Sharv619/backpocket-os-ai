@@ -6,6 +6,7 @@ import '../models/pending_email.dart';
 import '../models/lead.dart';
 import '../models/quote.dart';
 import '../models/payment.dart';
+import 'server_url.dart';
 
 class ApiClient {
   static ApiClient? _instance;
@@ -15,7 +16,9 @@ class ApiClient {
   static Future<ApiClient> getInstance() async {
     if (_instance != null) return _instance!;
     final prefs = await SharedPreferences.getInstance();
-    _baseUrl = prefs.getString('server_url') ?? 'http://127.0.0.1:8000';
+    _baseUrl = normalizeServerUrl(
+      prefs.getString('server_url') ?? 'http://127.0.0.1:8000',
+    );
     _apiKey = prefs.getString('api_key') ?? '';
     _instance = ApiClient._();
     return _instance!;
@@ -33,9 +36,10 @@ class ApiClient {
 
   Future<void> setCredentials(String url, String key) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('server_url', url);
+    final normalizedUrl = normalizeServerUrl(url);
+    await prefs.setString('server_url', normalizedUrl);
     await prefs.setString('api_key', key);
-    _baseUrl = url;
+    _baseUrl = normalizedUrl;
     _apiKey = key;
   }
 

@@ -2,10 +2,19 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/voice_command_response.dart';
+import 'server_url.dart';
 import 'tts_service.dart';
 import 'offline_queue_service.dart';
 
-enum VoiceFlowState { idle, recording, transcribing, processing, speaking, error, queuedOffline }
+enum VoiceFlowState {
+  idle,
+  recording,
+  transcribing,
+  processing,
+  speaking,
+  error,
+  queuedOffline,
+}
 
 class VoiceCommandService extends ChangeNotifier {
   final String baseUrl;
@@ -22,8 +31,9 @@ class VoiceCommandService extends ChangeNotifier {
   int? _selectedItemId;
   int? _tabIndex;
 
-  VoiceCommandService({required this.baseUrl, this.apiKey = ''}) {
-    _tts = TtsService(baseUrl: baseUrl, apiKey: apiKey);
+  VoiceCommandService({required String baseUrl, this.apiKey = ''})
+    : baseUrl = normalizeServerUrl(baseUrl) {
+    _tts = TtsService(baseUrl: this.baseUrl, apiKey: apiKey);
   }
 
   VoiceFlowState get state => _state;
@@ -31,7 +41,8 @@ class VoiceCommandService extends ChangeNotifier {
   String? get lastTranscript => _lastTranscript;
   String? get errorMessage => _errorMessage;
   String? get sessionId => _sessionId;
-  bool get isActive => _state != VoiceFlowState.idle && _state != VoiceFlowState.queuedOffline;
+  bool get isActive =>
+      _state != VoiceFlowState.idle && _state != VoiceFlowState.queuedOffline;
   bool get isCollecting => _lastResponse?.sessionState?.isCollecting ?? false;
   bool get isConfirming => _lastResponse?.sessionState?.isConfirming ?? false;
   String? get followUpPrompt => _lastResponse?.followUpPrompt;
@@ -60,12 +71,10 @@ class VoiceCommandService extends ChangeNotifier {
         transcript: transcript,
         screenContext: _currentScreen,
         sessionId: _sessionId,
-        metadata: {
-          'selected_item_id': _selectedItemId,
-          'tab_index': _tabIndex,
-        },
+        metadata: {'selected_item_id': _selectedItemId, 'tab_index': _tabIndex},
       );
-      _errorMessage = 'No reception. Pip saved your command and will process it when online.';
+      _errorMessage =
+          'No reception. Pip saved your command and will process it when online.';
       _state = VoiceFlowState.queuedOffline;
       notifyListeners();
       return null;
@@ -125,13 +134,11 @@ class VoiceCommandService extends ChangeNotifier {
         transcript: "Pending transcription...",
         screenContext: _currentScreen,
         sessionId: _sessionId,
-        metadata: {
-          'selected_item_id': _selectedItemId,
-          'tab_index': _tabIndex,
-        },
+        metadata: {'selected_item_id': _selectedItemId, 'tab_index': _tabIndex},
         audioPath: audioPath,
       );
-      _errorMessage = 'No reception. Pip saved your recording and will transcribe it when online.';
+      _errorMessage =
+          'No reception. Pip saved your recording and will transcribe it when online.';
       _state = VoiceFlowState.queuedOffline;
       notifyListeners();
       return null;
@@ -184,7 +191,9 @@ class VoiceCommandService extends ChangeNotifier {
     try {
       final uri = Uri.parse('$baseUrl/api/voice/transcribe');
       final request = http.MultipartRequest('POST', uri)
-        ..files.add(http.MultipartFile.fromBytes('audio', bytes, filename: filename));
+        ..files.add(
+          http.MultipartFile.fromBytes('audio', bytes, filename: filename),
+        );
       if (apiKey.isNotEmpty) request.headers['X-API-Key'] = apiKey;
 
       final streamed = await request.send();
@@ -219,10 +228,7 @@ class VoiceCommandService extends ChangeNotifier {
       final resp = await http.post(
         Uri.parse('$baseUrl/api/voice/confirm'),
         headers: _headers,
-        body: jsonEncode({
-          'session_id': _sessionId,
-          'response': response,
-        }),
+        body: jsonEncode({'session_id': _sessionId, 'response': response}),
       );
 
       if (resp.statusCode == 200) {

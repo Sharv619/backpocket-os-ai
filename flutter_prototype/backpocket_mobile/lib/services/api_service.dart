@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'server_url.dart';
 
 // ── Exception Handling ──────────────────────────────────────────────────────
 class ApiException implements Exception {
@@ -18,11 +19,14 @@ class ApiService {
 
   // Timeout tiers matched to actual backend processing time
   static const _tFast = Duration(seconds: 10); // status, lists, CRUD
-  static const _tAI      = Duration(seconds: 45);   // chat, twin, draft generation
-  static const _tVision  = Duration(seconds: 90);   // vision analysis (Ollama + OpenRouter)
-  static const _tAudio   = Duration(seconds: 30);   // ElevenLabs TTS
+  static const _tAI = Duration(seconds: 45); // chat, twin, draft generation
+  static const _tVision = Duration(
+    seconds: 90,
+  ); // vision analysis (Ollama + OpenRouter)
+  static const _tAudio = Duration(seconds: 30); // ElevenLabs TTS
 
-  ApiService({required this.baseUrl, this.apiKey = ''});
+  ApiService({required String baseUrl, this.apiKey = ''})
+    : baseUrl = normalizeServerUrl(baseUrl);
 
   Map<String, String> get _headers => {
     'Content-Type': 'application/json',
@@ -51,10 +55,9 @@ class ApiService {
 
   // ── Status & Workflow ───────────────────────────────────────────────────
   Future<Map<String, dynamic>> getStatus() async {
-    final res = await http.get(
-      Uri.parse('$baseUrl/api/status'),
-      headers: _headers,
-    ).timeout(_tFast);
+    final res = await http
+        .get(Uri.parse('$baseUrl/api/status'), headers: _headers)
+        .timeout(_tFast);
     return jsonDecode(res.body);
   }
 
@@ -110,10 +113,12 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> analyzeDocument(int docId) async {
-    final res = await http.post(
-      Uri.parse('$baseUrl/api/documents/analyze/$docId'),
-      headers: _headers,
-    ).timeout(_tVision);
+    final res = await http
+        .post(
+          Uri.parse('$baseUrl/api/documents/analyze/$docId'),
+          headers: _headers,
+        )
+        .timeout(_tVision);
     return jsonDecode(res.body);
   }
 
@@ -158,11 +163,13 @@ class ApiService {
 
   // ── Twin Chat ──────────────────────────────────────────────────────────────
   Future<Map<String, dynamic>> sendChatMessage(String message) async {
-    final res = await http.post(
-      Uri.parse('$baseUrl/api/mobile/chat'),
-      headers: _headers,
-      body: jsonEncode({'message': message}),
-    ).timeout(_tAI);
+    final res = await http
+        .post(
+          Uri.parse('$baseUrl/api/mobile/chat'),
+          headers: _headers,
+          body: jsonEncode({'message': message}),
+        )
+        .timeout(_tAI);
     return jsonDecode(res.body);
   }
 
@@ -194,14 +201,16 @@ class ApiService {
   // ── Voice TTS ─────────────────────────────────────────────────────────────
   Future<String?> testVoice(String text) async {
     try {
-      final res = await http.post(
-        Uri.parse('$baseUrl/api/voice/tts'),
-        headers: {
-          'Content-Type': 'application/json',
-          if (apiKey.isNotEmpty) 'X-API-Key': apiKey,
-        },
-        body: jsonEncode({'text': text, 'voice': 'male'}),
-      ).timeout(_tAudio);
+      final res = await http
+          .post(
+            Uri.parse('$baseUrl/api/voice/tts'),
+            headers: {
+              'Content-Type': 'application/json',
+              if (apiKey.isNotEmpty) 'X-API-Key': apiKey,
+            },
+            body: jsonEncode({'text': text, 'voice': 'male'}),
+          )
+          .timeout(_tAudio);
       if (res.statusCode == 200) return 'elevenlabs';
     } catch (e) {
       // Fall back to web speech
@@ -250,10 +259,7 @@ class ApiService {
     return await _handleResponse(res);
   }
 
-  Future<Map<String, dynamic>> updateLeadStatus(
-    int id,
-    String status,
-  ) async {
+  Future<Map<String, dynamic>> updateLeadStatus(int id, String status) async {
     final res = await http.patch(
       Uri.parse('$baseUrl/api/construction/leads/$id'),
       headers: _headers,
@@ -302,10 +308,7 @@ class ApiService {
     return await _handleResponse(res);
   }
 
-  Future<Map<String, dynamic>> updateQuoteStatus(
-    int id,
-    String status,
-  ) async {
+  Future<Map<String, dynamic>> updateQuoteStatus(int id, String status) async {
     final res = await http.patch(
       Uri.parse('$baseUrl/api/construction/quotes/$id'),
       headers: _headers,
@@ -341,10 +344,7 @@ class ApiService {
     final res = await http.post(
       Uri.parse('$baseUrl/api/construction/payments'),
       headers: _headers,
-      body: jsonEncode({
-        'quote_id': quoteId,
-        'amount': amount,
-      }),
+      body: jsonEncode({'quote_id': quoteId, 'amount': amount}),
     );
     return await _handleResponse(res);
   }
@@ -383,18 +383,12 @@ class ApiService {
     final res = await http.post(
       Uri.parse('$baseUrl/api/revise'),
       headers: _headers,
-      body: jsonEncode({
-        'ref_id': refId,
-        'instructions': instructions,
-      }),
+      body: jsonEncode({'ref_id': refId, 'instructions': instructions}),
     );
     return await _handleResponse(res);
   }
 
-  Future<Map<String, dynamic>> saveDraft(
-    String refId,
-    String newText,
-  ) async {
+  Future<Map<String, dynamic>> saveDraft(String refId, String newText) async {
     final res = await http.post(
       Uri.parse('$baseUrl/api/draft/$refId'),
       headers: _headers,
@@ -436,10 +430,7 @@ class ApiService {
         'transcript': transcript,
         'screen_context': screenContext,
         'session_id': sessionId,
-        'metadata': {
-          'selected_item_id': selectedItemId,
-          'tab_index': tabIndex,
-        },
+        'metadata': {'selected_item_id': selectedItemId, 'tab_index': tabIndex},
       }),
     );
     return await _handleResponse(res);
@@ -452,10 +443,7 @@ class ApiService {
     final res = await http.post(
       Uri.parse('$baseUrl/api/voice/confirm'),
       headers: _headers,
-      body: jsonEncode({
-        'session_id': sessionId,
-        'response': response,
-      }),
+      body: jsonEncode({'session_id': sessionId, 'response': response}),
     );
     return await _handleResponse(res);
   }
@@ -482,32 +470,35 @@ class ApiService {
     required String imageBase64,
     String analysisType = 'material',
   }) async {
-    final res = await http.post(
-      Uri.parse('$baseUrl/api/documents/analyze-material'),
-      headers: _headers,
-      body: jsonEncode({
-        'image_base64': imageBase64,
-        'analysis_type': analysisType,
-      }),
-    ).timeout(_tVision);
+    final res = await http
+        .post(
+          Uri.parse('$baseUrl/api/documents/analyze-material'),
+          headers: _headers,
+          body: jsonEncode({
+            'image_base64': imageBase64,
+            'analysis_type': analysisType,
+          }),
+        )
+        .timeout(_tVision);
     return await _handleResponse(res);
   }
 
   // ── Email Draft + Archive ─────────────────────────────────────────────────
   Future<Map<String, dynamic>> getDraft(String refId) async {
-    final res = await http.get(
-      Uri.parse('$baseUrl/api/draft/$refId'),
-      headers: _headers,
-    ).timeout(_tFast);
+    final res = await http
+        .get(Uri.parse('$baseUrl/api/draft/$refId'), headers: _headers)
+        .timeout(_tFast);
     return await _handleResponse(res);
   }
 
   Future<Map<String, dynamic>> archiveEmail(String refId) async {
-    final res = await http.post(
-      Uri.parse('$baseUrl/api/archive'),
-      headers: _headers,
-      body: jsonEncode({'ref_id': refId}),
-    ).timeout(_tFast);
+    final res = await http
+        .post(
+          Uri.parse('$baseUrl/api/archive'),
+          headers: _headers,
+          body: jsonEncode({'ref_id': refId}),
+        )
+        .timeout(_tFast);
     return await _handleResponse(res);
   }
 
@@ -516,51 +507,52 @@ class ApiService {
     String newDraft, {
     String feedback = 'Edited in app',
   }) async {
-    final res = await http.post(
-      Uri.parse('$baseUrl/api/revise'),
-      headers: _headers,
-      body: jsonEncode({
-        'ref_id': refId,
-        'new_draft': newDraft,
-        'feedback': feedback,
-      }),
-    ).timeout(_tFast);
+    final res = await http
+        .post(
+          Uri.parse('$baseUrl/api/revise'),
+          headers: _headers,
+          body: jsonEncode({
+            'ref_id': refId,
+            'new_draft': newDraft,
+            'feedback': feedback,
+          }),
+        )
+        .timeout(_tFast);
     return await _handleResponse(res);
   }
 
   Future<Map<String, dynamic>> approveAndSend(String refId) async {
-    final res = await http.post(
-      Uri.parse('$baseUrl/api/approve'),
-      headers: _headers,
-      body: jsonEncode({'ref_id': refId}),
-    ).timeout(_tAI);
+    final res = await http
+        .post(
+          Uri.parse('$baseUrl/api/approve'),
+          headers: _headers,
+          body: jsonEncode({'ref_id': refId}),
+        )
+        .timeout(_tAI);
     return await _handleResponse(res);
   }
 
   // ── SOPs ──────────────────────────────────────────────────────────────────
   Future<Map<String, dynamic>> getSops() async {
-    final res = await http.get(
-      Uri.parse('$baseUrl/api/sops'),
-      headers: _headers,
-    ).timeout(_tFast);
+    final res = await http
+        .get(Uri.parse('$baseUrl/api/sops'), headers: _headers)
+        .timeout(_tFast);
     return await _handleResponse(res);
   }
 
   // ── Email Rules ───────────────────────────────────────────────────────────
   Future<Map<String, dynamic>> getEmailRules() async {
-    final res = await http.get(
-      Uri.parse('$baseUrl/api/email-rules'),
-      headers: _headers,
-    ).timeout(_tFast);
+    final res = await http
+        .get(Uri.parse('$baseUrl/api/email-rules'), headers: _headers)
+        .timeout(_tFast);
     return await _handleResponse(res);
   }
 
   // ── Sender Instructions ───────────────────────────────────────────────────
   Future<Map<String, dynamic>> getSenderInstructions() async {
-    final res = await http.get(
-      Uri.parse('$baseUrl/api/sender-instructions'),
-      headers: _headers,
-    ).timeout(_tFast);
+    final res = await http
+        .get(Uri.parse('$baseUrl/api/sender-instructions'), headers: _headers)
+        .timeout(_tFast);
     return await _handleResponse(res);
   }
 
@@ -569,23 +561,29 @@ class ApiService {
     String instructions,
     String category,
   ) async {
-    final res = await http.post(
-      Uri.parse('$baseUrl/api/sender-instructions'),
-      headers: _headers,
-      body: jsonEncode({
-        'sender_email': email,
-        'instructions': instructions,
-        'category': category,
-      }),
-    ).timeout(_tFast);
+    final res = await http
+        .post(
+          Uri.parse('$baseUrl/api/sender-instructions'),
+          headers: _headers,
+          body: jsonEncode({
+            'sender_email': email,
+            'instructions': instructions,
+            'category': category,
+          }),
+        )
+        .timeout(_tFast);
     return await _handleResponse(res);
   }
 
   Future<Map<String, dynamic>> deleteSenderInstruction(String email) async {
-    final res = await http.delete(
-      Uri.parse('$baseUrl/api/sender-instructions/${Uri.encodeComponent(email)}'),
-      headers: _headers,
-    ).timeout(_tFast);
+    final res = await http
+        .delete(
+          Uri.parse(
+            '$baseUrl/api/sender-instructions/${Uri.encodeComponent(email)}',
+          ),
+          headers: _headers,
+        )
+        .timeout(_tFast);
     return await _handleResponse(res);
   }
 
@@ -597,50 +595,62 @@ class ApiService {
     bool isActive = true,
     bool isCritical = false,
   }) async {
-    final res = await http.put(
-      Uri.parse('$baseUrl/api/instructions/$id'),
-      headers: _headers,
-      body: jsonEncode({
-        'instruction_text': text,
-        'category': category,
-        'is_active': isActive,
-        'is_critical': isCritical,
-      }),
-    ).timeout(_tFast);
+    final res = await http
+        .put(
+          Uri.parse('$baseUrl/api/instructions/$id'),
+          headers: _headers,
+          body: jsonEncode({
+            'instruction_text': text,
+            'category': category,
+            'is_active': isActive,
+            'is_critical': isCritical,
+          }),
+        )
+        .timeout(_tFast);
     return await _handleResponse(res);
   }
 
   Future<Map<String, dynamic>> deleteInstruction(int id) async {
-    final res = await http.delete(
-      Uri.parse('$baseUrl/api/instructions/$id'),
-      headers: _headers,
-    ).timeout(_tFast);
+    final res = await http
+        .delete(Uri.parse('$baseUrl/api/instructions/$id'), headers: _headers)
+        .timeout(_tFast);
     return await _handleResponse(res);
   }
 
   // ── Agentic RAG ───────────────────────────────────────────────────────────
   Future<Map<String, dynamic>> getAgenticRagContext(String refId) async {
-    final res = await http.get(
-      Uri.parse('$baseUrl/api/agentic-rag/context/$refId'),
-      headers: _headers,
-    ).timeout(_tAI);
+    final res = await http
+        .get(
+          Uri.parse('$baseUrl/api/agentic-rag/context/$refId'),
+          headers: _headers,
+        )
+        .timeout(_tAI);
     return await _handleResponse(res);
   }
 
   Future<Map<String, dynamic>> getAgenticRagLogs({int limit = 40}) async {
-    final res = await http.get(
-      Uri.parse('$baseUrl/api/agentic-rag/logs?limit=$limit'),
-      headers: _headers,
-    ).timeout(_tFast);
+    final res = await http
+        .get(
+          Uri.parse('$baseUrl/api/agentic-rag/logs?limit=$limit'),
+          headers: _headers,
+        )
+        .timeout(_tFast);
     return await _handleResponse(res);
   }
 
   // ── Blog & Content ────────────────────────────────────────────────────────
-  Future<Map<String, dynamic>> generateBlogPost(String title, String theme) async {
-    final res = await http.get(
-      Uri.parse('$baseUrl/api/blog/generate?title=${Uri.encodeComponent(title)}&theme=${Uri.encodeComponent(theme)}'),
-      headers: _headers,
-    ).timeout(_tAI);
+  Future<Map<String, dynamic>> generateBlogPost(
+    String title,
+    String theme,
+  ) async {
+    final res = await http
+        .get(
+          Uri.parse(
+            '$baseUrl/api/blog/generate?title=${Uri.encodeComponent(title)}&theme=${Uri.encodeComponent(theme)}',
+          ),
+          headers: _headers,
+        )
+        .timeout(_tAI);
     return await _handleResponse(res);
   }
 
@@ -648,11 +658,13 @@ class ApiService {
     String companyName, {
     String theme = 'entrepreneurship',
   }) async {
-    final res = await http.post(
-      Uri.parse('$baseUrl/api/blog/startup-story'),
-      headers: _headers,
-      body: jsonEncode({'company_name': companyName, 'theme': theme}),
-    ).timeout(_tAI);
+    final res = await http
+        .post(
+          Uri.parse('$baseUrl/api/blog/startup-story'),
+          headers: _headers,
+          body: jsonEncode({'company_name': companyName, 'theme': theme}),
+        )
+        .timeout(_tAI);
     return await _handleResponse(res);
   }
 
@@ -661,20 +673,21 @@ class ApiService {
     String folderId, {
     String twinType = 'admin',
   }) async {
-    final res = await http.post(
-      Uri.parse('$baseUrl/api/drive/sync-to-rag'),
-      headers: _headers,
-      body: jsonEncode({'folder_id': folderId, 'twin_type': twinType}),
-    ).timeout(_tAI);
+    final res = await http
+        .post(
+          Uri.parse('$baseUrl/api/drive/sync-to-rag'),
+          headers: _headers,
+          body: jsonEncode({'folder_id': folderId, 'twin_type': twinType}),
+        )
+        .timeout(_tAI);
     return await _handleResponse(res);
   }
 
   // ── Client Master (Google Sheets CRM) ─────────────────────────────────────
   Future<Map<String, dynamic>> getClientMaster() async {
-    final res = await http.get(
-      Uri.parse('$baseUrl/api/client-master'),
-      headers: _headers,
-    ).timeout(_tFast);
+    final res = await http
+        .get(Uri.parse('$baseUrl/api/client-master'), headers: _headers)
+        .timeout(_tFast);
     return await _handleResponse(res);
   }
 
@@ -685,37 +698,48 @@ class ApiService {
     required List<Map<String, dynamic>> items,
     String notes = '',
   }) async {
-    final res = await http.post(
-      Uri.parse('$baseUrl/api/invoice/generate'),
-      headers: _headers,
-      body: jsonEncode({
-        'client_name': clientName,
-        'client_email': clientEmail,
-        'items': items,
-        'notes': notes,
-      }),
-    ).timeout(_tAI);
+    final res = await http
+        .post(
+          Uri.parse('$baseUrl/api/invoice/generate'),
+          headers: _headers,
+          body: jsonEncode({
+            'client_name': clientName,
+            'client_email': clientEmail,
+            'items': items,
+            'notes': notes,
+          }),
+        )
+        .timeout(_tAI);
     if (res.statusCode != 200) {
-      throw ApiException('Invoice generation failed', statusCode: res.statusCode);
+      throw ApiException(
+        'Invoice generation failed',
+        statusCode: res.statusCode,
+      );
     }
     return res.bodyBytes;
   }
 
   // ── Marketing Activity (full stats) ───────────────────────────────────────
   Future<Map<String, dynamic>> getMarketingActivityFull() async {
-    final res = await http.get(
-      Uri.parse('$baseUrl/api/marketing/activity'),
-      headers: _headers,
-    ).timeout(_tFast);
+    final res = await http
+        .get(Uri.parse('$baseUrl/api/marketing/activity'), headers: _headers)
+        .timeout(_tFast);
     return await _handleResponse(res);
   }
 
   // ── Search Gmail ──────────────────────────────────────────────────────────
-  Future<Map<String, dynamic>> searchGmail(String query, {int maxResults = 10}) async {
-    final res = await http.get(
-      Uri.parse('$baseUrl/api/search-gmail?q=${Uri.encodeComponent(query)}&max_results=$maxResults'),
-      headers: _headers,
-    ).timeout(_tFast);
+  Future<Map<String, dynamic>> searchGmail(
+    String query, {
+    int maxResults = 10,
+  }) async {
+    final res = await http
+        .get(
+          Uri.parse(
+            '$baseUrl/api/search-gmail?q=${Uri.encodeComponent(query)}&max_results=$maxResults',
+          ),
+          headers: _headers,
+        )
+        .timeout(_tFast);
     return await _handleResponse(res);
   }
 
@@ -725,30 +749,38 @@ class ApiService {
     required String subject,
     required String body,
   }) async {
-    final res = await http.post(
-      Uri.parse('$baseUrl/api/construction/leads/extract'),
-      headers: _headers,
-      body: jsonEncode({'from': from, 'subject': subject, 'body': body}),
-    ).timeout(_tAI);
+    final res = await http
+        .post(
+          Uri.parse('$baseUrl/api/construction/leads/extract'),
+          headers: _headers,
+          body: jsonEncode({'from': from, 'subject': subject, 'body': body}),
+        )
+        .timeout(_tAI);
     return await _handleResponse(res);
   }
 
   // ── Tradie Follow-up Generator ────────────────────────────────────────────
   Future<Map<String, dynamic>> generateTradieFollowup(int quoteId) async {
-    final res = await http.post(
-      Uri.parse('$baseUrl/api/construction/quotes/$quoteId/tradie-followup'),
-      headers: _headers,
-    ).timeout(_tAI);
+    final res = await http
+        .post(
+          Uri.parse(
+            '$baseUrl/api/construction/quotes/$quoteId/tradie-followup',
+          ),
+          headers: _headers,
+        )
+        .timeout(_tAI);
     return await _handleResponse(res);
   }
 
   // ── Communication Coach ───────────────────────────────────────────────────
   Future<Map<String, dynamic>> analyzeCoach(String text) async {
-    final res = await http.post(
-      Uri.parse('$baseUrl/api/coach/analyze'),
-      headers: _headers,
-      body: jsonEncode({'text': text}),
-    ).timeout(_tAI);
+    final res = await http
+        .post(
+          Uri.parse('$baseUrl/api/coach/analyze'),
+          headers: _headers,
+          body: jsonEncode({'text': text}),
+        )
+        .timeout(_tAI);
     return await _handleResponse(res);
   }
 }

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:audioplayers/audioplayers.dart';
+import 'server_url.dart';
 
 class TtsService {
   final String baseUrl;
@@ -9,7 +10,8 @@ class TtsService {
   final AudioPlayer _player = AudioPlayer();
   bool _isSpeaking = false;
 
-  TtsService({required this.baseUrl, this.apiKey = ''});
+  TtsService({required String baseUrl, this.apiKey = ''})
+    : baseUrl = normalizeServerUrl(baseUrl);
 
   bool get isSpeaking => _isSpeaking;
 

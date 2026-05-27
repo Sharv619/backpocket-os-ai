@@ -5,6 +5,7 @@
 .env.local
 # Database
 *.db
+*.db-*
 
 # Google Cloud Credentials
 credentials.json
@@ -26,6 +27,8 @@ env/
 # Node
 node_modules/
 package-lock.json
+!/package.json
+!/package-lock.json
 
 # Flutter/Dart
 .dart_tool/

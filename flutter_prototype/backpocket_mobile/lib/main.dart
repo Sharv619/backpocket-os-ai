@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -21,6 +22,7 @@ import 'screens/coach_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/voice_input_screen.dart';
 import 'services/voice_command_service.dart';
+import 'services/server_url.dart';
 import 'widgets/voice_fab.dart';
 import 'widgets/voice_recording_overlay.dart';
 import 'widgets/voice_confirmation_card.dart';
@@ -180,7 +182,8 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   late int _tab;
-  String _serverUrl = 'http://localhost:8000'; // Default for local, auto-detected on web
+  String _serverUrl =
+      'http://localhost:8000'; // Default for local, auto-detected on web
   String _apiKey = '';
   bool _magnifierMode = false;
   VoiceCommandService? _voiceService;
@@ -216,10 +219,14 @@ class _AppShellState extends State<AppShell> {
       serverUrl: _serverUrl,
       apiKey: _apiKey,
       onSettingsChanged: (url, key) {
+        final normalizedUrl = normalizeServerUrl(url);
         setState(() {
-          _serverUrl = url;
+          _serverUrl = normalizedUrl;
           _apiKey = key;
-          _voiceService = VoiceCommandService(baseUrl: url, apiKey: key);
+          _voiceService = VoiceCommandService(
+            baseUrl: normalizedUrl,
+            apiKey: key,
+          );
           _pages = _buildPages(); // rebuild with new connection params
         });
       },
@@ -231,19 +238,18 @@ class _AppShellState extends State<AppShell> {
   Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      // String defaultUrl = 'https://criteria-shrine-bulldog.ngrok-free.dev'; // ngrok disabled
       String defaultUrl = 'http://127.0.0.1:8000';
-      
-      // Auto-detect origin if running on web
-      bool isWeb = identical(0, 0.0);
-      if (isWeb) {
-         // In web mode, the app is served from the backend, 
-         // so we can use the current browser URL as the API base.
-         final uri = Uri.base;
-         defaultUrl = '${uri.scheme}://${uri.host}${uri.hasPort ? ":${uri.port}" : ""}';
+
+      if (kIsWeb) {
+        final uri = Uri.base;
+        defaultUrl = normalizeServerUrl(
+          '${uri.scheme}://${uri.host}${uri.hasPort ? ":${uri.port}" : ""}',
+        );
       }
-      
-      _serverUrl = prefs.getString('server_url') ?? defaultUrl;
+
+      _serverUrl = normalizeServerUrl(
+        prefs.getString('server_url') ?? defaultUrl,
+      );
       _apiKey = prefs.getString('api_key') ?? '';
       _voiceService = VoiceCommandService(baseUrl: _serverUrl, apiKey: _apiKey);
       _pages = _buildPages();
@@ -354,7 +360,10 @@ class _AppShellState extends State<AppShell> {
                       ),
                       child: Text(
                         'No recent chats',
-                        style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                        style: TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 12,
+                        ),
                       ),
                     )
                   else
@@ -382,9 +391,21 @@ class _AppShellState extends State<AppShell> {
   }
 
   static const _screenNames = [
-    'dashboard', 'inbox', 'chat', 'documents', 'sops',
-    'marketing', 'agentic_rag', 'blog', 'drive', 'client_crm',
-    'instructions', 'construction', 'settings', 'conversations', 'coach'
+    'dashboard',
+    'inbox',
+    'chat',
+    'documents',
+    'sops',
+    'marketing',
+    'agentic_rag',
+    'blog',
+    'drive',
+    'client_crm',
+    'instructions',
+    'construction',
+    'settings',
+    'conversations',
+    'coach',
   ];
 
   // Bottom nav: Home(0), Inbox(1), Chat(2), Jobs(11=Construction), Settings(12)
@@ -475,7 +496,9 @@ class _AppShellState extends State<AppShell> {
         ),
         actions: [
           Semantics(
-            label: _magnifierMode ? 'Disable magnifier mode' : 'Enable magnifier mode',
+            label: _magnifierMode
+                ? 'Disable magnifier mode'
+                : 'Enable magnifier mode',
             button: true,
             child: IconButton(
               icon: Icon(
@@ -490,7 +513,10 @@ class _AppShellState extends State<AppShell> {
             label: 'Go to dashboard',
             button: true,
             child: IconButton(
-              icon: const Icon(Icons.dashboard_outlined, color: AppColors.textDim),
+              icon: const Icon(
+                Icons.dashboard_outlined,
+                color: AppColors.textDim,
+              ),
               onPressed: () => setState(() => _tab = 0),
               tooltip: 'Dashboard',
             ),
@@ -500,11 +526,10 @@ class _AppShellState extends State<AppShell> {
       drawer: _buildSidebar(),
       body: Stack(
         children: [
-          IndexedStack(
-            index: _tab,
-            children: _pages,
-          ),
-          if (_voiceResponse != null && (_voiceResponse!.needsConfirmation || _voiceResponse!.needsMoreInput))
+          IndexedStack(index: _tab, children: _pages),
+          if (_voiceResponse != null &&
+              (_voiceResponse!.needsConfirmation ||
+                  _voiceResponse!.needsMoreInput))
             Positioned(
               bottom: 80,
               left: 0,
@@ -538,11 +563,26 @@ class _AppShellState extends State<AppShell> {
         selectedFontSize: 11,
         unselectedFontSize: 11,
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.dashboard_outlined), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.inbox_outlined), label: 'Inbox'),
-          BottomNavigationBarItem(icon: Icon(Icons.psychology_outlined), label: 'Chat'),
-          BottomNavigationBarItem(icon: Icon(Icons.build_outlined), label: 'Jobs'),
-          BottomNavigationBarItem(icon: Icon(Icons.settings_outlined), label: 'Settings'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.dashboard_outlined),
+            label: 'Home',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.inbox_outlined),
+            label: 'Inbox',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.psychology_outlined),
+            label: 'Chat',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.build_outlined),
+            label: 'Jobs',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.settings_outlined),
+            label: 'Settings',
+          ),
         ],
       ),
       floatingActionButton: _voiceService != null

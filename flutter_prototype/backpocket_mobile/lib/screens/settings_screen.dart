@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/server_url.dart';
 import '../theme.dart';
 
 const Color kBg = Color(0xFF0D0A07);
@@ -32,6 +35,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _pinging = false;
   bool _insecureUrl = false;
 
+  String _normalizeServerUrlField() {
+    final normalized = normalizeServerUrl(_serverUrlController.text);
+    if (normalized.isNotEmpty &&
+        normalized != _serverUrlController.text.trim()) {
+      _serverUrlController.value = _serverUrlController.value.copyWith(
+        text: normalized,
+        selection: TextSelection.collapsed(offset: normalized.length),
+        composing: TextRange.empty,
+      );
+    }
+    return normalized;
+  }
+
+  bool _isReachableResult(String result) {
+    return result == 'Connected' || result.startsWith('Server reachable');
+  }
+
   // BYOK — Sovereign Engine
   final _orKeyController = TextEditingController();
   final _geminiKeyController = TextEditingController();
@@ -46,28 +66,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _styleMessage;
 
   Future<void> _testConnection() async {
-    final url = _serverUrlController.text.trim();
-    setState(() { _pinging = true; _pingResult = null; });
-    try {
-      final response = await http.get(
-        Uri.parse('$url/api/status'),
-        headers: {'Content-Type': 'application/json'},
-      ).timeout(const Duration(seconds: 5));
+    final url = _normalizeServerUrlField();
+    setState(() {
+      _pinging = true;
+      _pingResult = null;
+    });
+    if (!isValidServerUrl(url)) {
       setState(() {
-        _pingResult = response.statusCode == 200 ? 'Connected' : 'HTTP ${response.statusCode}';
+        _pingResult = 'Enter a valid server URL';
+        _pinging = false;
+      });
+      return;
+    }
+    try {
+      final response = await http
+          .get(
+            Uri.parse('$url/api/status'),
+            headers: {'Content-Type': 'application/json'},
+          )
+          .timeout(const Duration(seconds: 5));
+      setState(() {
+        _pingResult = switch (response.statusCode) {
+          200 => 'Connected',
+          401 => 'Server reachable — API key required',
+          _ => 'HTTP ${response.statusCode}',
+        };
         _pinging = false;
       });
     } on TimeoutException {
-      setState(() { _pingResult = 'Timeout — server not reachable'; _pinging = false; });
+      setState(() {
+        _pingResult = 'Timeout — server not reachable';
+        _pinging = false;
+      });
+    } on SocketException {
+      final loopbackHint = !kIsWeb && isLoopbackServerUrl(url)
+          ? ' On a real phone, 127.0.0.1 points to the phone. Use your computer\'s Wi-Fi IP instead.'
+          : '';
+      setState(() {
+        _pingResult = 'Connection refused.$loopbackHint';
+        _pinging = false;
+      });
     } catch (e) {
-      setState(() { _pingResult = 'Error: $e'; _pinging = false; });
+      setState(() {
+        _pingResult = 'Error: $e';
+        _pinging = false;
+      });
     }
   }
 
   bool _isInsecureRemote(String url) {
-    if (!url.startsWith('http://')) return false;
-    final host = Uri.tryParse(url)?.host ?? '';
-    return host != '127.0.0.1' && host != 'localhost' && host.isNotEmpty;
+    return isInsecureRemoteServerUrl(url);
   }
 
   @override
@@ -95,9 +143,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
+    final savedUrl = normalizeServerUrl(
+      prefs.getString('server_url') ?? widget.serverUrl,
+    );
     setState(() {
-      _serverUrlController.text =
-          prefs.getString('server_url') ?? widget.serverUrl;
+      _serverUrlController.text = savedUrl;
       _apiKeyController.text = prefs.getString('api_key') ?? widget.apiKey;
       _ownerNameController.text = prefs.getString('owner_name') ?? '';
       _insecureUrl = _isInsecureRemote(_serverUrlController.text.trim());
@@ -109,15 +159,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadBYOKStatus() async {
     setState(() => _byokLoading = true);
     try {
-      final url = _serverUrlController.text.trim();
-      final res = await http.get(
-        Uri.parse('$url/api/settings/byok-status'),
-        headers: {
-          'Content-Type': 'application/json',
-          if (_apiKeyController.text.isNotEmpty)
-            'X-API-Key': _apiKeyController.text,
-        },
-      ).timeout(const Duration(seconds: 5));
+      final url = _normalizeServerUrlField();
+      final res = await http
+          .get(
+            Uri.parse('$url/api/settings/byok-status'),
+            headers: {
+              'Content-Type': 'application/json',
+              if (_apiKeyController.text.isNotEmpty)
+                'X-API-Key': _apiKeyController.text,
+            },
+          )
+          .timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         setState(() => _byokStatus = data['providers'] ?? {});
@@ -129,60 +181,71 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _saveBYOKKey(String provider, String key) async {
     if (key.isEmpty) return;
     try {
-      final url = _serverUrlController.text.trim();
-      final res = await http.post(
-        Uri.parse('$url/api/settings/byok'),
-        headers: {
-          'Content-Type': 'application/json',
-          if (_apiKeyController.text.isNotEmpty)
-            'X-API-Key': _apiKeyController.text,
-        },
-        body: jsonEncode({'provider': provider, 'api_key': key}),
-      ).timeout(const Duration(seconds: 8));
+      final url = _normalizeServerUrlField();
+      final res = await http
+          .post(
+            Uri.parse('$url/api/settings/byok'),
+            headers: {
+              'Content-Type': 'application/json',
+              if (_apiKeyController.text.isNotEmpty)
+                'X-API-Key': _apiKeyController.text,
+            },
+            body: jsonEncode({'provider': provider, 'api_key': key}),
+          )
+          .timeout(const Duration(seconds: 8));
       if (res.statusCode == 200 && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('$provider key saved — you are now sovereign.'),
-          backgroundColor: AppColors.green,
-          behavior: SnackBarBehavior.floating,
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$provider key saved — you are now sovereign.'),
+            backgroundColor: AppColors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
         _loadBYOKStatus();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: AppColors.red,
-          behavior: SnackBarBehavior.floating,
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: AppColors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
     }
   }
 
   Future<void> _clearBYOKKey(String provider) async {
     try {
-      final url = _serverUrlController.text.trim();
-      await http.delete(
-        Uri.parse('$url/api/settings/byok/$provider'),
-        headers: {
-          'Content-Type': 'application/json',
-          if (_apiKeyController.text.isNotEmpty)
-            'X-API-Key': _apiKeyController.text,
-        },
-      ).timeout(const Duration(seconds: 5));
+      final url = _normalizeServerUrlField();
+      await http
+          .delete(
+            Uri.parse('$url/api/settings/byok/$provider'),
+            headers: {
+              'Content-Type': 'application/json',
+              if (_apiKeyController.text.isNotEmpty)
+                'X-API-Key': _apiKeyController.text,
+            },
+          )
+          .timeout(const Duration(seconds: 5));
       _loadBYOKStatus();
     } catch (_) {}
   }
 
   Future<void> _loadCurrentStyle() async {
     try {
-      final url = _serverUrlController.text.trim();
-      final res = await http.get(
-        Uri.parse('$url/api/style/current'),
-        headers: {
-          'Content-Type': 'application/json',
-          if (_apiKeyController.text.isNotEmpty) 'X-API-Key': _apiKeyController.text,
-        },
-      ).timeout(const Duration(seconds: 5));
+      final url = _normalizeServerUrlField();
+      final res = await http
+          .get(
+            Uri.parse('$url/api/style/current'),
+            headers: {
+              'Content-Type': 'application/json',
+              if (_apiKeyController.text.isNotEmpty)
+                'X-API-Key': _apiKeyController.text,
+            },
+          )
+          .timeout(const Duration(seconds: 5));
       if (res.statusCode == 200 && mounted) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
         setState(() => _styleExists = data['status'] == 'success');
@@ -191,17 +254,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _scanWritingStyle() async {
-    setState(() { _styleScanning = true; _styleMessage = null; });
+    setState(() {
+      _styleScanning = true;
+      _styleMessage = null;
+    });
     try {
-      final url = _serverUrlController.text.trim();
-      final res = await http.post(
-        Uri.parse('$url/api/style/scan-sent'),
-        headers: {
-          'Content-Type': 'application/json',
-          if (_apiKeyController.text.isNotEmpty) 'X-API-Key': _apiKeyController.text,
-        },
-        body: jsonEncode({'token_file': 'token.json'}),
-      ).timeout(const Duration(seconds: 120));
+      final url = _normalizeServerUrlField();
+      final res = await http
+          .post(
+            Uri.parse('$url/api/style/scan-sent'),
+            headers: {
+              'Content-Type': 'application/json',
+              if (_apiKeyController.text.isNotEmpty)
+                'X-API-Key': _apiKeyController.text,
+            },
+            body: jsonEncode({'token_file': 'token.json'}),
+          )
+          .timeout(const Duration(seconds: 120));
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       if (mounted) {
         setState(() {
@@ -209,27 +278,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
           if (res.statusCode == 200 && data['status'] == 'success') {
             _styleScan = data;
             _styleExists = true;
-            _styleMessage = 'Style learned from ${data['emails_scanned'] ?? '?'} emails.';
+            _styleMessage =
+                'Style learned from ${data['emails_scanned'] ?? '?'} emails.';
           } else {
             _styleMessage = data['message'] as String? ?? 'Scan failed.';
           }
         });
       }
     } catch (e) {
-      if (mounted) setState(() { _styleScanning = false; _styleMessage = 'Error: $e'; });
+      if (mounted)
+        setState(() {
+          _styleScanning = false;
+          _styleMessage = 'Error: $e';
+        });
     }
   }
 
   Future<void> _saveSettings() async {
     setState(() => _saving = true);
+    final normalizedUrl = _normalizeServerUrlField();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('server_url', _serverUrlController.text.trim());
+    await prefs.setString('server_url', normalizedUrl);
     await prefs.setString('api_key', _apiKeyController.text.trim());
     await prefs.setString('owner_name', _ownerNameController.text.trim());
     setState(() => _saving = false);
 
     widget.onSettingsChanged?.call(
-      _serverUrlController.text.trim(),
+      normalizedUrl,
       _apiKeyController.text.trim(),
     );
 
@@ -245,6 +320,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final loopbackUrl =
+        !kIsWeb && isLoopbackServerUrl(_serverUrlController.text.trim());
+    final pathInUrl = hasPathInServerUrl(_serverUrlController.text.trim());
+    final pingReachable =
+        _pingResult != null && _isReachableResult(_pingResult!);
+
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -288,15 +369,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
               if (_insecureUrl)
                 Container(
                   margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.red.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.red.withValues(alpha: 0.4)),
+                    border: Border.all(
+                      color: AppColors.red.withValues(alpha: 0.4),
+                    ),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.lock_open, color: AppColors.red, size: 14),
+                      const Icon(
+                        Icons.lock_open,
+                        color: AppColors.red,
+                        size: 14,
+                      ),
                       const SizedBox(width: 8),
                       const Expanded(
                         child: Text(
@@ -310,44 +400,128 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _SettingsField(
                 controller: _serverUrlController,
                 label: 'Server URL',
-                hint: 'https://your-server.com or http://127.0.0.1:8000',
+                hint: 'https://your-server.com or http://192.168.1.23:8000',
                 icon: Icons.dns_outlined,
               ),
-              const SizedBox(height: 8),
-              Row(children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: _pinging
-                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.wifi_find_outlined, size: 16),
-                    label: Text(_pinging ? 'Testing…' : 'Test Connection'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.amber,
-                      side: const BorderSide(color: AppColors.amber),
-                      padding: const EdgeInsets.symmetric(vertical: 10),
+              if (pathInUrl) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.amber.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppColors.amber.withValues(alpha: 0.4),
                     ),
-                    onPressed: _pinging ? null : _testConnection,
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(
+                        Icons.route_outlined,
+                        color: AppColors.amber,
+                        size: 14,
+                      ),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Enter only the server origin. Paths like /app are stripped automatically.',
+                          style: TextStyle(
+                            color: AppColors.amber,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ]),
+              ],
+              if (loopbackUrl) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.amber.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppColors.amber.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(
+                        Icons.phone_android_outlined,
+                        color: AppColors.amber,
+                        size: 14,
+                      ),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'For a real phone demo, use your computer\'s Wi-Fi IP. 127.0.0.1 and localhost point back to the phone itself.',
+                          style: TextStyle(
+                            color: AppColors.amber,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: _pinging
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.wifi_find_outlined, size: 16),
+                      label: Text(_pinging ? 'Testing…' : 'Test Connection'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.amber,
+                        side: const BorderSide(color: AppColors.amber),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                      ),
+                      onPressed: _pinging ? null : _testConnection,
+                    ),
+                  ),
+                ],
+              ),
               if (_pingResult != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
-                  child: Row(children: [
-                    Icon(
-                      _pingResult == 'Connected' ? Icons.check_circle_outline : Icons.error_outline,
-                      size: 14,
-                      color: _pingResult == 'Connected' ? AppColors.green : AppColors.red,
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(child: Text(
-                      _pingResult!,
-                      style: TextStyle(
-                        color: _pingResult == 'Connected' ? AppColors.green : AppColors.red,
-                        fontSize: 12,
+                  child: Row(
+                    children: [
+                      Icon(
+                        pingReachable
+                            ? Icons.check_circle_outline
+                            : Icons.error_outline,
+                        size: 14,
+                        color: pingReachable ? AppColors.green : AppColors.red,
                       ),
-                    )),
-                  ]),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          _pingResult!,
+                          style: TextStyle(
+                            color: pingReachable
+                                ? AppColors.green
+                                : AppColors.red,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               const SizedBox(height: 12),
               _SettingsField(
@@ -407,14 +581,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.amber.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: const Text(
                       'BYOK',
-                      style: TextStyle(color: AppColors.amber, fontSize: 10, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        color: AppColors.amber,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ],
@@ -433,15 +614,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   border: Border.all(color: AppColors.border),
                 ),
                 child: _byokLoading
-                    ? const Center(child: CircularProgressIndicator(color: AppColors.amber))
+                    ? const Center(
+                        child: CircularProgressIndicator(
+                          color: AppColors.amber,
+                        ),
+                      )
                     : Column(
                         children: [
                           _BYOKRow(
                             provider: 'openrouter',
                             label: 'OpenRouter',
                             controller: _orKeyController,
-                            isConfigured: _byokStatus['openrouter']?['configured'] == true,
-                            onSave: () => _saveBYOKKey('openrouter', _orKeyController.text.trim()),
+                            isConfigured:
+                                _byokStatus['openrouter']?['configured'] ==
+                                true,
+                            onSave: () => _saveBYOKKey(
+                              'openrouter',
+                              _orKeyController.text.trim(),
+                            ),
                             onClear: () => _clearBYOKKey('openrouter'),
                           ),
                           const Divider(color: AppColors.border, height: 24),
@@ -449,8 +639,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             provider: 'gemini',
                             label: 'Gemini',
                             controller: _geminiKeyController,
-                            isConfigured: _byokStatus['gemini']?['configured'] == true,
-                            onSave: () => _saveBYOKKey('gemini', _geminiKeyController.text.trim()),
+                            isConfigured:
+                                _byokStatus['gemini']?['configured'] == true,
+                            onSave: () => _saveBYOKKey(
+                              'gemini',
+                              _geminiKeyController.text.trim(),
+                            ),
                             onClear: () => _clearBYOKKey('gemini'),
                           ),
                           const Divider(color: AppColors.border, height: 24),
@@ -458,8 +652,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             provider: 'elevenlabs',
                             label: 'ElevenLabs',
                             controller: _elKeyController,
-                            isConfigured: _byokStatus['elevenlabs']?['configured'] == true,
-                            onSave: () => _saveBYOKKey('elevenlabs', _elKeyController.text.trim()),
+                            isConfigured:
+                                _byokStatus['elevenlabs']?['configured'] ==
+                                true,
+                            onSave: () => _saveBYOKKey(
+                              'elevenlabs',
+                              _elKeyController.text.trim(),
+                            ),
                             onClear: () => _clearBYOKKey('elevenlabs'),
                           ),
                         ],
@@ -485,14 +684,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.green.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: const Text(
                       'AI CONSCIOUSNESS',
-                      style: TextStyle(color: AppColors.green, fontSize: 10, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        color: AppColors.green,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ],
@@ -522,10 +728,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         label: 'Inliers used',
                         value: '${_styleScan!['inliers_used'] ?? '—'}',
                       ),
-                      if ((_styleScan!['vocab_sample'] as Map?)?.containsKey('avg_length_words') == true)
+                      if ((_styleScan!['vocab_sample'] as Map?)?.containsKey(
+                            'avg_length_words',
+                          ) ==
+                          true)
                         _InfoRow(
                           label: 'Avg length',
-                          value: '${(_styleScan!['vocab_sample'] as Map)['avg_length_words']} words',
+                          value:
+                              '${(_styleScan!['vocab_sample'] as Map)['avg_length_words']} words',
                         ),
                       const SizedBox(height: 12),
                     ] else if (_styleExists)
@@ -533,7 +743,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         padding: EdgeInsets.only(bottom: 12),
                         child: Text(
                           'Style profile active. Rescan to refresh.',
-                          style: TextStyle(color: AppColors.green, fontSize: 12),
+                          style: TextStyle(
+                            color: AppColors.green,
+                            fontSize: 12,
+                          ),
                         ),
                       )
                     else
@@ -541,17 +754,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         padding: EdgeInsets.only(bottom: 12),
                         child: Text(
                           'No style profile yet. Tap scan to begin.',
-                          style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                          style: TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
                         icon: _styleScanning
-                            ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.green))
-                            : const Icon(Icons.auto_awesome, size: 16, color: AppColors.green),
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: AppColors.green,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.auto_awesome,
+                                size: 16,
+                                color: AppColors.green,
+                              ),
                         label: Text(
-                          _styleScanning ? 'Scanning sent mail…' : 'Scan Sent Mail',
+                          _styleScanning
+                              ? 'Scanning sent mail…'
+                              : 'Scan Sent Mail',
                           style: const TextStyle(color: AppColors.green),
                         ),
                         style: OutlinedButton.styleFrom(
@@ -567,7 +796,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         child: Text(
                           _styleMessage!,
                           style: TextStyle(
-                            color: _styleMessage!.startsWith('Error') ? AppColors.red : AppColors.green,
+                            color: _styleMessage!.startsWith('Error')
+                                ? AppColors.red
+                                : AppColors.green,
                             fontSize: 12,
                           ),
                         ),
@@ -731,7 +962,10 @@ class _BYOKRow extends StatelessWidget {
                   color: AppColors.green.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(4),
                 ),
-                child: const Text('SOVEREIGN', style: TextStyle(color: AppColors.green, fontSize: 9)),
+                child: const Text(
+                  'SOVEREIGN',
+                  style: TextStyle(color: AppColors.green, fontSize: 9),
+                ),
               ),
           ],
         ),
@@ -744,11 +978,19 @@ class _BYOKRow extends StatelessWidget {
                 obscureText: true,
                 style: const TextStyle(color: Colors.white, fontSize: 12),
                 decoration: InputDecoration(
-                  hintText: isConfigured ? '••••••• (replace to update)' : 'sk-or-v1-...',
-                  hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                  hintText: isConfigured
+                      ? '••••••• (replace to update)'
+                      : 'sk-or-v1-...',
+                  hintStyle: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 12,
+                  ),
                   filled: true,
                   fillColor: AppColors.surface,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                     borderSide: const BorderSide(color: AppColors.border),
@@ -764,12 +1006,22 @@ class _BYOKRow extends StatelessWidget {
             GestureDetector(
               onTap: onSave,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.amber,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Text('Save', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 12)),
+                child: const Text(
+                  'Save',
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
               ),
             ),
             if (isConfigured) ...[
@@ -777,13 +1029,22 @@ class _BYOKRow extends StatelessWidget {
               GestureDetector(
                 onTap: onClear,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.red.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.red.withValues(alpha: 0.3)),
+                    border: Border.all(
+                      color: AppColors.red.withValues(alpha: 0.3),
+                    ),
                   ),
-                  child: const Icon(Icons.delete_outline, color: AppColors.red, size: 16),
+                  child: const Icon(
+                    Icons.delete_outline,
+                    color: AppColors.red,
+                    size: 16,
+                  ),
                 ),
               ),
             ],
@@ -807,7 +1068,10 @@ class _InfoRow extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: AppColors.textDim, fontSize: 13)),
+          Text(
+            label,
+            style: const TextStyle(color: AppColors.textDim, fontSize: 13),
+          ),
           Text(
             value,
             style: const TextStyle(
