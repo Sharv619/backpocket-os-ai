@@ -59,6 +59,65 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+
+def _is_production_env() -> bool:
+    values = [
+        os.getenv("ENV", ""),
+        os.getenv("APP_ENV", ""),
+        os.getenv("NODE_ENV", ""),
+    ]
+    return any(value.strip().lower() in {"prod", "production"} for value in values)
+
+
+def _is_real_auth_secret(value: str | None) -> bool:
+    if not value:
+        return False
+    normalized = value.strip()
+    if not normalized:
+        return False
+    placeholders = {
+        "change_me",
+        "change-me",
+        "changeme",
+        "change_me_generate_with_python_secrets_token_hex_16",
+        "your_supabase_jwt_secret",
+        "your-secret-here",
+        "your_secret_here",
+        "replace_with_generated_api_key",
+        "replace-with-generated-api-key",
+    }
+    return normalized.lower() not in placeholders
+
+
+def _require_bp_api_key() -> bool:
+    return os.getenv("REQUIRE_BP_API_KEY", "").strip().lower() in {"1", "true", "yes"}
+
+
+def _enforce_production_auth_config() -> None:
+    if _require_bp_api_key():
+        if _is_real_auth_secret(os.getenv("BP_API_KEY")):
+            return
+        raise RuntimeError(
+            "Startup blocked: REQUIRE_BP_API_KEY=1 but BP_API_KEY is not configured "
+            "with a real secret."
+        )
+
+    if not _is_production_env():
+        return
+
+    if _is_real_auth_secret(os.getenv("BP_API_KEY")):
+        return
+    if _is_real_auth_secret(os.getenv("SUPABASE_JWT_SECRET")):
+        return
+
+    raise RuntimeError(
+        "Production startup blocked: configure BP_API_KEY or "
+        "SUPABASE_JWT_SECRET with a real secret before starting BackPocket OS."
+    )
+
+
+_enforce_production_auth_config()
+
 # ruff: noqa: E402
 import services.database as db
 
@@ -96,6 +155,7 @@ _PUBLIC_PATHS = {
     "/auth/register",
     "/auth/token",
     "/auth/me",         # handled by its own Depends
+    "/api/health",
     "/api/webhook",
     "/api/billing/webhook",
     "/test-sheets",
@@ -119,6 +179,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: StarletteRequest, call_next):
         path = request.url.path
+
+        if request.method == "OPTIONS":
+            return await call_next(request)
 
         # Always pass public routes
         if path in _PUBLIC_PATHS:
@@ -269,8 +332,21 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/health")
+async def alb_health():
+    return {"status": "ok"}
+
+
 @app.on_event("startup")
 async def startup_event():
+    if (
+        os.getenv("PYTEST_CURRENT_TEST")
+        or os.getenv("BP_TESTING") == "1"
+        or os.getenv("DISABLE_BACKGROUND_POLLING", "0") == "1"
+    ):
+        logger.info("Background polling loop skipped")
+        return
+
     from services.background import inbox_polling_loop
     asyncio.create_task(inbox_polling_loop())
     logger.info("🚀 Background polling loop started automatically")
@@ -283,6 +359,9 @@ async def root():
 
 @app.get("/run-poll")
 async def run_poll():
+    if os.getenv("DISABLE_BACKGROUND_POLLING", "0") == "1":
+        return {"status": "disabled", "message": "Background polling is disabled."}
+
     from services.background import inbox_polling_loop_once
 
     asyncio.create_task(inbox_polling_loop_once())

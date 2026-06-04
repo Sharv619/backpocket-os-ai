@@ -18,13 +18,7 @@ async def create_lead(data: dict):
     """Create a new lead from email extraction"""
     try:
         # Validate required fields
-        required_fields = [
-            "client_name",
-            "email",
-            "job_type",
-            "location",
-            "estimated_budget",
-        ]
+        required_fields = ["client_name", "job_type", "location", "estimated_budget"]
         missing = [f for f in required_fields if not data.get(f)]
         if missing:
             return {
@@ -41,9 +35,15 @@ async def create_lead(data: dict):
             location=data.get("location") or "",
             urgency=data.get("urgency", "medium"),
             budget=float(data.get("estimated_budget") or 0),
+            client_action_id=data.get("client_action_id"),
         )
 
-        return {"status": "success", "data": result}
+        return {
+            "status": "success",
+            "data": result,
+            "lead_id": result.get("lead_id"),
+            "client_action_id": result.get("client_action_id"),
+        }
     except Exception as e:
         logger.error(f"Error creating lead: {e}")
         return {"status": "error", "message": str(e)}
@@ -158,8 +158,15 @@ async def create_quote(data: dict):
             materials_cost=float(data.get("materials_cost", 0)),
             labor_cost=float(data.get("labor_cost", 0)),
             markup_percent=float(data.get("markup_percent", 20)),
+            client_action_id=data.get("client_action_id"),
         )
-        return {"status": "success", "data": result}
+        return {
+            "status": "success",
+            "data": result,
+            "quote_id": result.get("quote_id"),
+            "total_amount": result.get("total_amount"),
+            "client_action_id": result.get("client_action_id"),
+        }
     except Exception as e:
         logger.error(f"Error creating quote: {e}")
         return {"status": "error", "message": str(e)}
@@ -229,8 +236,14 @@ async def record_payment(data: dict):
             quote_id=int(data.get("quote_id") or 0),
             amount=float(data.get("amount") or 0),
             client_name=data.get("client_name", ""),
+            client_action_id=data.get("client_action_id"),
         )
-        return {"status": "success", "data": result}
+        return {
+            "status": "success",
+            "data": result,
+            "payment_id": result.get("payment_id"),
+            "client_action_id": result.get("client_action_id"),
+        }
     except Exception as e:
         logger.error(f"Error recording payment: {e}")
         return {"status": "error", "message": str(e)}
@@ -332,6 +345,10 @@ async def generate_tradie_followup(quote_id: int):
         if not quote:
             return {"status": "error", "message": "Quote not found"}
 
+        fallback = manager.draft_quote_followup(quote_id)
+        if fallback.get("error"):
+            return {"status": "error", "message": fallback["error"]}
+
         prompt = f"""You are an AI Digital Twin for a professional contractor in Western Sydney.
 Your tone is professional, reliable, and 'no-nonsense', but friendly.
 
@@ -365,9 +382,16 @@ Generate ONLY the message text, nothing else."""
             message = (
                 result.get("choices", [{}])[0].get("message", {}).get("content", "")
             )
-            return {"status": "success", "message": message}
+            return {"status": "success", "message": message or fallback["message"], "quote": quote}
         else:
-            return {"status": "error", "message": "Failed to generate message"}
+            return {"status": "success", "message": fallback["message"], "quote": quote, "source": "fallback"}
     except Exception as e:
         logger.error(f"Error generating followup: {e}")
+        try:
+            manager = get_construction_manager()
+            fallback = manager.draft_quote_followup(quote_id)
+            if not fallback.get("error"):
+                return {"status": "success", "message": fallback["message"], "quote": manager.get_quote(quote_id), "source": "fallback"}
+        except Exception:
+            pass
         return {"status": "error", "message": str(e)}

@@ -200,6 +200,8 @@ class VoiceSession:
         self.session_id = session_id or str(uuid.uuid4())
         self.state = SessionState.IDLE
         self.intent: str | None = None
+        self.screen_context: str = "dashboard"
+        self.metadata: dict = {}
         self.collected_params: dict = {}
         self.missing_params: list[str] = []
         self.next_question: str | None = None
@@ -216,6 +218,11 @@ class VoiceSession:
 
     def touch(self):
         self.updated_at = time.time()
+
+    def bind_request_context(self, screen_context: str, metadata: dict | None = None):
+        self.screen_context = screen_context or self.screen_context
+        self.metadata = dict(metadata or {})
+        self.touch()
 
     def start_collecting(self, intent: str, initial_entities: dict | None = None):
         self.state = SessionState.COLLECTING
@@ -288,9 +295,12 @@ class VoiceSession:
     def confirm(self) -> dict:
         self.state = SessionState.EXECUTING
         self.touch()
+        params = dict(self.collected_params)
+        if self.pending_action and self.pending_action.get("params"):
+            params = dict(self.pending_action.get("params", {}))
         return {
-            "intent": self.intent,
-            "params": dict(self.collected_params),
+            "intent": (self.pending_action or {}).get("intent", self.intent),
+            "params": params,
         }
 
     def cancel(self):
@@ -330,6 +340,8 @@ class VoiceSession:
             "session_id": self.session_id,
             "state": self.state.value,
             "intent": self.intent,
+            "screen_context": self.screen_context,
+            "metadata": self.metadata,
             "collected_params": self.collected_params,
             "missing_params": self.missing_params,
             "next_question": self.next_question,
@@ -344,6 +356,8 @@ class VoiceSession:
         session = cls(session_id=data.get("session_id"))
         session.state = SessionState(data.get("state", "IDLE"))
         session.intent = data.get("intent")
+        session.screen_context = data.get("screen_context", "dashboard")
+        session.metadata = data.get("metadata", {})
         session.collected_params = data.get("collected_params", {})
         session.missing_params = data.get("missing_params", [])
         session.next_question = data.get("next_question")

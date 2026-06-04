@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
 import '../theme.dart';
+import '../services/ai_edge_service.dart';
 import '../services/voice_command_service.dart';
 import '../models/voice_command_response.dart';
 
@@ -61,6 +62,7 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
     _waveController.dispose();
     _textController.dispose();
     _recorder.dispose();
+    _voiceService.dispose();
     super.dispose();
   }
 
@@ -69,44 +71,46 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
 
     setState(() {
       _lastTranscript = text;
+      _isProcessing = true;
       _conversation.add(_ConversationEntry(text: text, isUser: true));
     });
     _textController.clear();
 
     final response = await _voiceService.sendTranscript(text);
-    if (response != null && mounted) {
-      setState(() {
-        _response = response;
-        if (response.speechResponse.isNotEmpty) {
-          _conversation.add(_ConversationEntry(
-            text: response.speechResponse,
-            isUser: false,
-          ));
-        }
-      });
-    }
+    if (!mounted) return;
+    setState(() => _isProcessing = false);
+    _appendServiceResponse(response);
   }
 
   Future<void> _handleConfirm(String answer) async {
     setState(() {
+      _isProcessing = true;
       _conversation.add(_ConversationEntry(text: answer, isUser: true));
     });
 
     final response = await _voiceService.sendConfirmation(answer);
-    if (response != null && mounted) {
-      setState(() {
-        _response = response;
-        if (response.speechResponse.isNotEmpty) {
-          _conversation.add(_ConversationEntry(
-            text: response.speechResponse,
-            isUser: false,
-          ));
-        }
-      });
-    }
+    if (!mounted) return;
+    setState(() => _isProcessing = false);
+    _appendServiceResponse(response);
   }
 
   Future<void> _startRecording() async {
+    if (!await _voiceService.hasInternet()) {
+      final supportsOfflineSpeech =
+          !kIsWeb && await _voiceService.canUseOfflineSpeechInput();
+      if (supportsOfflineSpeech) {
+        if (mounted) setState(() => _isProcessing = true);
+        final response = await _voiceService.captureOfflineSpeech(
+          prompt: _response?.followUpPrompt,
+        );
+        if (mounted) setState(() => _isProcessing = false);
+        _appendServiceResponse(response);
+        return;
+      }
+      if (mounted) setState(() => _showTextInput = true);
+      return;
+    }
+
     final hasPermission = await _recorder.hasPermission();
     if (!hasPermission) {
       if (mounted) setState(() => _showTextInput = true);
@@ -144,24 +148,32 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
     }
 
     if (mounted) {
-      setState(() {
-        _isProcessing = false;
-        if (response != null) {
-          _response = response;
-          final transcript = _voiceService.lastTranscript;
-          if (transcript != null && transcript.isNotEmpty) {
-            _lastTranscript = transcript;
-            _conversation.add(_ConversationEntry(text: transcript, isUser: true));
-          }
-          if (response.speechResponse.isNotEmpty) {
-            _conversation.add(_ConversationEntry(
-              text: response.speechResponse,
-              isUser: false,
-            ));
-          }
-        }
-      });
+      setState(() => _isProcessing = false);
+      _appendServiceResponse(response);
     }
+  }
+
+  void _appendServiceResponse(VoiceCommandResponse? response) {
+    if (response == null || !mounted) return;
+    setState(() {
+      _response = response;
+      final transcript = _voiceService.lastTranscript;
+      if (transcript != null && transcript.isNotEmpty) {
+        final duplicate = _conversation.isNotEmpty &&
+            _conversation.last.isUser &&
+            _conversation.last.text == transcript;
+        if (!duplicate) {
+          _lastTranscript = transcript;
+          _conversation.add(_ConversationEntry(text: transcript, isUser: true));
+        }
+      }
+      if (response.speechResponse.isNotEmpty) {
+        _conversation.add(_ConversationEntry(
+          text: response.speechResponse,
+          isUser: false,
+        ));
+      }
+    });
   }
 
   Future<void> _showInvoiceSheet() async {
@@ -390,21 +402,132 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
   }
 
   Widget _buildProcessingArea() {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      color: AppColors.card,
-      child: const Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(color: AppColors.orange, strokeWidth: 2),
+    return AnimatedBuilder(
+      animation: _voiceService,
+      builder: (context, _) {
+        return Container(
+          padding: const EdgeInsets.all(24),
+          color: AppColors.card,
+          child: StreamBuilder<AiEdgeInferenceEvent>(
+            stream: _voiceService.inferenceEvents,
+            initialData: _voiceService.latestInferenceEvent,
+            builder: (context, snapshot) {
+              final hasLiveLocalInference = _voiceService.isLocalInferenceActive;
+              final event = snapshot.data;
+
+              if (!hasLiveLocalInference || event == null) {
+                return const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        color: AppColors.orange,
+                        strokeWidth: 2,
+                      ),
+                    ),
+                    SizedBox(width: 12),
+                    Text(
+                      'Processing...',
+                      style: TextStyle(color: AppColors.orange, fontSize: 16),
+                    ),
+                  ],
+                );
+              }
+
+              switch (event.type) {
+                case AiEdgeInferenceEventType.started:
+                  return _buildInferenceStatus(
+                    label: 'Thinking locally...',
+                    text: 'LiteRT-LM is sorting the command on-device.',
+                    accent: AppColors.amber,
+                  );
+                case AiEdgeInferenceEventType.chunk:
+                  return _buildInferenceStatus(
+                    label: 'Local parse',
+                    text: event.textAccumulation,
+                    accent: AppColors.orange,
+                    monospace: true,
+                  );
+                case AiEdgeInferenceEventType.completed:
+                  return _buildInferenceStatus(
+                    label: 'Structured locally',
+                    text: event.finalResponse,
+                    accent: AppColors.green,
+                    monospace: true,
+                  );
+                case AiEdgeInferenceEventType.error:
+                  return _buildInferenceStatus(
+                    label: 'Local inference failed',
+                    text: event.message.isEmpty
+                        ? 'Queueing offline command...'
+                        : event.message,
+                    accent: AppColors.red,
+                  );
+                case AiEdgeInferenceEventType.fallback:
+                  return _buildInferenceStatus(
+                    label: 'Falling back',
+                    text: 'Model output was unusable. BackPocket is using local heuristics.',
+                    accent: AppColors.textDim,
+                  );
+                case AiEdgeInferenceEventType.unknown:
+                  return _buildInferenceStatus(
+                    label: 'Processing...',
+                    text: event.textAccumulation,
+                    accent: AppColors.orange,
+                  );
+              }
+            },
           ),
-          SizedBox(width: 12),
-          Text('Processing...', style: TextStyle(color: AppColors.orange, fontSize: 16)),
-        ],
-      ),
+        );
+      },
+    );
+  }
+
+  Widget _buildInferenceStatus({
+    required String label,
+    required String text,
+    required Color accent,
+    bool monospace = false,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.auto_awesome, color: accent, size: 16),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: accent,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: accent.withAlpha(64)),
+          ),
+          child: Text(
+            text.isEmpty ? 'Listening...' : text,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              height: 1.5,
+              fontFamily: monospace ? 'monospace' : null,
+            ),
+          ),
+        ),
+      ],
     );
   }
 

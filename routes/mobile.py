@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from typing import Optional
 import services.database as db
 from services.gmail import send_email
+from services.pending_emails import list_pending_email_items
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +36,6 @@ router = APIRouter(
     tags=["mobile"],
     dependencies=[Depends(_require_api_key)],
 )
-
-_TIER_LABELS = {"1": "URGENT", "2": "HIGH", "3": "MEDIUM", "4": "LOW", "5": "SPAM"}
 
 # ── Path-traversal guard ──────────────────────────────────────────────────────
 # Only these filenames may be used as OAuth token sources. Any value coming
@@ -70,38 +69,7 @@ def _sanitize_token_file(name: str) -> str | None:
 async def mobile_pending():
     """Return pending emails in a simplified format for mobile clients."""
     try:
-        conn = __import__("sqlite3").connect(db.DB_PATH, timeout=10)
-        conn.row_factory = __import__("sqlite3").Row
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT ref_id, sender, subject, draft_body, tier, created_at, ai_reasoning, suggested_actions "
-            "FROM pending_approvals WHERE status = 'pending' ORDER BY tier, created_at DESC"
-        )
-        rows = cur.fetchall()
-        conn.close()
-
-        now = datetime.utcnow()
-        items = []
-        for r in rows:
-            try:
-                created = datetime.strptime(r["created_at"][:19], "%Y-%m-%d %H:%M:%S")
-                age_hours = round((now - created).total_seconds() / 3600, 1)
-            except Exception:
-                age_hours = 0
-            items.append(
-                {
-                    "ref_id": r["ref_id"],
-                    "sender": r["sender"],
-                    "subject": r["subject"],
-                    "tier": int(r["tier"]) if r["tier"] else 3,
-                    "tier_label": _TIER_LABELS.get(str(r["tier"]), "MEDIUM"),
-                    "preview": (r["draft_body"] or "")[:120],
-                    "draft_body": r["draft_body"] or "",
-                    "age_hours": age_hours,
-                    "ai_reasoning": r["ai_reasoning"] or "",
-                    "suggested_actions": r["suggested_actions"] or "",
-                }
-            )
+        items = list_pending_email_items()
         return {"count": len(items), "items": items}
     except Exception as e:
         logger.error(f"mobile_pending error: {e}")

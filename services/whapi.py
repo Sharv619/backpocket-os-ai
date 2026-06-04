@@ -13,6 +13,10 @@ WHAPI_BUTTONS_URL = "https://gate.whapi.cloud/messages/interactive"
 FAILED_QUEUE_PATH = "logs/failed_whatsapp_queue.txt"
 
 
+def _is_demo_mode() -> bool:
+    return os.getenv("DEMO_MODE", "0") == "1"
+
+
 def format_phone_number(phone: str) -> str:
     """Ensure phone number is in correct WhatsApp format (digits + @s.whatsapp.net)."""
     if not phone:
@@ -60,6 +64,13 @@ class WhatsAppService:
 
     def send_message(self, to_number: str, text: str) -> Dict[str, Any]:
         """Send a plain-text WhatsApp message with automatic phone formatting."""
+        if _is_demo_mode():
+            logger.info("DEMO_MODE=1: WhatsApp send skipped for %s", to_number)
+            return {
+                "status": "demo",
+                "message": "DEMO_MODE=1: WhatsApp send skipped",
+            }
+
         if not self.token:
             logger.error("❌ WHAPI_TOKEN not set. Cannot send WhatsApp message.")
             return {"status": "error", "message": "WHAPI_TOKEN not configured"}
@@ -101,6 +112,13 @@ class WhatsAppService:
 
     def send_buttons(self, to_number: str, text: str, buttons: list) -> Dict[str, Any]:
         """Send an interactive button message via Whapi."""
+        if _is_demo_mode():
+            logger.info("DEMO_MODE=1: WhatsApp button send skipped for %s", to_number)
+            return {
+                "status": "demo",
+                "message": "DEMO_MODE=1: WhatsApp button send skipped",
+            }
+
         if not self.token:
             return {"status": "error", "message": "WHAPI_TOKEN not configured"}
 

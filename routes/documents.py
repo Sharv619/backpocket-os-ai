@@ -138,7 +138,8 @@ async def _extract_file_from_request(request: Request):
     elif "multipart" in ct:
         form = await request.form()
         upload = form.get("file")
-        if not isinstance(upload, UploadFile): raise ValueError("No file field in form")
+        if upload is None or not hasattr(upload, "read"):
+            raise ValueError("No file field in form")
         filename = upload.filename or "document.jpg"
         category = str(form.get("category", "other"))
         content = await upload.read()
@@ -285,7 +286,8 @@ async def analyze_document_endpoint(doc_id: int):
 
 @router.post("/analyze-material")
 async def analyze_material_endpoint(
-    file: UploadFile = File(...),
+    request: Request,
+    file: UploadFile | None = File(default=None),
     analysis_type: str = "material",
 ):
     """
@@ -295,7 +297,24 @@ async def analyze_material_endpoint(
     if analysis_type not in ("material", "damage"):
         raise HTTPException(status_code=400, detail="analysis_type must be 'material' or 'damage'")
     try:
-        content = await file.read()
+        content: bytes
+        ct = request.headers.get("content-type", "")
+        if "application/json" in ct:
+            body = await request.json()
+            raw = body.get("image_base64", "")
+            if not raw:
+                raise HTTPException(status_code=400, detail="image_base64 is required")
+            if "," in raw:
+                raw = raw.split(",", 1)[1]
+            content = base64.b64decode(raw)
+            analysis_type = body.get("analysis_type", analysis_type)
+        else:
+            if file is None:
+                raise HTTPException(status_code=400, detail="file is required")
+            content = await file.read()
+
+        if analysis_type not in ("material", "damage"):
+            raise HTTPException(status_code=400, detail="analysis_type must be 'material' or 'damage'")
         image_b64 = base64.b64encode(content).decode()
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(None, analyze_building_image, image_b64, analysis_type)

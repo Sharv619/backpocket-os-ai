@@ -75,7 +75,14 @@ def resolve_quote_by_id(quote_id: int) -> dict | None:
     try:
         conn = _connect()
         cur = conn.execute(
-            "SELECT id, lead_id, client_name, job_type, materials_cost, labor_cost, markup_percent, total_amount, status FROM quotes WHERE id = ?",
+            """
+            SELECT q.id, q.lead_id, q.client_name, q.job_type, q.materials_cost,
+                   q.labor_cost, q.markup_percent, q.total_amount, q.status,
+                   l.location
+            FROM quotes q
+            LEFT JOIN leads l ON l.id = q.lead_id
+            WHERE q.id = ?
+            """,
             (quote_id,),
         )
         row = cur.fetchone()
@@ -86,6 +93,7 @@ def resolve_quote_by_id(quote_id: int) -> dict | None:
                 "client_name": row[2], "job_type": row[3],
                 "materials_cost": row[4], "labor_cost": row[5],
                 "markup_percent": row[6], "total_amount": row[7], "status": row[8],
+                "location": row[9],
             }
     except Exception as e:
         logger.error(f"Quote lookup error: {e}")
@@ -129,7 +137,14 @@ def _resolve_quote(fuzzy_ref: str) -> dict:
     try:
         conn = _connect()
         cur = conn.execute(
-            "SELECT id, lead_id, client_name, job_type, materials_cost, labor_cost, markup_percent, total_amount, status FROM quotes ORDER BY id DESC LIMIT 50"
+            """
+            SELECT q.id, q.lead_id, q.client_name, q.job_type, q.materials_cost,
+                   q.labor_cost, q.markup_percent, q.total_amount, q.status,
+                   l.location
+            FROM quotes q
+            LEFT JOIN leads l ON l.id = q.lead_id
+            ORDER BY q.id DESC LIMIT 50
+            """
         )
         rows = cur.fetchall()
         conn.close()
@@ -139,8 +154,8 @@ def _resolve_quote(fuzzy_ref: str) -> dict:
 
     return _fuzzy_match_rows(
         rows, fuzzy_ref, "quote",
-        fields=["client_name", "job_type"],
-        col_names=["id", "lead_id", "client_name", "job_type", "materials_cost", "labor_cost", "markup_percent", "total_amount", "status"],
+        fields=["client_name", "job_type", "location"],
+        col_names=["id", "lead_id", "client_name", "job_type", "materials_cost", "labor_cost", "markup_percent", "total_amount", "status", "location"],
     )
 
 
@@ -234,9 +249,17 @@ def get_available_entities(screen_context: str) -> dict:
             entities["recent_leads"] = [
                 {"id": r[0], "name": r[1], "location": r[2], "status": r[3]} for r in cur.fetchall()
             ]
-            cur = conn.execute("SELECT id, client_name, job_type, total_amount, status FROM quotes ORDER BY id DESC LIMIT 10")
+            cur = conn.execute(
+                """
+                SELECT q.id, q.client_name, q.job_type, q.total_amount, q.status, l.location
+                FROM quotes q
+                LEFT JOIN leads l ON l.id = q.lead_id
+                ORDER BY q.id DESC LIMIT 10
+                """
+            )
             entities["recent_quotes"] = [
-                {"id": r[0], "name": r[1], "job_type": r[2], "total": r[3], "status": r[4]} for r in cur.fetchall()
+                {"id": r[0], "name": r[1], "job_type": r[2], "total": r[3], "status": r[4], "location": r[5]}
+                for r in cur.fetchall()
             ]
 
         if screen_context in ("inbox", "dashboard"):

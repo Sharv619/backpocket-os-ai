@@ -1,0 +1,47 @@
+name: backpocket-os-ai-ec2-demo
+
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: backpocket-os-ai:ec2-demo
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-demo}
+      ENV: ${ENV:-demo}
+      BP_HOST: 0.0.0.0
+      BP_PORT: 8000
+      BP_OWNER_NAME: ${BP_OWNER_NAME:-Demo Owner}
+      BP_BUSINESS_TYPE: ${BP_BUSINESS_TYPE:-construction}
+      DEMO_MODE: ${DEMO_MODE:-1}
+      DISABLE_BACKGROUND_POLLING: ${DISABLE_BACKGROUND_POLLING:-1}
+      REQUIRE_BP_API_KEY: ${REQUIRE_BP_API_KEY:-1}
+      BP_API_KEY: ${BP_API_KEY:?Set BP_API_KEY in deploy/ec2-demo/.env}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-}
+      GEMINI_API_KEY: ${DEMO_GEMINI_API_KEY:-}
+      OPENROUTER_API_KEY: ${DEMO_OPENROUTER_API_KEY:-}
+      SPREADSHEET_ID: ${DEMO_SPREADSHEET_ID:-}
+      SUPABASE_JWT_SECRET: ${DEMO_SUPABASE_JWT_SECRET:-}
+      WHAPI_TOKEN: ""
+      FOUNDER_PHONE: ""
+      GOOGLE_APPLICATION_CREDENTIALS: ""
+    ports:
+      - "${BP_PUBLIC_PORT:-8000}:8000"
+    volumes:
+      - type: bind
+        source: ./data/backpocket.db
+        target: /app/backpocket.db
+        bind:
+          create_host_path: false
+      - ./data/uploads:/app/uploads
+      - ./data/documents:/app/documents
+      - ./data/logs:/app/logs
+      # Optional Flutter web build if you intentionally prepare it for the demo:
+      # - ../../static_flutter:/app/static_flutter:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/ai_edge_service.dart';
+import '../services/offline_queue_service.dart';
 import '../services/server_url.dart';
 import '../theme.dart';
 
@@ -34,6 +37,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _pingResult;
   bool _pinging = false;
   bool _insecureUrl = false;
+  final AiEdgeService _aiEdgeService = AiEdgeService();
+  final OfflineQueueService _offlineQueue = OfflineQueueService();
+  AiEdgeCapabilities _aiEdgeCapabilities = AiEdgeCapabilities.unsupported();
+  String? _aiEdgeMessage;
+  bool _aiEdgeLoading = false;
+  int _pendingOfflineActions = 0;
 
   String _normalizeServerUrlField() {
     final normalized = normalizeServerUrl(_serverUrlController.text);
@@ -154,6 +163,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
     _loadBYOKStatus();
     _loadCurrentStyle();
+    _loadAiEdgeStatus();
   }
 
   Future<void> _loadBYOKStatus() async {
@@ -253,6 +263,126 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } catch (_) {}
   }
 
+  Future<void> _loadAiEdgeStatus() async {
+    setState(() => _aiEdgeLoading = true);
+    try {
+      final capabilities = await _aiEdgeService.getCapabilities();
+      final pendingActions = await _offlineQueue.getPendingOfflineActionCount();
+      setState(() {
+        _aiEdgeCapabilities = capabilities;
+        _pendingOfflineActions = pendingActions;
+        _aiEdgeMessage = capabilities.modelMessage.isNotEmpty
+            ? capabilities.modelMessage
+            : null;
+      });
+    } catch (e) {
+      setState(() => _aiEdgeMessage = 'Offline AI status failed: $e');
+    } finally {
+      if (mounted) setState(() => _aiEdgeLoading = false);
+    }
+  }
+
+  Future<void> _prepareOfflineModel() async {
+    setState(() => _aiEdgeLoading = true);
+    try {
+      final model = await _aiEdgeService.ensureModelInstalled();
+      await _offlineQueue.upsertModelRegistry(
+        modelId: model.modelId,
+        status: model.status,
+        localPath: model.localPath,
+        message: model.message,
+      );
+      await _loadAiEdgeStatus();
+      final message = model.status == 'manual_import_required'
+          ? 'Model slot is ready. Tap Import .litertlm Model and pick the model file manually.'
+          : model.message;
+      setState(() => _aiEdgeMessage = message);
+    } catch (e) {
+      setState(() => _aiEdgeMessage = 'Model prep failed: $e');
+    } finally {
+      if (mounted) setState(() => _aiEdgeLoading = false);
+    }
+  }
+
+  Future<void> _importOfflineModel() async {
+    if (kIsWeb) {
+      setState(() {
+        _aiEdgeMessage =
+            'Model import is only available from the Android build right now.';
+      });
+      return;
+    }
+
+    setState(() => _aiEdgeLoading = true);
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.any,
+        allowMultiple: false,
+        withData: false,
+      );
+      if (result == null || result.files.isEmpty) {
+        setState(() => _aiEdgeMessage = 'Model import cancelled.');
+        return;
+      }
+
+      final sourcePath = result.files.single.path;
+      if (sourcePath == null || sourcePath.isEmpty) {
+        setState(() {
+          _aiEdgeMessage =
+              'Selected file path is unavailable on this device. Try a different picker source.';
+        });
+        return;
+      }
+
+      final fileName = result.files.single.name.toLowerCase();
+      final lowerPath = sourcePath.toLowerCase();
+      final looksLikeModel =
+          fileName.endsWith('.litertlm') || lowerPath.endsWith('.litertlm');
+      if (!looksLikeModel) {
+        setState(() {
+          _aiEdgeMessage =
+              'That file does not look like a LiteRT-LM model. Pick a file ending in .litertlm.';
+        });
+        return;
+      }
+
+      final model = await _aiEdgeService.importModelFromPath(sourcePath);
+      await _offlineQueue.upsertModelRegistry(
+        modelId: model.modelId,
+        status: model.status,
+        localPath: model.localPath,
+        message: model.message,
+      );
+      await _loadAiEdgeStatus();
+      setState(() => _aiEdgeMessage = model.message);
+    } catch (e) {
+      setState(() => _aiEdgeMessage = 'Model import failed: $e');
+    } finally {
+      if (mounted) setState(() => _aiEdgeLoading = false);
+    }
+  }
+
+  Color _aiEdgeMessageColor() {
+    final message = (_aiEdgeMessage ?? '').toLowerCase();
+    if (message.contains('failed') || message.contains('error')) {
+      return AppColors.red;
+    }
+    if (message.contains('import') ||
+        message.contains('missing') ||
+        message.contains('manual') ||
+        message.contains('not initialized')) {
+      return AppColors.amber;
+    }
+    return AppColors.green;
+  }
+
+  bool _isPreparedModelStatus(String status) {
+    return status == 'manual_import_required' ||
+        status == 'import_available' ||
+        status == 'downloaded_not_initialized' ||
+        status == 'ready';
+  }
+
   Future<void> _scanWritingStyle() async {
     setState(() {
       _styleScanning = true;
@@ -286,11 +416,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         });
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _styleScanning = false;
           _styleMessage = 'Error: $e';
         });
+      }
     }
   }
 
@@ -325,6 +456,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final pathInUrl = hasPathInServerUrl(_serverUrlController.text.trim());
     final pingReachable =
         _pingResult != null && _isReachableResult(_pingResult!);
+    final modelSlotPrepared = _isPreparedModelStatus(
+      _aiEdgeCapabilities.modelStatus,
+    );
 
     return Container(
       decoration: const BoxDecoration(
@@ -562,6 +696,206 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
             ),
+          ),
+          const SizedBox(height: 32),
+
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'OFFLINE AI EDGE',
+                style: TextStyle(
+                  color: AppColors.textDim,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Android-first local execution for tradie commands. Voice replies stay on-device when the bridge is available.',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 11),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: _aiEdgeLoading
+                    ? const Center(
+                        child: CircularProgressIndicator(
+                          color: AppColors.amber,
+                        ),
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _InfoRow(
+                            label: 'Platform',
+                            value: _aiEdgeCapabilities.supportedPlatform
+                                ? 'Android native'
+                                : 'Unavailable',
+                          ),
+                          _InfoRow(
+                            label: 'Runtime',
+                            value: _aiEdgeCapabilities.runtimeMode,
+                          ),
+                          _InfoRow(
+                            label: 'Local TTS',
+                            value: _aiEdgeCapabilities.localTtsAvailable
+                                ? 'Ready'
+                                : 'Unavailable',
+                          ),
+                          _InfoRow(
+                            label: 'Offline speech',
+                            value: _aiEdgeCapabilities.offlineSpeechAvailable
+                                ? 'Ready'
+                                : 'Type fallback only',
+                          ),
+                          _InfoRow(
+                            label: 'LiteRT-LM lib',
+                            value: _aiEdgeCapabilities.litertlmLibraryPresent
+                                ? 'Detected'
+                                : 'Not bundled',
+                          ),
+                          if (_aiEdgeCapabilities.sdkVersion.isNotEmpty)
+                            _InfoRow(
+                              label: 'SDK version',
+                              value: _aiEdgeCapabilities.sdkVersion,
+                            ),
+                          _InfoRow(
+                            label: 'Model status',
+                            value: _aiEdgeCapabilities.modelStatus,
+                          ),
+                          if (_aiEdgeCapabilities.modelPath.isNotEmpty)
+                            _InfoRow(
+                              label: 'Model path',
+                              value: _aiEdgeCapabilities.modelPath,
+                            ),
+                          if (_aiEdgeCapabilities.modelStatus ==
+                              'manual_import_required')
+                            Container(
+                              margin: const EdgeInsets.only(top: 10),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: AppColors.amber.withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: AppColors.amber.withValues(alpha: 0.45),
+                                ),
+                              ),
+                              child: const Row(
+                                children: [
+                                  Icon(
+                                    Icons.check_circle_outline,
+                                    color: AppColors.amber,
+                                    size: 16,
+                                  ),
+                                  SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Model slot is prepared. Next step: tap Import .litertlm Model and pick the model file.',
+                                      style: TextStyle(
+                                        color: AppColors.amber,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          if (_aiEdgeCapabilities.discoveredSourcePath.isNotEmpty)
+                            _InfoRow(
+                              label: 'Detected source',
+                              value: _aiEdgeCapabilities.discoveredSourcePath,
+                            ),
+                          _InfoRow(
+                            label: 'Pending sync',
+                            value: '$_pendingOfflineActions actions',
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: _loadAiEdgeStatus,
+                                  icon: const Icon(Icons.refresh, size: 16),
+                                  label: const Text('Refresh Status'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: AppColors.amber,
+                                    side: const BorderSide(
+                                      color: AppColors.amber,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: _prepareOfflineModel,
+                                  icon: Icon(
+                                    modelSlotPrepared
+                                        ? Icons.check_circle
+                                        : Icons.memory,
+                                    size: 16,
+                                  ),
+                                  label: Text(
+                                    modelSlotPrepared
+                                        ? 'Slot Ready'
+                                        : 'Prepare Model Slot',
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.amber,
+                                    foregroundColor: Colors.black,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: _importOfflineModel,
+                              icon: const Icon(Icons.upload_file, size: 16),
+                              label: const Text('Import .litertlm Model'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.card,
+                                foregroundColor: AppColors.amber,
+                                side: const BorderSide(
+                                  color: AppColors.amber,
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (_aiEdgeCapabilities.supportedIntents.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 12),
+                              child: Text(
+                                'Offline intents: ${_aiEdgeCapabilities.supportedIntents.join(', ')}',
+                                style: const TextStyle(
+                                  color: AppColors.textMuted,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                          if (_aiEdgeMessage != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 10),
+                              child: Text(
+                                _aiEdgeMessage!,
+                                style: TextStyle(
+                                  color: _aiEdgeMessageColor(),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+              ),
+            ],
           ),
           const SizedBox(height: 32),
 

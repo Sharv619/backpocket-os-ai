@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/voice_command_response.dart';
+import 'ai_edge_service.dart';
 import 'server_url.dart';
 import 'tts_service.dart';
 import 'offline_queue_service.dart';
@@ -20,6 +22,7 @@ class VoiceCommandService extends ChangeNotifier {
   final String baseUrl;
   final String apiKey;
   late final TtsService _tts;
+  final AiEdgeService _aiEdge = AiEdgeService();
   final OfflineQueueService _queueService = OfflineQueueService();
 
   VoiceFlowState _state = VoiceFlowState.idle;
@@ -30,10 +33,26 @@ class VoiceCommandService extends ChangeNotifier {
   String _currentScreen = 'dashboard';
   int? _selectedItemId;
   int? _tabIndex;
+  AiEdgeCapabilities _capabilities = AiEdgeCapabilities.unsupported();
+  int _pendingSyncCount = 0;
+  bool _syncingOfflineActions = false;
+  String? _currentInferenceRequestId;
+  bool _isLocalInferenceActive = false;
+  AiEdgeInferenceEvent? _latestInferenceEvent;
+  final StreamController<AiEdgeInferenceEvent> _inferenceController =
+      StreamController<AiEdgeInferenceEvent>.broadcast();
+  StreamSubscription<AiEdgeInferenceEvent>? _inferenceSubscription;
+  StreamSubscription<bool>? _connectivitySubscription;
 
   VoiceCommandService({required String baseUrl, this.apiKey = ''})
     : baseUrl = normalizeServerUrl(baseUrl) {
     _tts = TtsService(baseUrl: this.baseUrl, apiKey: apiKey);
+    _connectivitySubscription = _queueService.connectivityChanges().listen((
+      hasInternet,
+    ) {
+      unawaited(_handleConnectivityChange(hasInternet));
+    });
+    unawaited(_bootstrapOfflineState());
   }
 
   VoiceFlowState get state => _state;
@@ -46,6 +65,12 @@ class VoiceCommandService extends ChangeNotifier {
   bool get isCollecting => _lastResponse?.sessionState?.isCollecting ?? false;
   bool get isConfirming => _lastResponse?.sessionState?.isConfirming ?? false;
   String? get followUpPrompt => _lastResponse?.followUpPrompt;
+  AiEdgeCapabilities get offlineCapabilities => _capabilities;
+  int get pendingSyncCount => _pendingSyncCount;
+  String? get currentInferenceRequestId => _currentInferenceRequestId;
+  bool get isLocalInferenceActive => _isLocalInferenceActive;
+  AiEdgeInferenceEvent? get latestInferenceEvent => _latestInferenceEvent;
+  Stream<AiEdgeInferenceEvent> get inferenceEvents => _inferenceController.stream;
 
   Map<String, String> get _headers => {
     'Content-Type': 'application/json',
@@ -58,6 +83,31 @@ class VoiceCommandService extends ChangeNotifier {
     _selectedItemId = selectedItemId;
   }
 
+  Future<void> refreshOfflineState() async {
+    _capabilities = await _aiEdge.getCapabilities();
+    _pendingSyncCount = await _queueService.getPendingOfflineActionCount();
+    notifyListeners();
+  }
+
+  Future<void> _bootstrapOfflineState() async {
+    await refreshOfflineState();
+    if (_pendingSyncCount == 0) return;
+    if (!await _queueService.hasInternet()) return;
+
+    await _syncOfflineActions();
+    await refreshOfflineState();
+  }
+
+  Future<void> _handleConnectivityChange(bool hasInternet) async {
+    if (!hasInternet) {
+      await refreshOfflineState();
+      return;
+    }
+
+    await _syncOfflineActions();
+    await refreshOfflineState();
+  }
+
   Future<VoiceCommandResponse?> sendTranscript(String transcript) async {
     if (transcript.trim().isEmpty) return null;
 
@@ -66,15 +116,32 @@ class VoiceCommandService extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
 
-    if (!await _queueService.hasInternet()) {
+    final metadata = {
+      'selected_item_id': _selectedItemId,
+      'tab_index': _tabIndex,
+    };
+
+    final hasInternet = await _queueService.hasInternet();
+    if (hasInternet) {
+      await _syncOfflineActions();
+    }
+
+    if (!hasInternet) {
+      final localResponse = await _runOfflinePipeline(
+        transcript: transcript,
+        metadata: metadata,
+      );
+      if (localResponse != null) {
+        return localResponse;
+      }
       await _queueService.queueVoiceCommand(
         transcript: transcript,
         screenContext: _currentScreen,
         sessionId: _sessionId,
-        metadata: {'selected_item_id': _selectedItemId, 'tab_index': _tabIndex},
+        metadata: metadata,
       );
       _errorMessage =
-          'No reception. Pip saved your command and will process it when online.';
+          'No reception. This command was queued because the offline executor could not run it locally.';
       _state = VoiceFlowState.queuedOffline;
       notifyListeners();
       return null;
@@ -88,10 +155,7 @@ class VoiceCommandService extends ChangeNotifier {
           'transcript': transcript,
           'screen_context': _currentScreen,
           'session_id': _sessionId,
-          'metadata': {
-            'selected_item_id': _selectedItemId,
-            'tab_index': _tabIndex,
-          },
+          'metadata': metadata,
         }),
       );
 
@@ -174,6 +238,35 @@ class VoiceCommandService extends ChangeNotifier {
     return null;
   }
 
+  Future<bool> canUseOfflineSpeechInput() async {
+    final capabilities = await _aiEdge.getCapabilities();
+    return capabilities.offlineSpeechAvailable;
+  }
+
+  Future<bool> hasInternet() => _queueService.hasInternet();
+
+  Future<VoiceCommandResponse?> captureOfflineSpeech({String? prompt}) async {
+    _state = VoiceFlowState.recording;
+    _errorMessage = null;
+    notifyListeners();
+
+    final transcript = await _aiEdge.recognizeOfflineSpeech(
+      prompt: prompt ?? 'Talk to Pip',
+    );
+    if (transcript == null || transcript.trim().isEmpty) {
+      _errorMessage =
+          'Offline dictation is unavailable on this device. Type the command instead.';
+      _state = VoiceFlowState.error;
+      notifyListeners();
+      return null;
+    }
+
+    _lastTranscript = transcript;
+    _state = VoiceFlowState.transcribing;
+    notifyListeners();
+    return sendTranscript(transcript);
+  }
+
   Future<VoiceCommandResponse?> processAudio(String audioPath) async {
     final transcript = await transcribeAudio(audioPath);
     if (transcript == null) return null;
@@ -224,6 +317,19 @@ class VoiceCommandService extends ChangeNotifier {
     _state = VoiceFlowState.processing;
     notifyListeners();
 
+    if (!await _queueService.hasInternet()) {
+      final localResponse = await _runOfflinePipeline(
+        transcript: response,
+        metadata: {
+          'selected_item_id': _selectedItemId,
+          'tab_index': _tabIndex,
+        },
+      );
+      if (localResponse != null) {
+        return localResponse;
+      }
+    }
+
     try {
       final resp = await http.post(
         Uri.parse('$baseUrl/api/voice/confirm'),
@@ -271,6 +377,9 @@ class VoiceCommandService extends ChangeNotifier {
     _lastTranscript = null;
     _errorMessage = null;
     _state = VoiceFlowState.idle;
+    _currentInferenceRequestId = null;
+    _isLocalInferenceActive = false;
+    _latestInferenceEvent = null;
     notifyListeners();
   }
 
@@ -278,5 +387,125 @@ class VoiceCommandService extends ChangeNotifier {
     _errorMessage = null;
     _state = VoiceFlowState.idle;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _connectivitySubscription?.cancel();
+    _inferenceSubscription?.cancel();
+    _inferenceController.close();
+    super.dispose();
+  }
+
+  Future<VoiceCommandResponse?> _runOfflinePipeline({
+    required String transcript,
+    required Map<String, dynamic> metadata,
+  }) async {
+    final requestId = DateTime.now().microsecondsSinceEpoch.toString();
+    _currentInferenceRequestId = requestId;
+    _isLocalInferenceActive = true;
+    _latestInferenceEvent = null;
+    await _inferenceSubscription?.cancel();
+    _inferenceSubscription = _aiEdge
+        .getInferenceStream(requestId)
+        .listen((event) {
+          _latestInferenceEvent = event;
+          _inferenceController.add(event);
+          notifyListeners();
+        });
+    notifyListeners();
+
+    final Map<String, dynamic>? data;
+    try {
+      data = await _aiEdge.runIntentPipeline(
+        transcript: transcript,
+        screenContext: _currentScreen,
+        sessionId: _sessionId,
+        requestId: requestId,
+        metadata: metadata,
+      );
+    } finally {
+      _isLocalInferenceActive = false;
+      await _inferenceSubscription?.cancel();
+      _inferenceSubscription = null;
+      notifyListeners();
+    }
+
+    if (data == null) return null;
+
+    final response = VoiceCommandResponse.fromJson(data);
+    _lastResponse = response;
+    _sessionId = response.sessionState?.sessionId ?? _sessionId;
+    await _persistOfflineResult(transcript, response);
+
+    _state = VoiceFlowState.speaking;
+    notifyListeners();
+    await _speakResponse(response);
+    _state = response.isQueuedForSync
+        ? VoiceFlowState.queuedOffline
+        : VoiceFlowState.idle;
+    notifyListeners();
+    return response;
+  }
+
+  Future<void> _persistOfflineResult(
+    String transcript,
+    VoiceCommandResponse response,
+  ) async {
+    final clientActionId = response.result['client_action_id'] as String?;
+    if (clientActionId == null || clientActionId.isEmpty) {
+      return;
+    }
+
+    final payload = response.result['sync_payload'];
+    await _queueService.recordOfflineAction(
+      clientActionId: clientActionId,
+      intent: response.intent ?? 'unknown',
+      transcript: transcript,
+      screenContext: _currentScreen,
+      payload: payload is Map
+          ? Map<String, dynamic>.from(payload)
+          : <String, dynamic>{},
+      responseJson: {
+        'intent': response.intent,
+        'action': response.action,
+        'speech_response': response.speechResponse,
+        'result': response.result,
+      },
+      syncRequired: response.result['sync_required'] == true,
+    );
+    _pendingSyncCount = await _queueService.getPendingOfflineActionCount();
+  }
+
+  Future<void> _syncOfflineActions() async {
+    if (_syncingOfflineActions) return;
+    _syncingOfflineActions = true;
+    try {
+      final actions = await _queueService.getPendingOfflineActions();
+      for (final action in actions) {
+        try {
+          final response = await _queueService.syncActionToServer(
+            baseUrl: baseUrl,
+            apiKey: apiKey,
+            action: action,
+          );
+          if (response != null) {
+            await _queueService.markOfflineActionSynced(
+              action['id'] as int,
+              serverResponse: response,
+            );
+          }
+        } catch (e) {
+          await _queueService.markOfflineActionError(
+            action['id'] as int,
+            e.toString(),
+          );
+        }
+      }
+    } finally {
+      _pendingSyncCount = await _queueService.getPendingOfflineActionCount();
+      _syncingOfflineActions = false;
+      notifyListeners();
+    }
   }
 }

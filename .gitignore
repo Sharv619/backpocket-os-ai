@@ -1,6 +1,6 @@
 # Environment Variables
 .
-.env
+env
 .opencode.json
 .env.local
 # Database
@@ -59,3 +59,4 @@ flutter_prototype/backpocket_mobile/android/key.properties
 *.jks
 *.keystore
 GEMINI.md
+.env

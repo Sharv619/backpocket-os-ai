@@ -5,8 +5,14 @@ pytest's capture plugin then tries to close those wrappers, which
 causes "I/O operation on closed file." This guard prevents re-wrapping
 when the buffers are already wrapped.
 """
+from pathlib import Path
 import sys
 import io
+
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 def _guard_streams():

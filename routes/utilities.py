@@ -5,9 +5,10 @@ from typing import Optional
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 import services.database as db
 from app.models.schemas import CoachAnalyzeRequest, HookRequest, TTSRequest
+from services.pending_emails import get_pending_email_summary
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -61,7 +62,19 @@ async def health_check():
 
 @router.get("/")
 def read_root():
-    return FileResponse("static/index.html")
+    flutter_index = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)),
+        "static_flutter",
+        "index.html",
+    )
+    if os.path.exists(flutter_index):
+        return RedirectResponse(url="/app/")
+    return JSONResponse(
+        {
+            "status": "ok",
+            "message": "BackPocket OS backend is running.",
+        }
+    )
 
 
 @router.get("/api/status")
@@ -75,12 +88,13 @@ async def get_system_status():
             f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
         )
 
+    pending_summary = get_pending_email_summary()
     return {
         "status": "Healthy",
         "last_patrol": LAST_PATROL_TIME,
-        "pending_count": len(
-            [r for r in db.get_all_pending_refs() if not r.startswith("FIND-")]
-        ),
+        "pending_count": pending_summary["pending_count"],
+        "pending_emails": pending_summary["pending_emails"],
+        "urgent_count": pending_summary["urgent_count"],
         "ollama": "Active",
         "spreadsheet_url": spreadsheet_url,
         "debug_spreadsheet_id": spreadsheet_id,

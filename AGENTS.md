@@ -18,10 +18,10 @@ python3 -m uvicorn main:app --host 127.0.0.1 --port 8000
 
 | Server | File | Tools |
 |--------|------|-------|
-| `backpocket-leads` | `mcp_servers/leads.mjs` | search_leads, create_lead |
-| `backpocket-quotes` | `mcp_servers/quotes.mjs` | create_quote, get_quote_template |
-| `backpocket-pipeline` | `mcp_servers/pipeline.mjs` | get_pipeline_summary, record_payment |
-| `backpocket-knowledge` | `mcp_servers/knowledge.mjs` | save_note, search_notes |
+| `backpocket-leads` | `mcp_servers/leads.mjs` | search_leads, get_lead, create_lead, extract_lead_from_email, get_client_history |
+| `backpocket-quotes` | `mcp_servers/quotes.mjs` | create_quote, get_quote, get_quote_template, get_overdue_quotes, draft_follow_up_email, match_quote_to_email, get_job_patterns |
+| `backpocket-pipeline` | `mcp_servers/pipeline.mjs` | get_pipeline_summary, record_payment, list_payments, suggest_next_action |
+| `backpocket-knowledge` | `mcp_servers/knowledge.mjs` | save_note, search_notes, list_notes, get_note |
 
 DO NOT use `src/mcp-wrapper/` — broken (CJS/ESM conflict).
 

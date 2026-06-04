@@ -185,6 +185,7 @@ class _AppShellState extends State<AppShell> {
   String _serverUrl =
       'http://localhost:8000'; // Default for local, auto-detected on web
   String _apiKey = '';
+  bool _prefsLoaded = false;
   bool _magnifierMode = false;
   VoiceCommandService? _voiceService;
   bool _showVoiceOverlay = false;
@@ -192,30 +193,81 @@ class _AppShellState extends State<AppShell> {
 
   // Pages cached here — rebuilt only when serverUrl/apiKey change.
   // IndexedStack keeps all live so tab switches preserve scroll/state.
-  late List<Widget> _pages;
+  List<Widget> _pages = const [];
 
   @override
   void initState() {
     super.initState();
     _tab = widget.initialTab;
-    _pages = _buildPages();
     _loadPrefs();
   }
 
+  ValueKey<String> _pageConfigKey(String name) =>
+      ValueKey('$name|$_serverUrl|${_apiKey.hashCode}');
+
   List<Widget> _buildPages() => [
-    DashboardScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-    InboxScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-    TwinChatScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-    DocumentsScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-    SopsScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-    MarketingScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-    AgenticRagScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-    BlogScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-    DriveScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-    ClientCrmScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-    InstructionsScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-    ConstructionScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    DashboardScreen(
+      key: _pageConfigKey('dashboard'),
+      serverUrl: _serverUrl,
+      apiKey: _apiKey,
+    ),
+    InboxScreen(
+      key: _pageConfigKey('inbox'),
+      serverUrl: _serverUrl,
+      apiKey: _apiKey,
+    ),
+    TwinChatScreen(
+      key: _pageConfigKey('chat'),
+      serverUrl: _serverUrl,
+      apiKey: _apiKey,
+    ),
+    DocumentsScreen(
+      key: _pageConfigKey('documents'),
+      serverUrl: _serverUrl,
+      apiKey: _apiKey,
+    ),
+    SopsScreen(
+      key: _pageConfigKey('sops'),
+      serverUrl: _serverUrl,
+      apiKey: _apiKey,
+    ),
+    MarketingScreen(
+      key: _pageConfigKey('marketing'),
+      serverUrl: _serverUrl,
+      apiKey: _apiKey,
+    ),
+    AgenticRagScreen(
+      key: _pageConfigKey('agentic_rag'),
+      serverUrl: _serverUrl,
+      apiKey: _apiKey,
+    ),
+    BlogScreen(
+      key: _pageConfigKey('blog'),
+      serverUrl: _serverUrl,
+      apiKey: _apiKey,
+    ),
+    DriveScreen(
+      key: _pageConfigKey('drive'),
+      serverUrl: _serverUrl,
+      apiKey: _apiKey,
+    ),
+    ClientCrmScreen(
+      key: _pageConfigKey('client_crm'),
+      serverUrl: _serverUrl,
+      apiKey: _apiKey,
+    ),
+    InstructionsScreen(
+      key: _pageConfigKey('instructions'),
+      serverUrl: _serverUrl,
+      apiKey: _apiKey,
+    ),
+    ConstructionScreen(
+      key: _pageConfigKey('construction'),
+      serverUrl: _serverUrl,
+      apiKey: _apiKey,
+    ),
     SettingsScreen(
+      key: _pageConfigKey('settings'),
       serverUrl: _serverUrl,
       apiKey: _apiKey,
       onSettingsChanged: (url, key) {
@@ -231,8 +283,16 @@ class _AppShellState extends State<AppShell> {
         });
       },
     ),
-    ConversationsScreen(serverUrl: _serverUrl, apiKey: _apiKey),
-    CoachScreen(serverUrl: _serverUrl, apiKey: _apiKey),
+    ConversationsScreen(
+      key: _pageConfigKey('conversations'),
+      serverUrl: _serverUrl,
+      apiKey: _apiKey,
+    ),
+    CoachScreen(
+      key: _pageConfigKey('coach'),
+      serverUrl: _serverUrl,
+      apiKey: _apiKey,
+    ),
   ];
 
   Future<void> _loadPrefs() async {
@@ -253,6 +313,7 @@ class _AppShellState extends State<AppShell> {
       _apiKey = prefs.getString('api_key') ?? '';
       _voiceService = VoiceCommandService(baseUrl: _serverUrl, apiKey: _apiKey);
       _pages = _buildPages();
+      _prefsLoaded = true;
     });
   }
 
@@ -475,6 +536,39 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
+    final body = !_prefsLoaded
+        ? const Center(
+            child: CircularProgressIndicator(color: AppColors.amber),
+          )
+        : Stack(
+            children: [
+              IndexedStack(index: _tab, children: _pages),
+              if (_voiceResponse != null &&
+                  (_voiceResponse!.needsConfirmation ||
+                      _voiceResponse!.needsMoreInput))
+                Positioned(
+                  bottom: 80,
+                  left: 0,
+                  right: 0,
+                  child: VoiceConfirmationCard(
+                    response: _voiceResponse!,
+                    onConfirm: () => _handleVoiceConfirm('yes'),
+                    onCancel: () => _handleVoiceConfirm('cancel'),
+                    onDismiss: () => setState(() => _voiceResponse = null),
+                  ),
+                ),
+              if (_showVoiceOverlay && _voiceService != null)
+                VoiceRecordingOverlay(
+                  voiceService: _voiceService!,
+                  transcript: _voiceService!.lastTranscript,
+                  speechResponse: _voiceResponse?.speechResponse,
+                  followUpPrompt: _voiceResponse?.followUpPrompt,
+                  onClose: () => setState(() => _showVoiceOverlay = false),
+                  onTextSubmit: _handleVoiceText,
+                ),
+            ],
+          );
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: AppColors.surface,
@@ -524,34 +618,7 @@ class _AppShellState extends State<AppShell> {
         ],
       ),
       drawer: _buildSidebar(),
-      body: Stack(
-        children: [
-          IndexedStack(index: _tab, children: _pages),
-          if (_voiceResponse != null &&
-              (_voiceResponse!.needsConfirmation ||
-                  _voiceResponse!.needsMoreInput))
-            Positioned(
-              bottom: 80,
-              left: 0,
-              right: 0,
-              child: VoiceConfirmationCard(
-                response: _voiceResponse!,
-                onConfirm: () => _handleVoiceConfirm('yes'),
-                onCancel: () => _handleVoiceConfirm('cancel'),
-                onDismiss: () => setState(() => _voiceResponse = null),
-              ),
-            ),
-          if (_showVoiceOverlay && _voiceService != null)
-            VoiceRecordingOverlay(
-              voiceService: _voiceService!,
-              transcript: _voiceService!.lastTranscript,
-              speechResponse: _voiceResponse?.speechResponse,
-              followUpPrompt: _voiceResponse?.followUpPrompt,
-              onClose: () => setState(() => _showVoiceOverlay = false),
-              onTextSubmit: _handleVoiceText,
-            ),
-        ],
-      ),
+      body: body,
       bottomNavigationBar: BottomNavigationBar(
         // Maps bottom-nav index → tab index: Home=0, Inbox=1, Chat=2, Jobs=6, Settings=7
         currentIndex: _bottomNavIndex,
@@ -585,7 +652,7 @@ class _AppShellState extends State<AppShell> {
           ),
         ],
       ),
-      floatingActionButton: _voiceService != null
+      floatingActionButton: _prefsLoaded && _voiceService != null
           ? VoiceFab(
               voiceService: _voiceService!,
               onTap: _onVoiceFabTap,

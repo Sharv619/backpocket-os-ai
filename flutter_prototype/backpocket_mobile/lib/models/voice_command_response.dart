@@ -116,4 +116,8 @@ class VoiceCommandResponse {
   bool get isError => result.containsKey('error');
   bool get needsMoreInput => action == 'collect' || action == 'clarify';
   bool get shouldNavigate => action == 'navigate' || uiAction.navigateTo != null;
+  String get executionMode => result['mode'] as String? ?? 'online_server';
+  String get syncStatus => result['sync_status'] as String? ?? 'none';
+  bool get isQueuedForSync => syncStatus == 'pending';
+  bool get isOfflineResult => executionMode != 'online_server';
 }

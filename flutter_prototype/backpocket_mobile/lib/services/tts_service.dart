@@ -2,12 +2,14 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:audioplayers/audioplayers.dart';
+import 'ai_edge_service.dart';
 import 'server_url.dart';
 
 class TtsService {
   final String baseUrl;
   final String apiKey;
   final AudioPlayer _player = AudioPlayer();
+  final AiEdgeService _aiEdge = AiEdgeService();
   bool _isSpeaking = false;
 
   TtsService({required String baseUrl, this.apiKey = ''})
@@ -18,7 +20,11 @@ class TtsService {
   Future<void> speak(String text, {String voice = 'male'}) async {
     if (text.isEmpty) return;
     final bytes = await _fetchAudio(text, voice: voice);
-    if (bytes != null) await _playBytes(bytes);
+    if (bytes != null) {
+      await _playBytes(bytes);
+      return;
+    }
+    await _aiEdge.speakOffline(text);
   }
 
   Future<Uint8List?> synthesize(String text, {String voice = 'male'}) async {

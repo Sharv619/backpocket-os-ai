@@ -82,6 +82,7 @@ async def voice_command(req: VoiceCommandRequest) -> VoiceCommandResponse:
         )
 
     session = session_manager.get_or_create(req.session_id)
+    session.bind_request_context(req.screen_context, req.metadata)
     transcript = req.transcript.strip()
 
     if session.state == SessionState.CONFIRMING:
@@ -178,6 +179,7 @@ async def _dispatch_intent(
         session.intent = intent
         session.state = SessionState.CONFIRMING
         session.pending_action = {"intent": intent, "params": entities}
+        session.touch()
         prompt = generate_confirmation_prompt(intent, entities, intent in STRONG_CONFIRM)
         return VoiceCommandResponse(
             intent=intent, confidence=1.0, action="confirm",
@@ -199,7 +201,8 @@ async def _handle_confirmation_response(session: VoiceSession, transcript: str) 
             session,
             action_data["intent"],
             action_data["params"],
-            request.screen_context or session.get("screen_context", "dashboard"),
+            session.screen_context,
+            session.metadata,
         )
 
     if any(w in lower for w in NO_WORDS):

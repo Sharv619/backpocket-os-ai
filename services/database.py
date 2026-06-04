@@ -180,6 +180,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             client_name TEXT NOT NULL,
             email TEXT NOT NULL,
+            client_action_id TEXT,
             phone TEXT,
             job_type TEXT,
             location TEXT,
@@ -198,6 +199,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS quotes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             lead_id INTEGER,
+            client_action_id TEXT,
             client_name TEXT,
             job_type TEXT,
             description TEXT,
@@ -218,6 +220,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS payments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             quote_id INTEGER,
+            client_action_id TEXT,
             client_name TEXT,
             amount DECIMAL(10,2),
             status TEXT DEFAULT 'pending',
@@ -253,11 +256,23 @@ def init_db():
             FOREIGN KEY(quote_id) REFERENCES quotes(id)
         )
     """)
+
+    # Migration: idempotent offline replay keys for construction records
+    for table in ("leads", "quotes", "payments"):
+        try:
+            cursor.execute(f"ALTER TABLE {table} ADD COLUMN client_action_id TEXT")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # already exists
+
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status)")
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_client_action_id ON leads(client_action_id) WHERE client_action_id IS NOT NULL")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_quotes_status ON quotes(status)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_quotes_lead_id ON quotes(lead_id)")
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_quotes_client_action_id ON quotes(client_action_id) WHERE client_action_id IS NOT NULL")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_payments_quote_id ON payments(quote_id)")
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_client_action_id ON payments(client_action_id) WHERE client_action_id IS NOT NULL")
 
     conn.commit()
     conn.close()
