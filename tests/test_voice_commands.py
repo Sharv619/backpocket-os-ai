@@ -2,27 +2,53 @@
 Voice command endpoint tests.
 Run: python -m pytest tests/test_voice_commands.py -v
 """
-import pytest
-from fastapi.testclient import TestClient
-from main import app
+import os
+import asyncio
 
-client = TestClient(app)
-HEADERS = {"X-API-Key": "test"}  # middleware accepts any key in test mode
+os.environ["BP_API_KEY"] = "test"
+os.environ["SUPABASE_JWT_SECRET"] = ""
+os.environ["BP_TESTING"] = "1"
+
+import pytest
+import routes.voice_handlers_construction  # noqa: F401
+import routes.voice_handlers_cross  # noqa: F401
+import routes.voice_handlers_dashboard  # noqa: F401
+import routes.voice_handlers_inbox  # noqa: F401
+import routes.voice_handlers_misc  # noqa: F401
+from routes.voice_commands import (
+    VoiceCommandRequest,
+    get_intents,
+    voice_command,
+)
+
+
+class _RouteResult:
+    def __init__(self, body):
+        self.status_code = 200
+        self._body = body
+
+    def json(self):
+        if hasattr(self._body, "model_dump"):
+            return self._body.model_dump()
+        if hasattr(self._body, "dict"):
+            return self._body.dict()
+        return self._body
 
 
 # ── helpers ────────────────────────────────────────────────────────────────
 
 def voice_cmd(transcript: str, screen: str = "dashboard", session_id: str = "test-001", tab: int = 0):
-    return client.post(
-        "/api/voice/command",
-        json={
-            "transcript": transcript,
-            "screen_context": screen,
-            "session_id": session_id,
-            "metadata": {"tab_index": tab},
-        },
-        headers=HEADERS,
+    body = asyncio.run(
+        voice_command(
+            VoiceCommandRequest(
+                transcript=transcript,
+                screen_context=screen,
+                session_id=session_id,
+                metadata={"tab_index": tab},
+            )
+        )
     )
+    return _RouteResult(body)
 
 
 # ── basic routing ───────────────────────────────────────────────────────────
@@ -119,7 +145,7 @@ def test_pipeline_intent_tradie_slang():
 # ── voice session endpoints ─────────────────────────────────────────────────
 
 def test_voice_intents_endpoint():
-    r = client.get("/api/voice/intents?screen=construction", headers=HEADERS)
+    r = _RouteResult(asyncio.run(get_intents(screen="construction")))
     assert r.status_code == 200
     data = r.json()
     assert "intents" in data

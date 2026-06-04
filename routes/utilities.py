@@ -19,45 +19,8 @@ SCHEDULE_JOBS_DONE = set()
 
 @router.get("/health")
 async def health_check():
-    """Deep health check — verifies DB, env vars, and optional services."""
-    checks = {}
-
-    # Database
-    try:
-        pending_refs = db.get_all_pending_refs()
-        checks["database"] = "ok"
-    except Exception as e:
-        checks["database"] = f"ERROR: {e}"
-
-    # Critical env vars
-    checks["gemini_key"]      = "ok" if os.getenv("GEMINI_API_KEY") else "MISSING"
-    checks["openrouter_key"]  = "ok" if os.getenv("OPENROUTER_API_KEY") else "MISSING"
-    checks["google_creds"]    = "ok" if os.getenv("GOOGLE_APPLICATION_CREDENTIALS") else "MISSING"
-
-    # Auth (EPIC F)
-    from services.auth import auth_is_configured
-    checks["auth"] = "ok" if auth_is_configured() else "not configured (dev mode)"
-
-    # Optional services
-    checks["elevenlabs"]      = "ok" if os.getenv("ELEVENLABS_API_KEY") else "not configured"
-    checks["ollama"]          = "ok" if os.getenv("OLLAMA_BASE_URL", "http://localhost:11434") else "not configured"
-
-    # Ollama reachability (non-blocking, best-effort)
-    try:
-        import httpx
-        async with httpx.AsyncClient(timeout=2) as client:
-            r = await client.get(os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
-            checks["ollama"] = "ok" if r.status_code < 500 else "unreachable"
-    except Exception:
-        checks["ollama"] = "unreachable"
-
-    all_critical = all(v == "ok" for k, v in checks.items() if k in ("database", "gemini_key"))
-    return {
-        "status": "READY" if all_critical else "DEGRADED",
-        "version": "2.2",
-        "checks": checks,
-        "pending_count": len(pending_refs) if "pending_refs" in dir() else 0,
-    }
+    """ALB/ECS health check. Keep this unauthenticated and non-sensitive."""
+    return {"status": "ok"}
 
 
 @router.get("/")

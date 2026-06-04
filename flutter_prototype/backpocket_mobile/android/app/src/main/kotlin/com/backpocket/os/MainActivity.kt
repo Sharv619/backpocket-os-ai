@@ -99,6 +99,25 @@ class MainActivity : FlutterActivity(),
                 }
             }
 
+            "runLocalPrompt" -> {
+                val prompt = call.argument<String>("prompt").orEmpty()
+                val requestId = call.argument<String>("request_id") ?: UUID.randomUUID().toString()
+                launchMethod(result) {
+                    localIntentEngine.runLocalPrompt(
+                        prompt = prompt,
+                        requestId = requestId,
+                    ) { event ->
+                        emitInferenceEvent(
+                            requestId = requestId,
+                            payload = event,
+                        )
+                    } + mapOf(
+                        "request_id" to requestId,
+                        "runtime_mode" to localIntentEngine.runtimeMode(),
+                    )
+                }
+            }
+
             "recognizeOfflineSpeech" -> recognizeOfflineSpeech(call, result)
 
             "speakOffline" -> {

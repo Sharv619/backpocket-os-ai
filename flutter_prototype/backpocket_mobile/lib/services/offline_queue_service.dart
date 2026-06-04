@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
@@ -40,8 +41,15 @@ class OfflineQueueService {
   OfflineQueueService._internal();
 
   Database? _db;
+  int _memoryId = 1;
+  final List<Map<String, dynamic>> _memoryVoiceCommands = [];
+  final List<Map<String, dynamic>> _memoryOfflineActions = [];
+  final Map<String, Map<String, dynamic>> _memoryModelRegistry = {};
 
   Future<Database> get database async {
+    if (kIsWeb) {
+      throw UnsupportedError('sqflite offline queue is not available on web.');
+    }
     if (_db != null) return _db!;
     _db = await _initDb();
     return _db!;
@@ -146,6 +154,22 @@ class OfflineQueueService {
     String? audioPath,
     String? clientActionId,
   }) async {
+    if (kIsWeb) {
+      final id = _memoryId++;
+      _memoryVoiceCommands.add({
+        'id': id,
+        'transcript': transcript,
+        'screen_context': screenContext,
+        'session_id': sessionId,
+        'metadata': metadata != null ? jsonEncode(metadata) : null,
+        'audio_path': audioPath,
+        'client_action_id': clientActionId,
+        'sync_status': 'pending',
+        'created_at': DateTime.now().toIso8601String(),
+      });
+      return id;
+    }
+
     final db = await database;
     return await db.insert('voice_commands', {
       'transcript': transcript,
@@ -158,11 +182,20 @@ class OfflineQueueService {
   }
 
   Future<List<Map<String, dynamic>>> getQueuedCommands() async {
+    if (kIsWeb) {
+      return List<Map<String, dynamic>>.from(_memoryVoiceCommands);
+    }
+
     final db = await database;
     return await db.query('voice_commands', orderBy: 'created_at ASC');
   }
 
   Future<void> removeCommand(int id) async {
+    if (kIsWeb) {
+      _memoryVoiceCommands.removeWhere((row) => row['id'] == id);
+      return;
+    }
+
     final db = await database;
     await db.delete('voice_commands', where: 'id = ?', whereArgs: [id]);
   }
@@ -176,6 +209,27 @@ class OfflineQueueService {
     Map<String, dynamic>? responseJson,
     bool syncRequired = true,
   }) async {
+    if (kIsWeb) {
+      _memoryOfflineActions.removeWhere(
+        (row) => row['client_action_id'] == clientActionId,
+      );
+      _memoryOfflineActions.add({
+        'id': _memoryId++,
+        'client_action_id': clientActionId,
+        'intent': intent,
+        'transcript': transcript,
+        'screen_context': screenContext,
+        'payload': payload != null ? jsonEncode(payload) : null,
+        'response_json': responseJson != null ? jsonEncode(responseJson) : null,
+        'sync_required': syncRequired ? 1 : 0,
+        'sync_status': syncRequired ? 'pending' : 'local_only',
+        'error_message': null,
+        'created_at': DateTime.now().toIso8601String(),
+        'synced_at': null,
+      });
+      return;
+    }
+
     final db = await database;
     await db.insert(
       'offline_actions',
@@ -195,6 +249,16 @@ class OfflineQueueService {
   }
 
   Future<List<Map<String, dynamic>>> getPendingOfflineActions() async {
+    if (kIsWeb) {
+      return _memoryOfflineActions
+          .where(
+            (row) =>
+                row['sync_status'] == 'pending' && row['sync_required'] == 1,
+          )
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList();
+    }
+
     final db = await database;
     return db.query(
       'offline_actions',
@@ -205,6 +269,15 @@ class OfflineQueueService {
   }
 
   Future<int> getPendingOfflineActionCount() async {
+    if (kIsWeb) {
+      return _memoryOfflineActions
+          .where(
+            (row) =>
+                row['sync_status'] == 'pending' && row['sync_required'] == 1,
+          )
+          .length;
+    }
+
     final db = await database;
     final result = await db.rawQuery(
       "SELECT COUNT(*) AS count FROM offline_actions WHERE sync_status = 'pending' AND sync_required = 1",
@@ -216,6 +289,21 @@ class OfflineQueueService {
     int id, {
     Map<String, dynamic>? serverResponse,
   }) async {
+    if (kIsWeb) {
+      final index = _memoryOfflineActions.indexWhere((row) => row['id'] == id);
+      if (index >= 0) {
+        _memoryOfflineActions[index] = {
+          ..._memoryOfflineActions[index],
+          'sync_status': 'synced',
+          'response_json':
+              serverResponse != null ? jsonEncode(serverResponse) : null,
+          'error_message': null,
+          'synced_at': DateTime.now().toIso8601String(),
+        };
+      }
+      return;
+    }
+
     final db = await database;
     await db.update(
       'offline_actions',
@@ -232,6 +320,18 @@ class OfflineQueueService {
   }
 
   Future<void> markOfflineActionError(int id, String message) async {
+    if (kIsWeb) {
+      final index = _memoryOfflineActions.indexWhere((row) => row['id'] == id);
+      if (index >= 0) {
+        _memoryOfflineActions[index] = {
+          ..._memoryOfflineActions[index],
+          'error_message': message,
+          'sync_status': 'pending',
+        };
+      }
+      return;
+    }
+
     final db = await database;
     await db.update(
       'offline_actions',
@@ -247,6 +347,17 @@ class OfflineQueueService {
     required String localPath,
     required String message,
   }) async {
+    if (kIsWeb) {
+      _memoryModelRegistry[modelId] = {
+        'model_id': modelId,
+        'status': status,
+        'local_path': localPath,
+        'message': message,
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      return;
+    }
+
     final db = await database;
     await db.insert(
       'model_registry',
@@ -262,6 +373,11 @@ class OfflineQueueService {
   }
 
   Future<Map<String, dynamic>?> getModelRegistry(String modelId) async {
+    if (kIsWeb) {
+      final row = _memoryModelRegistry[modelId];
+      return row == null ? null : Map<String, dynamic>.from(row);
+    }
+
     final db = await database;
     final rows = await db.query(
       'model_registry',

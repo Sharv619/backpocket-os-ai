@@ -1,0 +1,54 @@
+.git
+.gitignore
+.dockerignore
+
+# Local secrets and credentials
+.env
+.env.*
+!.env.example
+credentials.json
+gmail_credentials.json
+token*.json
+*.pem
+*.key
+*.jks
+*.keystore
+
+# Runtime databases and generated state
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+uploads/
+documents/
+temp_uploads/
+logs/
+archives/
+backups/
+paperless_export/
+paperless_consume/
+
+# Python/dev caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# Node/Flutter build artifacts
+node_modules/
+flutter_prototype/backpocket_mobile/.dart_tool/
+flutter_prototype/backpocket_mobile/build/
+flutter_prototype/backpocket_mobile/.flutter-plugins
+flutter_prototype/backpocket_mobile/.flutter-plugins-dependencies
+static_flutter/
+
+# Local binaries/media
+*.log
+*.mp4
+*.exe
+*.zip
+nul

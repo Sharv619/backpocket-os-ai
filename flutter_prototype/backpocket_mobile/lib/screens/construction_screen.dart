@@ -401,6 +401,8 @@ class _ConstructionScreenState extends State<ConstructionScreen>
     final notesCtrl = TextEditingController();
     final itemCtrl = TextEditingController(text: quote['job_type'] ?? 'Labour & Materials');
     final amountCtrl = TextEditingController(text: (quote['total_amount'] ?? '').toString());
+    bool generating = false;
+    bool done = false;
 
     showModalBottomSheet(
       context: context,
@@ -409,8 +411,6 @@ class _ConstructionScreenState extends State<ConstructionScreen>
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheet) {
-          bool generating = false;
-          bool done = false;
           return Padding(
             padding: EdgeInsets.only(left: 16, right: 16, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
             child: Column(

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -19,6 +18,7 @@ import 'screens/client_crm_screen.dart';
 import 'screens/construction_screen.dart';
 import 'screens/conversations_screen.dart';
 import 'screens/coach_screen.dart';
+import 'screens/ai_edge_gallery_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/voice_input_screen.dart';
 import 'services/voice_command_service.dart';
@@ -61,6 +61,7 @@ class TwinController extends ChangeNotifier {
 
 // ─── Colours (5am warehouse aesthetic) ───────────────────────────────────────
 const Color kBg = Color(0xFF0D0A07);
+const String _devApiKey = String.fromEnvironment('BP_API_KEY');
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 void main() {
@@ -149,6 +150,10 @@ class _BackPocketAppState extends State<BackPocketApp> {
         GoRoute(
           path: '/coach',
           builder: (context, state) => AppShell(initialTab: 14),
+        ),
+        GoRoute(
+          path: '/ai-edge',
+          builder: (context, state) => AppShell(initialTab: 15),
         ),
       ],
     );
@@ -293,24 +298,20 @@ class _AppShellState extends State<AppShell> {
       serverUrl: _serverUrl,
       apiKey: _apiKey,
     ),
+    AiEdgeGalleryScreen(key: _pageConfigKey('ai_edge')),
   ];
 
   Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      String defaultUrl = 'http://127.0.0.1:8000';
-
-      if (kIsWeb) {
-        final uri = Uri.base;
-        defaultUrl = normalizeServerUrl(
-          '${uri.scheme}://${uri.host}${uri.hasPort ? ":${uri.port}" : ""}',
-        );
-      }
-
+      final savedUrl = prefs.getString('server_url');
+      final savedUri = savedUrl == null ? null : tryParseServerUrl(savedUrl);
+      final useDefaultUrl = savedUri == null || savedUri.host == '172.17.0.1';
+      final serverUrl = useDefaultUrl ? 'http://127.0.0.1:8000' : savedUrl!;
       _serverUrl = normalizeServerUrl(
-        prefs.getString('server_url') ?? defaultUrl,
+        serverUrl,
       );
-      _apiKey = prefs.getString('api_key') ?? '';
+      _apiKey = prefs.getString('api_key') ?? _devApiKey;
       _voiceService = VoiceCommandService(baseUrl: _serverUrl, apiKey: _apiKey);
       _pages = _buildPages();
       _prefsLoaded = true;
@@ -336,6 +337,7 @@ class _AppShellState extends State<AppShell> {
       {'icon': Icons.settings_outlined, 'label': 'Settings', 'tab': 12},
       {'icon': Icons.forum_outlined, 'label': 'Conversations', 'tab': 13},
       {'icon': Icons.record_voice_over_outlined, 'label': 'Coach', 'tab': 14},
+      {'icon': Icons.offline_bolt_outlined, 'label': 'AI Edge', 'tab': 15},
     ];
     final chatHistory = twinController.messages
         .where((m) => m['role'] == 'user')
@@ -467,6 +469,7 @@ class _AppShellState extends State<AppShell> {
     'settings',
     'conversations',
     'coach',
+    'ai_edge',
   ];
 
   // Bottom nav: Home(0), Inbox(1), Chat(2), Jobs(11=Construction), Settings(12)
@@ -537,9 +540,7 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final body = !_prefsLoaded
-        ? const Center(
-            child: CircularProgressIndicator(color: AppColors.amber),
-          )
+        ? const Center(child: CircularProgressIndicator(color: AppColors.amber))
         : Stack(
             children: [
               IndexedStack(index: _tab, children: _pages),

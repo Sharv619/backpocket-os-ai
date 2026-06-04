@@ -408,6 +408,99 @@ internal class LocalIntentEngine(
         }
     }
 
+    suspend fun runLocalPrompt(
+        prompt: String,
+        requestId: String,
+        onModelEvent: suspend (Map<String, Any?>) -> Unit = {},
+    ): Map<String, Any?> {
+        val normalized = prompt.trim()
+        if (normalized.isBlank()) {
+            return mapOf(
+                "status" to "error",
+                "response" to "",
+                "message" to "Enter a prompt first.",
+            )
+        }
+        if (!isLiteRtLmAvailable()) {
+            return mapOf(
+                "status" to "unavailable",
+                "response" to "",
+                "message" to "LiteRT-LM SDK classes are unavailable in this build.",
+            )
+        }
+
+        val modelFile = modelSlotFile(DEFAULT_MODEL_ID)
+        if (!modelRuntime.isReadyFor(modelFile.absolutePath)) {
+            if (!modelFile.exists()) {
+                return mapOf(
+                    "status" to "model_missing",
+                    "response" to "",
+                    "message" to "Import a .litertlm model from Settings before using AI Edge Gallery mode.",
+                    "model_path" to modelFile.absolutePath,
+                )
+            }
+
+            val status = initializeModelStatus(DEFAULT_MODEL_ID, modelFile)
+            if (status["status"] != "ready") {
+                return mapOf(
+                    "status" to "init_failed",
+                    "response" to "",
+                    "message" to (status["message"] ?: "Model initialization failed."),
+                    "model_path" to modelFile.absolutePath,
+                )
+            }
+        }
+
+        return try {
+            onModelEvent(
+                mapOf(
+                    "type" to "inference_started",
+                    "runtime_mode" to runtimeMode(),
+                    "transcript" to normalized,
+                ),
+            )
+            val response = modelRuntime.runPrompt(
+                userInput = normalized,
+                onChunk = { chunk ->
+                    onModelEvent(
+                        mapOf(
+                            "type" to "inference_chunk",
+                            "runtime_mode" to runtimeMode(),
+                            "chunk" to chunk,
+                        ),
+                    )
+                },
+            )
+            onModelEvent(
+                mapOf(
+                    "type" to "inference_completed",
+                    "runtime_mode" to runtimeMode(),
+                ),
+            )
+            mapOf(
+                "status" to "success",
+                "response" to response,
+                "message" to "",
+                "model_path" to modelFile.absolutePath,
+            )
+        } catch (t: Throwable) {
+            val message = t.message ?: t::class.java.simpleName
+            onModelEvent(
+                mapOf(
+                    "type" to "inference_error",
+                    "runtime_mode" to runtimeMode(),
+                    "message" to message,
+                ),
+            )
+            mapOf(
+                "status" to "error",
+                "response" to "",
+                "message" to message,
+                "model_path" to modelFile.absolutePath,
+            )
+        }
+    }
+
     private fun classifyAndRoute(session: OfflineSession, transcript: String): Map<String, Any?> {
         val lower = transcript.lowercase()
         val intent = classifyIntent(lower)
@@ -1124,6 +1217,30 @@ internal class LocalIntentEngine(
             val activeEngine = engine ?: return@withContext """{"error":"Model uninitialized"}"""
             val conversationConfig = ConversationConfig(
                 systemInstruction = Contents.of(buildSystemPrompt(screenContext, metadata)),
+            )
+
+            activeEngine.createConversation(conversationConfig).use { conversation ->
+                val message = conversation.sendMessage(userInput, emptyMap<String, Any>())
+                val rendered = conversation
+                    .renderMessageIntoString(message, emptyMap<String, Any>())
+                    .trim()
+                if (rendered.isNotBlank()) {
+                    onChunk(rendered)
+                }
+                return@withContext rendered
+            }
+        }
+
+        @OptIn(ExperimentalApi::class)
+        suspend fun runPrompt(
+            userInput: String,
+            onChunk: suspend (String) -> Unit = {},
+        ): String = withContext(Dispatchers.IO) {
+            val activeEngine = engine ?: return@withContext "Model uninitialized."
+            val conversationConfig = ConversationConfig(
+                systemInstruction = Contents.of(
+                    "You are BackPocket's on-device AI Edge assistant. Answer directly, keep private data on-device, and be concise unless the user asks for detail.",
+                ),
             )
 
             activeEngine.createConversation(conversationConfig).use { conversation ->

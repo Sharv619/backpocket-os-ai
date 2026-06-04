@@ -16,6 +16,11 @@ def tmp_db(tmp_path, monkeypatch):
     yield db_file
 
 
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
 class TestBillingTable:
     def test_table_created(self, tmp_path):
         import services.stripe as s
@@ -30,7 +35,7 @@ class TestBillingTable:
 
 
 class TestCheckoutSession:
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_create_session_returns_url_and_id(self, monkeypatch):
         import services.stripe as svc
 
@@ -52,7 +57,7 @@ class TestCheckoutSession:
         assert result["url"] == "https://checkout.stripe.com/pay/cs_test_abc123"
         assert result["session_id"] == "cs_test_abc123"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_creates_db_record(self, monkeypatch):
         import services.stripe as svc
 
@@ -71,7 +76,7 @@ class TestCheckoutSession:
 
 
 class TestWebhookHandler:
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_invalid_signature_raises(self):
         import services.stripe as svc
 

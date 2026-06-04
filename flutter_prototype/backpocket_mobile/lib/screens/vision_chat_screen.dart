@@ -571,6 +571,16 @@ class _VisionChatScreenState extends State<VisionChatScreen> {
             label: '💰 Draft Voice Invoice',
             onTap: _chatSending ? null : _draftInvoice,
           ),
+          const SizedBox(width: 8),
+          _ActionChip(
+            label: 'ABN',
+            onTap: _chatSending ? null : _extractAbn,
+          ),
+          const SizedBox(width: 8),
+          _ActionChip(
+            label: 'Ask Pip',
+            onTap: _chatSending ? null : _askTwin,
+          ),
         ],
       ),
     );

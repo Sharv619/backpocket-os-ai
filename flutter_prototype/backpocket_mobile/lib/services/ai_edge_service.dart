@@ -129,7 +129,9 @@ class AiEdgeCapabilities {
       modelPath: json['model_path'] as String? ?? '',
       modelMessage: json['model_message'] as String? ?? '',
       discoveredSourcePath: json['discovered_source_path'] as String? ?? '',
-      supportedIntents: List<String>.from(json['supported_intents'] ?? const []),
+      supportedIntents: List<String>.from(
+        json['supported_intents'] ?? const [],
+      ),
       runtimeMode: json['runtime_mode'] as String? ?? 'heuristic',
     );
   }
@@ -239,15 +241,33 @@ class AiEdgeService {
     Map<String, dynamic>? metadata,
   }) async {
     if (!isAndroidNative) return null;
+    final result = await _channel
+        .invokeMethod<Map<dynamic, dynamic>>('runIntentPipeline', {
+          'transcript': transcript,
+          'screen_context': screenContext,
+          'session_id': sessionId,
+          'request_id': requestId,
+          'metadata': metadata ?? const {},
+        });
+    if (result == null) return null;
+    return Map<String, dynamic>.from(result);
+  }
+
+  Future<Map<String, dynamic>?> runLocalPrompt({
+    required String prompt,
+    String? requestId,
+  }) async {
+    if (!isAndroidNative) {
+      return {
+        'status': 'unsupported',
+        'response': '',
+        'message': 'AI Edge Gallery mode is Android-only in this build.',
+        'runtime_mode': 'unavailable',
+      };
+    }
     final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
-      'runIntentPipeline',
-      {
-        'transcript': transcript,
-        'screen_context': screenContext,
-        'session_id': sessionId,
-        'request_id': requestId,
-        'metadata': metadata ?? const {},
-      },
+      'runLocalPrompt',
+      {'prompt': prompt, 'request_id': requestId},
     );
     if (result == null) return null;
     return Map<String, dynamic>.from(result);
@@ -263,9 +283,12 @@ class AiEdgeService {
 
     var textAccumulation = '';
     await for (final rawEvent
-        in _events.receiveBroadcastStream().map((dynamic event) {
-          return Map<String, dynamic>.from(event as Map);
-        }).where((event) => event['request_id'] == requestId)) {
+        in _events
+            .receiveBroadcastStream()
+            .map((dynamic event) {
+              return Map<String, dynamic>.from(event as Map);
+            })
+            .where((event) => event['request_id'] == requestId)) {
       final type = _parseInferenceEventType(rawEvent['type'] as String?);
       if (type == AiEdgeInferenceEventType.started) {
         textAccumulation = '';
@@ -294,10 +317,9 @@ class AiEdgeService {
 
   Future<bool> speakOffline(String text) async {
     if (!isAndroidNative || text.isEmpty) return false;
-    final result = await _channel.invokeMethod<bool>(
-      'speakOffline',
-      {'text': text},
-    );
+    final result = await _channel.invokeMethod<bool>('speakOffline', {
+      'text': text,
+    });
     return result ?? false;
   }
 }
