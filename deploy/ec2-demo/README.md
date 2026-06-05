@@ -4,11 +4,16 @@ This folder is the safe EC2 live-demo path for BackPocket OS AI. It is intention
 
 It runs only the FastAPI backend, serves the checked-in static dashboard, persists SQLite as a host-mounted `backpocket.db`, requires `BP_API_KEY`, disables background Gmail polling, and keeps `DEMO_MODE=1` by default.
 
+It can also run Caddy for HTTPS at `backpocket.himanshulade.com` once DNS points to the EC2 public IP.
+
+The recommended demo workflow is still: run the backend on EC2, then run the Flutter app separately and point its server URL to `https://backpocket.himanshulade.com` with the demo `BP_API_KEY`.
+
 This is not a production deployment.
 
 ## What Runs
 
-- FastAPI backend on container port `8000`.
+- FastAPI backend on container port `8000`, bound to host `127.0.0.1:8000` by default.
+- Caddy reverse proxy on ports `80` and `443` for the demo subdomain.
 - SQLite mounted from `./data/backpocket.db` to `/app/backpocket.db`.
 - Static dashboard at `/static/index.html`.
 - Flutter web at `/app/` only if a `static_flutter/` build is intentionally mounted.
@@ -32,6 +37,13 @@ python3 -c "import secrets; print(secrets.token_hex(24))"
 ```
 
 Put the generated value into `.env` as `BP_API_KEY`.
+
+For the subdomain demo, also set:
+
+```bash
+DEMO_DOMAIN=backpocket.himanshulade.com
+FRONTEND_ORIGIN=https://backpocket.himanshulade.com
+```
 
 Prepare the host-mounted SQLite file and runtime folders:
 
@@ -61,7 +73,45 @@ curl -i http://127.0.0.1:8000/api/status
 curl -i -H "X-API-Key: $BP_API_KEY" http://127.0.0.1:8000/api/status
 ```
 
-Open the EC2 security group for the chosen `BP_PUBLIC_PORT` only. The default is `8000`.
+Open the EC2 security group for ports `80` and `443`. Port `8000` binds to `127.0.0.1` by default for host-only smoke tests and does not need a public inbound rule.
+
+If you intentionally need direct public `:8000` access for a short test, set `BP_BIND_ADDRESS=0.0.0.0`, restart the stack, and remove that exposure afterwards.
+
+## Flutter App Separate From Docker
+
+If you run Flutter the usual way, Docker only needs to run the backend and Caddy on EC2.
+
+From your Flutter dev machine:
+
+```bash
+cd flutter_prototype/backpocket_mobile
+flutter pub get
+flutter run -d chrome
+```
+
+In the Flutter Settings screen, use:
+
+```text
+Server URL: https://backpocket.himanshulade.com
+API key: the BP_API_KEY from deploy/ec2-demo/.env on EC2
+```
+
+For a release web build instead of `flutter run`, build it separately and serve it from your preferred static host. The API server remains `https://backpocket.himanshulade.com`.
+
+## DNS And HTTPS
+
+Create this DNS record wherever `himanshulade.com` is managed:
+
+```text
+Type: A
+Name: backpocket
+Value: EC2_PUBLIC_IP
+TTL: 300
+```
+
+If using Cloudflare, use DNS-only mode until Caddy obtains the first certificate. After HTTPS works, proxying can be enabled if desired.
+
+Caddy automatically requests and renews the HTTPS certificate. Ports `80` and `443` must be reachable from the internet for certificate issuance.
 
 ## Demo URLs
 
@@ -70,6 +120,8 @@ Replace `EC2_PUBLIC_IP` and `YOUR_BP_API_KEY`:
 ```text
 http://EC2_PUBLIC_IP:8000/api/health
 http://EC2_PUBLIC_IP:8000/static/index.html?api_key=YOUR_BP_API_KEY
+https://backpocket.himanshulade.com/api/health
+https://backpocket.himanshulade.com/static/index.html?api_key=YOUR_BP_API_KEY
 ```
 
 Flutter web is not the default demo route because `static_flutter/` is not currently present and is ignored by Docker builds. If you intentionally prepare a Flutter build, uncomment the optional `static_flutter` volume in `docker-compose.yml`, build/copy the Flutter output to `static_flutter/`, then use:

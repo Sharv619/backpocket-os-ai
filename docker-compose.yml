@@ -1,5 +1,3 @@
-version: "3.8"
-
 # BackPocket OS — full stack
 # Usage:
 #   docker-compose up -d            # start everything

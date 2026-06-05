@@ -1,0 +1,8 @@
+{$DEMO_DOMAIN:backpocket.himanshulade.com} {
+    encode gzip
+
+    @root path /
+    rewrite @root /static/index.html
+
+    reverse_proxy api:8000
+}
