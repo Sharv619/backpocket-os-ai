@@ -7,6 +7,9 @@ services:
       dockerfile: Dockerfile
     image: backpocket-os-ai:ec2-demo
     restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     environment:
       APP_ENV: ${APP_ENV:-demo}
       ENV: ${ENV:-demo}
@@ -49,6 +52,9 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     depends_on:
       api:
         condition: service_healthy

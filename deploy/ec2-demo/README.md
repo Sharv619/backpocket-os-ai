@@ -113,6 +113,8 @@ If using Cloudflare, use DNS-only mode until Caddy obtains the first certificate
 
 Caddy automatically requests and renews the HTTPS certificate. Ports `80` and `443` must be reachable from the internet for certificate issuance.
 
+If Caddy logs show DNS failures against `127.0.0.53` while contacting Let's Encrypt, recreate the stack after pulling this compose file. The demo compose pins container DNS to `1.1.1.1` and `8.8.8.8` to avoid EC2/systemd-resolved stub resolver issues inside containers.
+
 ## Demo URLs
 
 Replace `EC2_PUBLIC_IP` and `YOUR_BP_API_KEY`:
