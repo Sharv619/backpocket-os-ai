@@ -1,0 +1,8 @@
+backpocket.himanshulade.com {
+    encode gzip
+
+    @root path /
+    rewrite @root /static/index.html
+
+    reverse_proxy backpocket-os-ai-ec2-demo-api-1:8000
+}

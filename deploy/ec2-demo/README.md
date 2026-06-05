@@ -4,7 +4,7 @@ This folder is the safe EC2 live-demo path for BackPocket OS AI. It is intention
 
 It runs only the FastAPI backend, serves the checked-in static dashboard, persists SQLite as a host-mounted `backpocket.db`, requires `BP_API_KEY`, disables background Gmail polling, and keeps `DEMO_MODE=1` by default.
 
-It can also run Caddy for HTTPS at `backpocket.himanshulade.com` once DNS points to the EC2 public IP.
+It can also run an optional Caddy edge proxy for HTTPS at `backpocket.himanshulade.com`, but use the existing EC2 reverse proxy if another project already owns ports `80` and `443`.
 
 The recommended demo workflow is still: run the backend on EC2, then run the Flutter app separately and point its server URL to `https://backpocket.himanshulade.com` with the demo `BP_API_KEY`.
 
@@ -13,7 +13,7 @@ This is not a production deployment.
 ## What Runs
 
 - FastAPI backend on container port `8000`, bound to host `127.0.0.1:8000` by default.
-- Caddy reverse proxy on ports `80` and `443` for the demo subdomain.
+- Optional Caddy reverse proxy on ports `80` and `443` for the demo subdomain. It only starts with `--profile edge`.
 - SQLite mounted from `./data/backpocket.db` to `/app/backpocket.db`.
 - Static dashboard at `/static/index.html`.
 - Flutter web at `/app/` only if a `static_flutter/` build is intentionally mounted.
@@ -57,7 +57,7 @@ Start the demo stack:
 ```bash
 docker compose config
 docker compose build
-docker compose up -d
+docker compose up -d api
 docker compose ps
 ```
 
@@ -76,6 +76,35 @@ curl -i -H "X-API-Key: $BP_API_KEY" http://127.0.0.1:8000/api/status
 Open the EC2 security group for ports `80` and `443`. Port `8000` binds to `127.0.0.1` by default for host-only smoke tests and does not need a public inbound rule.
 
 If you intentionally need direct public `:8000` access for a short test, set `BP_BIND_ADDRESS=0.0.0.0`, restart the stack, and remove that exposure afterwards.
+
+## Existing EC2 Reverse Proxy
+
+If another Docker stack already owns ports `80` and `443`, do not start this stack's Caddy profile. Keep BackPocket running as API-only:
+
+```bash
+docker compose up -d api
+```
+
+Your EC2 currently has an existing Caddy container named `ec2-caddy-1`. Connect it to the BackPocket Docker network so it can reach the API container directly:
+
+```bash
+docker network connect backpocket-os-ai-ec2-demo_default ec2-caddy-1 || true
+docker exec ec2-caddy-1 wget -qO- http://backpocket-os-ai-ec2-demo-api-1:8000/api/health
+```
+
+Add the site block from `deploy/ec2-demo/caddy-site.backpocket.Caddyfile` to the existing Caddy config, then reload existing Caddy:
+
+```bash
+docker exec ec2-caddy-1 caddy reload --config /etc/caddy/Caddyfile
+```
+
+To find the host-mounted Caddyfile path for the existing Caddy container:
+
+```bash
+docker inspect ec2-caddy-1 --format '{{range .Mounts}}{{println .Source "->" .Destination}}{{end}}'
+```
+
+If the existing proxy is host nginx instead, use `deploy/ec2-demo/nginx-site.backpocket.conf` and proxy to `http://127.0.0.1:8000`.
 
 ## Flutter App Separate From Docker
 
@@ -113,7 +142,7 @@ If using Cloudflare, use DNS-only mode until Caddy obtains the first certificate
 
 Caddy automatically requests and renews the HTTPS certificate. Ports `80` and `443` must be reachable from the internet for certificate issuance.
 
-If Caddy logs show DNS failures against `127.0.0.53` while contacting Let's Encrypt, recreate the stack after pulling this compose file. The demo compose pins container DNS to `1.1.1.1` and `8.8.8.8` to avoid EC2/systemd-resolved stub resolver issues inside containers.
+If the optional demo Caddy logs show DNS failures against `127.0.0.53` while contacting Let's Encrypt, recreate the stack after pulling this compose file. The demo compose pins container DNS to `1.1.1.1` and `8.8.8.8` to avoid EC2/systemd-resolved stub resolver issues inside containers.
 
 ## Demo URLs
 
