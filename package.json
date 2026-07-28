@@ -10,7 +10,7 @@
     "mcp:knowledge": "node mcp_servers/knowledge.mjs"
   },
   "dependencies": {
-    "sqlite3": "^5.1.7"
+    "sqlite3": "^6.0.1"
   },
   "engines": {
     "node": ">=18.0.0"
