@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+@theme {
+  /* Nawab's Minto brand palette — Mughal royal maroon + gold, on a warm cream base */
+  --color-nawab-maroon-50: #fbf1f0;
+  --color-nawab-maroon-100: #f3dcd9;
+  --color-nawab-maroon-400: #a52c2c;
+  --color-nawab-maroon-500: #8a1f1f;
+  --color-nawab-maroon-600: #6e1717;
+  --color-nawab-maroon-700: #5c1414;
+  --color-nawab-maroon-900: #3a0d0d;
+
+  --color-nawab-gold-100: #faf1d7;
+  --color-nawab-gold-300: #ecd28a;
+  --color-nawab-gold-400: #dcb04a;
+  --color-nawab-gold-500: #c8992f;
+  --color-nawab-gold-600: #a97b21;
+
+  --color-nawab-cream: #fdf8ef;
+  --color-nawab-ink: #241512;
+
+  --font-display: "Georgia", "Cambria", serif;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background-color: var(--color-nawab-cream);
+  color: var(--color-nawab-ink);
+}
+
+@keyframes toast-in {
+  from { transform: translateY(-12px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.animate-toast-in {
+  animation: toast-in 0.25s ease-out;
+}

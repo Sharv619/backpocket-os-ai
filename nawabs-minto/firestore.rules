@@ -1,0 +1,54 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isStaff() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/staff/$(request.auth.uid));
+    }
+
+    function isDriver() {
+      return isSignedIn() && request.auth.token.role == 'driver';
+    }
+
+    function isOwnDriverDoc(driverId) {
+      return isDriver() && request.auth.uid == driverId;
+    }
+
+    // Staff accounts — created manually by an owner via the Firebase console
+    // (doc id must equal the staff member's Firebase Auth uid).
+    match /staff/{staffId} {
+      allow read: if isStaff();
+      allow write: if false; // manage via console/admin SDK only
+    }
+
+    // Drivers — staff manage the roster; a driver may only update their own
+    // status/fcmToken, never their PIN hash or identity fields.
+    match /drivers/{driverId} {
+      allow read: if isStaff() || isOwnDriverDoc(driverId);
+      allow create, delete: if isStaff();
+      allow update: if isStaff() ||
+        (isOwnDriverDoc(driverId) &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'currentOrderId', 'fcmToken']));
+    }
+
+    // Orders — staff have full control; an assigned driver may only move
+    // their own order forward and flag issues, never touch pricing or reassign.
+    match /orders/{orderId} {
+      allow read: if isStaff() || isDriver();
+      allow create: if isStaff();
+      allow delete: if isStaff();
+      allow update: if isStaff() ||
+        (isDriver() &&
+          resource.data.assignedDriverId == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'pickedUpAt', 'deliveredAt', 'issue']));
+    }
+  }
+}
